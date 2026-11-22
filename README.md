@@ -27,6 +27,7 @@ npm start
 | `npm test` | Unit tests (security rules, recording consent) |
 | `npm run smoke` | End-to-end test: launches the app against a local server and checks sandboxing, navigation blocking, tabs, full screen and a real recording |
 | `npm run audit:prod` | Check production dependencies for known vulnerabilities |
+| `npm run dist` | Build the Windows installer and portable `.exe` into `dist\` |
 
 ## Keyboard shortcuts
 
@@ -62,6 +63,19 @@ tests/
   smoke/           End-to-end Electron test
 ```
 
+## Build the .exe
+
+```powershell
+npm run dist
+```
+
+This creates, in `dist\` (not committed to git):
+
+- `Simple-Browser-Setup-<version>.exe`: installer (per-user, choose the folder).
+- `Simple-Browser-<version>-portable.exe`: single file, no install needed.
+
+The build is **not code-signed**, so Windows SmartScreen may show an "unknown publisher" warning. Signing needs a code-signing certificate (see the release checklist in [SECURITY.md](SECURITY.md)). The app icon is `build\icon.ico`.
+
 ## Status
 
-First working version. Not yet packaged as an installer; code signing and an installer (for example with electron-builder) are the next release steps.
+First working version with a Windows installer and portable build.

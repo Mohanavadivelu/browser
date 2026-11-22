@@ -9,12 +9,25 @@
     "start": "electron .",
     "test": "node --test \"tests/unit/*.test.js\"",
     "smoke": "electron tests/smoke/run.js",
-    "audit:prod": "npm audit --omit=dev"
+    "audit:prod": "npm audit --omit=dev",
+    "dist": "electron-builder --win nsis portable --x64"
+  },
+  "author": "Mohanavadivelu",
+  "build": {
+    "appId": "com.mohanavadivelu.simplebrowser",
+    "productName": "Simple Browser",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "package.json"],
+    "win": { "icon": "build/icon.ico", "target": ["nsis", "portable"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false },
+    "portable": { "artifactName": "Simple-Browser-${version}-portable.exe" },
+    "artifactName": "Simple-Browser-Setup-${version}.${ext}"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "electron": "45.4.1"
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
   }
 }
