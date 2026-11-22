@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; form-action https://duckduckgo.com">
+  <title>New tab</title>
+  <link rel="stylesheet" href="pages.css">
+</head>
+<body>
+  <main>
+    <h1>Simple Browser</h1>
+    <form action="https://duckduckgo.com/" method="get" class="search">
+      <input name="q" type="search" placeholder="Search or enter a web address" autofocus autocomplete="off">
+    </form>
+    <p class="hint">Type a web address in the address bar above, or search here.</p>
+    <nav class="tiles">
+      <a class="tile" href="https://duckduckgo.com/"><span class="icon">🔎</span>DuckDuckGo</a>
+      <a class="tile" href="https://en.wikipedia.org/"><span class="icon">📖</span>Wikipedia</a>
+      <a class="tile" href="https://example.com/"><span class="icon">🌐</span>Example</a>
+    </nav>
+  </main>
+</body>
+</html>

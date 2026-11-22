@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https: data:; base-uri 'none'; form-action 'none'">
+  <title>Simple Browser</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="chrome">
+    <div class="tabbar">
+      <div class="tabs" id="tabs"></div>
+      <button class="icon-btn new-tab" id="newTab" title="New tab (Ctrl+T)">＋</button>
+    </div>
+
+    <div class="toolbar">
+      <button class="icon-btn" id="back" title="Back (Alt+Left)">←</button>
+      <button class="icon-btn" id="forward" title="Forward (Alt+Right)">→</button>
+      <button class="icon-btn" id="reload" title="Reload (Ctrl+R)">⟳</button>
+      <button class="icon-btn" id="home" title="Home">⌂</button>
+
+      <form class="address" id="addressForm" autocomplete="off">
+        <span class="security" id="security"></span>
+        <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address">
+        <button class="star" id="star" type="button" title="Bookmark (Ctrl+D)">☆</button>
+        <div class="notice" id="notice" role="status"></div>
+      </form>
+
+      <div class="rec-badge" id="recBadge">
+        <span class="dot"></span><span id="recTime">REC 00:00</span>
+        <button id="recStop" type="button">Stop</button>
+      </div>
+      <button class="icon-btn rec-btn" id="record" title="Record this window">●</button>
+      <button class="icon-btn" id="fullscreen" title="Full screen (F11)">⛶</button>
+      <button class="icon-btn" id="menu" title="Menu">⋮</button>
+    </div>
+
+    <div class="bookmarks" id="bookmarks"></div>
+    <div class="loading" id="loading"></div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
