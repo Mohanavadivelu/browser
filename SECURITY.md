@@ -21,7 +21,8 @@ Web pages are untrusted. The browser keeps them away from your files, from the a
 
 - Recording starts only after a **native** consent dialog with a "I have permission to record this content" checkbox. Web pages cannot show, fake or skip it.
 - The consent allows exactly one capture and expires after 15 seconds. The capture handler refuses any request that does not come from the browser chrome.
-- A REC indicator is always visible while recording, including in full screen.
+- A REC indicator is always visible while recording, including in full screen. It is part of the browser bars, so it is not in the recording itself.
+- Video and audio come only from the tab that is active when recording starts, never from other windows, other apps or the microphone.
 - Recordings are saved only to a local folder. Nothing is uploaded.
 
 ## Data
@@ -32,7 +33,8 @@ Web pages are untrusted. The browser keeps them away from your files, from the a
 ## Known limits
 
 - The sandbox isolates pages from your files and from the app. It does not protect against a bug in Chromium itself, so keep Electron updated.
-- The recording indicator is part of the window, so it appears in the recording.
+- The recording stays on the tab that was active when it started; switching to another tab does not change what is recorded.
+- The pointer is hidden with a page style, so a native video control inside a page may still show it.
 - Favicons are fetched by the browser chrome session (HTTPS only).
 
 ## Release checklist

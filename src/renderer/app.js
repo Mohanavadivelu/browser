@@ -90,7 +90,7 @@ function formatElapsed(startedAt) {
 function renderRecording() {
   const active = state.recording.active;
   $('record').classList.toggle('recording', active);
-  $('record').title = active ? 'Stop recording' : 'Record this window';
+  $('record').title = active ? 'Stop recording' : 'Record this page';
   $('recBadge').classList.toggle('show', active);
   if (active) $('recTime').textContent = formatElapsed(state.recording.startedAt);
 }
@@ -127,10 +127,10 @@ async function startRecording() {
   const grant = await api.recording.requestStart();
   if (!grant.ok) return;
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
-    const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+    const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
       .find((type) => MediaRecorder.isTypeSupported(type));
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 128_000 });
     let pending = Promise.resolve();
     recorder.ondataavailable = (event) => {
       if (!event.data.size) return;

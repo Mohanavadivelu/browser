@@ -6,12 +6,12 @@ const { dialog } = require('electron');
 async function askRecordingConsent(win) {
   const { response, checkboxChecked } = await dialog.showMessageBox(win, {
     type: 'warning',
-    title: 'Record this window?',
-    message: 'Record this window?',
+    title: 'Record this page?',
+    message: 'Record this page?',
     detail:
-      'Recording captures everything shown in this window. Only record content you own or have ' +
-      'permission to record, and respect other people\'s privacy and the website\'s terms. ' +
-      'A recording indicator stays visible while recording.',
+      'Recording captures the current tab\'s page and its sound, not the browser bars or other apps. ' +
+      'Only record content you own or have permission to record, and respect other people\'s ' +
+      'privacy and the website\'s terms. A recording indicator stays visible while recording.',
     buttons: ['Start recording', 'Cancel'],
     defaultId: 1,
     cancelId: 1,

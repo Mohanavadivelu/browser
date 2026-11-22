@@ -3,7 +3,7 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const {
-  app, ipcMain, session, shell, dialog, Menu, desktopCapturer, webContents,
+  app, ipcMain, session, shell, dialog, Menu, webContents,
 } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
@@ -16,6 +16,7 @@ const { Recorder } = require('./recording/recorder');
 const { askRecordingConsent } = require('./recording/consent');
 const { Settings } = require('./storage/settings');
 const { createShortcutHandler } = require('./shortcuts');
+const { FullscreenIdle } = require('./fullscreen-idle');
 
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
@@ -99,9 +100,9 @@ async function start(options = {}) {
       ses.setDisplayMediaRequestHandler(async (request, callback) => {
         const requester = request.frame ? webContents.fromFrame(request.frame) : null;
         const allowed = requester?.id === ui.webContents.id && recorder.consumeAuthorization();
-        const sources = allowed ? await desktopCapturer.getSources({ types: ['window'] }) : [];
-        const source = sources.find((candidate) => candidate.id === win.getMediaSourceId());
-        callback(source ? { video: source } : {});
+        // Capture the active tab's page and its sound; never other windows, apps or the microphone.
+        const page = allowed ? tabs.active?.view.webContents.mainFrame : null;
+        callback(page ? { video: page, audio: page } : null);
       }, { useSystemPicker: false });
       return;
     }
@@ -115,14 +116,23 @@ async function start(options = {}) {
   sessions.ensure(UI_PARTITION, 'ui');
 
   let shortcutHandler = () => {};
+  let idle;
+  const trackInput = (contents) => {
+    contents.on('before-input-event', (event, input) => {
+      idle?.activity();
+      shortcutHandler(event, input);
+    });
+    contents.on('before-mouse-event', () => idle?.activity());
+  };
   tabs = new TabManager({
     host,
     sessions,
     newTabPage: path.join(RENDERER_DIR, 'newtab.html'),
     warningPage: path.join(RENDERER_DIR, 'warning.html'),
     onBlocked,
-    onInput: (contents) => contents.on('before-input-event', (event, input) => shortcutHandler(event, input)),
+    onInput: trackInput,
   });
+  idle = new FullscreenIdle({ host, tabs, idleMs: options.idleMs });
 
   const toggleBookmark = () => {
     const tab = tabs.active;
@@ -145,7 +155,8 @@ async function start(options = {}) {
   };
 
   shortcutHandler = createShortcutHandler({ tabs, host, ui, actions: { toggleBookmark } });
-  ui.webContents.on('before-input-event', (event, input) => shortcutHandler(event, input));
+  trackInput(ui.webContents);
+  trackInput(indicator.webContents);
 
   const rendererUrl = pathToFileURL(RENDERER_DIR).href;
   const trustedIds = () => new Set([ui.webContents.id, indicator.webContents.id]);
@@ -162,7 +173,7 @@ async function start(options = {}) {
       { label: 'New private tab', accelerator: 'Ctrl+Shift+N', click: () => tabs.create({ isPrivate: true }) },
       { type: 'separator' },
       {
-        label: recording ? 'Stop recording' : 'Record this window…',
+        label: recording ? 'Stop recording' : 'Record this page…',
         click: () => ui.webContents.send('recording:command', recording ? 'stop' : 'start'),
       },
       {
@@ -218,7 +229,12 @@ async function start(options = {}) {
   ipc.handle('recording:request-stop', none, () => ui.webContents.send('recording:command', 'stop'));
   ipc.handle('recording:finish', none, async () => {
     const filePath = await recorder.finish();
-    if (filePath) notify(`Recording saved: ${filePath}`);
+    if (!filePath) return null;
+    if (recorder.removeIfEmpty(filePath)) {
+      notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
+      return null;
+    }
+    notify(`Recording saved: ${filePath}`);
     return filePath;
   });
   ipc.handle('recording:abort', none, async () => {
@@ -243,7 +259,7 @@ async function start(options = {}) {
     pushState();
   });
 
-  return { app, host, tabs, recorder, settings, ui, indicator, win, session };
+  return { app, host, tabs, recorder, settings, ui, indicator, win, session, idle };
 }
 
 module.exports = { start };

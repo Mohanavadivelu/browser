@@ -79,11 +79,17 @@ class Recorder {
   // Used when capture could not start: keep nothing behind if no data was written.
   async abort() {
     const filePath = await this.finish();
-    if (!filePath) return;
+    if (filePath) this.removeIfEmpty(filePath);
+  }
+
+  // Returns true when the file had no data and was deleted.
+  removeIfEmpty(filePath) {
     try {
-      if (fs.statSync(filePath).size === 0) fs.unlinkSync(filePath);
+      if (fs.statSync(filePath).size > 0) return false;
+      fs.unlinkSync(filePath);
+      return true;
     } catch {
-      // File already gone; nothing to clean up.
+      return false;
     }
   }
 }

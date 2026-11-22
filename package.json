@@ -1,7 +1,7 @@
 {
   "name": "simple-browser",
   "productName": "Simple Browser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A simple, sandboxed Windows browser with full-screen mode and consent-based page recording.",
   "main": "src/main/main.js",
   "private": true,
@@ -16,11 +16,29 @@
   "build": {
     "appId": "com.mohanavadivelu.simplebrowser",
     "productName": "Simple Browser",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["src/**/*", "package.json"],
-    "win": { "icon": "build/icon.ico", "target": ["nsis", "portable"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "perMachine": false },
-    "portable": { "artifactName": "Simple-Browser-${version}-portable.exe" },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "portable": {
+      "artifactName": "Simple-Browser-${version}-portable.exe"
+    },
     "artifactName": "Simple-Browser-Setup-${version}.${ext}"
   },
   "engines": {

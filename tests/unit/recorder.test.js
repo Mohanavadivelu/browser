@@ -58,3 +58,17 @@ test('aborting a recording that captured nothing removes the empty file', async 
   await recorder.abort();
   assert.deepEqual(fs.readdirSync(folder), []);
 });
+
+test('only empty recording files are discarded', async () => {
+  const { recorder, folder } = createRecorder({ granted: true });
+  await recorder.requestStart();
+  recorder.write(new Uint8Array([9]));
+  const filePath = await recorder.finish();
+  assert.equal(recorder.removeIfEmpty(filePath), false);
+  assert.equal(fs.readdirSync(folder).length, 1);
+
+  const empty = path.join(folder, 'empty.webm');
+  fs.writeFileSync(empty, '');
+  assert.equal(recorder.removeIfEmpty(empty), true);
+  assert.equal(fs.existsSync(empty), false);
+});
