@@ -100,6 +100,13 @@ This creates, in `dist\` (not committed to git):
 
 The build is **not code-signed**, so Windows SmartScreen may show an "unknown publisher" warning. Signing needs a code-signing certificate (see the release checklist in [SECURITY.md](SECURITY.md)). The app icon is `build\icon.ico`.
 
+## Release
+
+1. Set the new version in `package.json` and add a section for it to [CHANGELOG.md](CHANGELOG.md).
+2. Push a tag with the same version: `git tag v0.4.0` then `git push origin v0.4.0`.
+
+The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums.
+
 ## Status
 
 Version 0.4.0: recordings now have a length and a seek index, so players show their length and can jump around; recording survives closing the window and stops cleanly on disk errors; downloads renamed to a blocked type in the Save dialog are refused; each of the browser's own pages can call only what it needs; tab icons are fetched through the tab's own session; and the packaged app is locked down with Electron fuses. Tests run on GitHub Actions for every push.
