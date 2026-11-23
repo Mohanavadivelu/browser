@@ -361,6 +361,22 @@ async function main() {
   check('with follow off, switching tabs keeps a single file', offFiles.length === 1, offFiles.join(', '));
   settings.update({ recordingFollowTab: true });
 
+  // ---------- Pause pressed while the recording moves to another tab ----------
+  tabs.activate(tabA.id);
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started (pause while switching)');
+  await bytes.waitForMore('first data (pause while switching)');
+  const tabC = tabs.create({ url: `${base}/anim-c` });
+  // Sent right after the switch started, so the toolbar is still moving the capture.
+  ui.webContents.send('recording:command', 'toggle-pause');
+  await waitFor(() => recorder.session?.part === 2, 'recording moved while pausing', 10000);
+  await waitFor(async () => (await evalIn(ui, 'capture?.recorder.state ?? null')) === 'paused', 'new capture paused', 8000).catch(() => {});
+  check('pause pressed during a tab switch is applied after it', recorder.paused && (await evalIn(ui, 'capture?.recorder.state ?? null')) === 'paused',
+    `main paused=${recorder.paused}, capture ${await evalIn(ui, 'capture?.recorder.state ?? null')}`);
+  ui.webContents.send('recording:command', 'stop');
+  await waitFor(() => !recorder.active, 'recording stopped (pause while switching)');
+  tabs.close(tabC.id);
+
   // ---------- Recording: a write error ends the recording ----------
   const beforeFail = new Set(fs.readdirSync(recordingsFolder));
   await startRecording();

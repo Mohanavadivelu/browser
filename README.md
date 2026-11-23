@@ -11,7 +11,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **History** (off by default; never saved from private tabs), **Downloads** (progress, cancel, show in folder) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `downloads`, `recordings` or `settings` in the address bar.
 - **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, recording quality, keep recording across tabs, and the folder for recordings and screenshots.
 - **Full screen** (F11 or the ⛶ button): only the page is shown. Move the mouse to the top edge to bring the toolbar back. After **5 seconds without mouse or keyboard activity**, the top bar and the mouse pointer hide automatically; move the mouse or press a key to bring them back. Pages can also take the whole window for their own video full screen.
-- **Record** (● button, Ctrl+Shift+R or menu): captures the current tab's page **and its sound** (not the browser bars, other windows or other apps) to a `.webm` file in `Videos\Simple Browser`. A native consent dialog comes first, and a REC indicator with **Pause/Resume** and **Stop** stays visible while recording, including in full screen. Paused time is not counted. Quality is Low (720p, 15 fps), Medium (1080p, 30 fps) or High (1440p, 60 fps).
+- **Record** (● button, Ctrl+Shift+E or menu): captures the current tab's page **and its sound** (not the browser bars, other windows or other apps) to a `.webm` file in `Videos\Simple Browser`. A native consent dialog comes first, and a REC indicator with **Pause/Resume** and **Stop** stays visible while recording, including in full screen. Paused time is not counted. Quality is Low (720p, 15 fps), Medium (1080p, 30 fps) or High (1440p, 60 fps).
 - **Recording follows you across tabs**: when you switch tabs, the recording carries on with the new tab and saves it as the next part (`…-part2.webm`). Turn this off in Settings to stay on the original tab.
 - **Screenshot** (📷 button or Ctrl+Shift+S): saves the current page as a PNG in the same folder.
 - **Recordings page**: lists recordings and screenshots with length and size, and lets you open, show in folder, rename and delete (to the Recycle Bin).
@@ -44,18 +44,20 @@ npm start
 
 | Keys | Action |
 |---|---|
-| F11 / Esc | Enter / leave full screen (Esc closes the find bar first) |
+| F11 | Enter / leave full screen |
+| Esc | Close the find bar. In full screen Esc goes to the page; hold Esc to leave full screen |
 | Ctrl+T, Ctrl+W | New tab, close tab |
 | Ctrl+Shift+N | New private tab |
 | Ctrl+L | Focus the address bar |
 | Ctrl+R / F5 | Reload |
+| Ctrl+Shift+R / Ctrl+F5 | Reload without the cache |
 | Alt+Left / Alt+Right | Back / forward |
 | Ctrl+Tab, Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+D | Bookmark the page |
 | Ctrl+F | Find in page (Enter / Shift+Enter for next / previous) |
 | Ctrl+Plus, Ctrl+Minus, Ctrl+0 | Zoom in, out, reset |
 | Ctrl+H, Ctrl+J | History, Downloads |
-| Ctrl+Shift+R | Start / stop recording |
+| Ctrl+Shift+E | Start / stop recording |
 | Ctrl+Shift+P | Pause / resume recording |
 | Ctrl+Shift+S | Screenshot of the page |
 

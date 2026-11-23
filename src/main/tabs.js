@@ -143,7 +143,7 @@ class TabManager extends EventEmitter {
     contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (isMainFrame) {
         this.zoom?.apply(tab);
-        this.emit('navigated', tab, url);
+        this.emit('navigated', tab, url, { inPage: true });
       }
       changed();
     });
@@ -194,6 +194,7 @@ class TabManager extends EventEmitter {
     this.host.removeContentView(tab.view);
     tab.view.webContents.close();
     if (tab.isPrivate) this.sessions.releasePrivate(id).catch((error) => console.error(error));
+    this.emit('closed', tab);
 
     if (this.order.length === 0) {
       this.activeId = null;
@@ -246,6 +247,11 @@ class TabManager extends EventEmitter {
 
   reload() {
     this.active?.view.webContents.reload();
+  }
+
+  // Reloads without the cache, like Ctrl+Shift+R in other browsers.
+  reloadIgnoringCache() {
+    this.active?.view.webContents.reloadIgnoringCache();
   }
 
   stop() {

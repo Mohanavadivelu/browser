@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Recording now starts and stops with **Ctrl+Shift+E**. **Ctrl+Shift+R** and **Ctrl+F5** reload the page without the cache, as in other browsers.
+- In F11 full screen, Esc now goes to the page (for example, to close its own pop-ups). Hold Esc, or press F11, to leave full screen.
+
+### Fixes
+
+- Starting the browser while it is already open brings the open window to the front, instead of doing nothing.
+- Jumping to a section of the same page (an address that only changes after `#`) no longer adds an entry to History.
+- Pause or Resume pressed while a recording is moving to another tab is no longer ignored.
+- Closing a tab in the background now updates the saved tabs for "Reopen my tabs" straight away.
+
 ## 0.4.0
 
 Recordings you can scrub through, sturdier recording, and a more locked-down browser.

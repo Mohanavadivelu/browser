@@ -1,18 +1,24 @@
 'use strict';
 
 // Keyboard shortcuts, handled in the main process because there is no application menu.
+// `source` is the web contents the key was pressed in.
 function createShortcutHandler({ tabs, host, ui, actions }) {
-  return function onBeforeInput(event, input) {
+  return function onBeforeInput(event, input, source) {
     if (input.type !== 'keyDown') return;
     const ctrl = input.control || input.meta;
     const key = input.key.toLowerCase();
+    const inPage = Boolean(source) && source === tabs.active?.view.webContents;
+    // In full screen a page gets Esc for itself (to close its own pop-ups, say); holding Esc,
+    // or pressing it in the browser's own bars, leaves full screen. F11 always does.
+    const escapeLeavesFullscreen = !inPage || input.isAutoRepeat;
     let handled = true;
 
     if (input.key === 'F11') host.toggleFullscreen();
     else if (input.key === 'Escape' && host.mode.findOpen) host.closeFind();
-    else if (input.key === 'Escape' && host.mode.fullscreen && !host.mode.htmlFullscreen) host.exitFullscreen();
+    else if (input.key === 'Escape' && host.mode.fullscreen && !host.mode.htmlFullscreen && escapeLeavesFullscreen) host.exitFullscreen();
     else if (ctrl && input.shift && key === 'n') tabs.create({ isPrivate: true });
-    else if (ctrl && input.shift && key === 'r') actions.toggleRecording();
+    else if (ctrl && input.shift && key === 'e') actions.toggleRecording();
+    else if ((ctrl && input.shift && key === 'r') || (ctrl && input.key === 'F5')) tabs.reloadIgnoringCache();
     else if (ctrl && input.shift && key === 'p') actions.togglePause();
     else if (ctrl && input.shift && key === 's') actions.screenshot();
     else if (ctrl && !input.shift && key === 't') tabs.create();

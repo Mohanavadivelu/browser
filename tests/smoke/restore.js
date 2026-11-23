@@ -64,6 +64,13 @@ async function main() {
   const saved = JSON.parse(fs.readFileSync(path.join(profile, 'settings.json'), 'utf8')).session;
   check('private and internal tabs are not saved in the session', saved.urls.length === 2 && saved.urls.every((u) => !u.includes('private')), saved.urls.join(', '));
 
+  // Closing a tab in the background updates the saved session by itself.
+  const savedUrls = () => JSON.parse(fs.readFileSync(path.join(profile, 'settings.json'), 'utf8')).session.urls;
+  const first = on.tabs.order.find((id) => on.tabs.tabs.get(id).view.webContents.getURL() === `${base}/one`);
+  on.tabs.close(first);
+  await waitFor(() => !savedUrls().includes(`${base}/one`), 'session saved after closing a background tab', 5000).catch(() => {});
+  check('closing a background tab updates the saved session', JSON.stringify(savedUrls()) === JSON.stringify([`${base}/two`]), savedUrls().join(', '));
+
   // Turning the option off removes the saved session from disk.
   on.settings.update({ restoreTabs: false });
   on.saveSession();

@@ -27,7 +27,7 @@ function showMainMenu(ctx) {
     { type: 'separator' },
     {
       label: recording ? 'Stop recording' : 'Record this page…',
-      accelerator: 'Ctrl+Shift+R',
+      accelerator: 'Ctrl+Shift+E',
       click: () => actions.toggleRecording(),
     },
     ...(recording

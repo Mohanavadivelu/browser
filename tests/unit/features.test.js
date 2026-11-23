@@ -347,3 +347,22 @@ test('recording file operations only touch plain files inside the folder', async
   assert.equal((await deleteRecording(folder, '..\\evil.webm', async () => {}, index)).reason, 'invalid-name');
   assert.equal((await deleteRecording(folder, 'gone.webm', async () => {}, index)).reason, 'missing');
 });
+
+test('history skips jumps within a page but keeps single-page app page changes', () => {
+  let now = 1_000_000;
+  const history = new History(path.join(temp(), 'history.json'), { now: () => now });
+  history.add({ url: 'https://docs.example/guide', title: 'Guide' });
+  now += 60_000;
+  history.add({ url: 'https://docs.example/guide#install', inPage: true });
+  history.add({ url: 'https://docs.example/guide#usage', inPage: true });
+  assert.deepEqual(history.entries.map((e) => e.url), ['https://docs.example/guide']);
+
+  // A pushState change of path is a new page in a single-page app.
+  history.add({ url: 'https://docs.example/api', inPage: true });
+  assert.deepEqual(history.entries.map((e) => e.url), ['https://docs.example/guide', 'https://docs.example/api']);
+
+  // A full load of the same address with a new #fragment still counts, as before.
+  now += 60_000;
+  history.add({ url: 'https://docs.example/api#top' });
+  assert.equal(history.entries.length, 3);
+});

@@ -8,11 +8,14 @@ const { validators } = require('../../src/main/security/ipc-validate');
 function setup(modeOverrides = {}) {
   const calls = [];
   const record = (name) => (...args) => calls.push([name, ...args]);
+  const page = { id: 'page' };
   const tabs = {
     activeId: 7,
+    active: { view: { webContents: page } },
     create: record('create'),
     close: record('close'),
     reload: record('reload'),
+    reloadIgnoringCache: record('reloadIgnoringCache'),
     back: record('back'),
     forward: record('forward'),
     activateRelative: record('activateRelative'),
@@ -35,12 +38,14 @@ function setup(modeOverrides = {}) {
     screenshot: record('screenshot'),
   };
   const handler = createShortcutHandler({ tabs, host, ui, actions });
-  const press = (input) => {
+  // `from` is where the key was pressed: the active page, or (by default) the browser's own bars.
+  const toolbar = { id: 'toolbar' };
+  const press = (input, from = toolbar) => {
     let prevented = false;
-    handler({ preventDefault: () => { prevented = true; } }, { type: 'keyDown', control: false, shift: false, alt: false, ...input });
+    handler({ preventDefault: () => { prevented = true; } }, { type: 'keyDown', control: false, shift: false, alt: false, ...input }, from);
     return prevented;
   };
-  return { calls, press };
+  return { calls, press, page };
 }
 
 test('new shortcuts trigger their actions and are consumed', () => {
@@ -48,7 +53,7 @@ test('new shortcuts trigger their actions and are consumed', () => {
   assert.equal(press({ key: 'f', control: true }), true);
   assert.equal(press({ key: 'h', control: true }), true);
   assert.equal(press({ key: 'j', control: true }), true);
-  assert.equal(press({ key: 'R', control: true, shift: true }), true);
+  assert.equal(press({ key: 'E', control: true, shift: true }), true);
   assert.equal(press({ key: 'P', control: true, shift: true }), true);
   assert.equal(press({ key: 'S', control: true, shift: true }), true);
   assert.deepEqual(calls.map((call) => call.join(':')), [
@@ -65,11 +70,13 @@ test('zoom shortcuts map to in, out and reset', () => {
   assert.deepEqual(calls, [['zoom', 1], ['zoom', 1], ['zoom', -1], ['zoom', 0]]);
 });
 
-test('Ctrl+R reloads but Ctrl+Shift+R starts recording instead', () => {
+test('Ctrl+R reloads; Ctrl+Shift+R and Ctrl+F5 reload without the cache, as in other browsers', () => {
   const { calls, press } = setup();
   press({ key: 'r', control: true });
+  press({ key: 'F5' });
   press({ key: 'R', control: true, shift: true });
-  assert.deepEqual(calls.map((call) => call[0]), ['reload', 'toggleRecording']);
+  press({ key: 'F5', control: true });
+  assert.deepEqual(calls.map((call) => call[0]), ['reload', 'reload', 'reloadIgnoringCache', 'reloadIgnoringCache']);
 });
 
 test('Esc closes the find bar first and only then leaves full screen', () => {
@@ -80,6 +87,18 @@ test('Esc closes the find bar first and only then leaves full screen', () => {
   const fullscreenOnly = setup({ fullscreen: true });
   fullscreenOnly.press({ key: 'Escape' });
   assert.deepEqual(fullscreenOnly.calls.map((call) => call[0]), ['exitFullscreen']);
+
+  // Pressed in the page, Esc is the page's; holding it down leaves full screen.
+  const inPage = setup({ fullscreen: true });
+  assert.equal(inPage.press({ key: 'Escape' }, inPage.page), false);
+  assert.deepEqual(inPage.calls, []);
+  assert.equal(inPage.press({ key: 'Escape', isAutoRepeat: true }, inPage.page), true);
+  assert.deepEqual(inPage.calls.map((call) => call[0]), ['exitFullscreen']);
+
+  // The find bar still closes first, wherever Esc is pressed.
+  const findInPage = setup({ fullscreen: true, findOpen: true });
+  findInPage.press({ key: 'Escape' }, findInPage.page);
+  assert.deepEqual(findInPage.calls.map((call) => call[0]), ['closeFind']);
 
   const neither = setup();
   assert.equal(neither.press({ key: 'Escape' }), false);

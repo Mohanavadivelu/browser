@@ -8,6 +8,11 @@ const MAX_ENTRIES = 5000;
 const SAME_PAGE_WINDOW_MS = 30_000;
 const SAVE_DELAY_MS = 500;
 
+function withoutFragment(url) {
+  const hash = url.indexOf('#');
+  return hash === -1 ? url : url.slice(0, hash);
+}
+
 function sanitizeEntries(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -42,10 +47,13 @@ class History {
     return this.entries;
   }
 
-  add({ url, title = '' }) {
+  // `inPage` marks a navigation within the same document. One that only changes the #fragment
+  // (a jump within the page) is not a new page, so it adds nothing to history.
+  add({ url, title = '', inPage = false }) {
     if (!isAllowedUrl(url)) return null;
     const time = this.now();
     const last = this.entries.at(-1);
+    if (inPage && last && withoutFragment(last.url) === withoutFragment(url)) return last;
     if (last && last.url === url && time - last.time < SAME_PAGE_WINDOW_MS) {
       last.time = time;
       if (title) last.title = String(title).slice(0, 300);

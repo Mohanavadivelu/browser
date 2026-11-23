@@ -97,7 +97,7 @@ function formatElapsed(recording) {
 function renderRecording() {
   const { active, paused } = state.recording;
   $('record').classList.toggle('recording', active);
-  $('record').title = active ? 'Stop recording (Ctrl+Shift+R)' : 'Record this page (Ctrl+Shift+R)';
+  $('record').title = active ? 'Stop recording (Ctrl+Shift+E)' : 'Record this page (Ctrl+Shift+E)';
   $('recBadge').classList.toggle('show', active);
   $('recBadge').classList.toggle('paused', paused);
   $('recPause').textContent = paused ? 'Resume' : 'Pause';
@@ -138,6 +138,8 @@ let capture = null;
 let retargeting = false;
 let retargetAgain = false;
 let stopAfterRetarget = false;
+// Pause or Resume pressed while the capture was moving to another tab, to apply afterwards.
+let pauseAfterRetarget = false;
 
 const KEYFRAME_INTERVAL_MS = 2000;
 
@@ -273,7 +275,11 @@ async function retarget() {
   }
   if (stopAfterRetarget) {
     stopAfterRetarget = false;
+    pauseAfterRetarget = false;
     stopRecording();
+  } else if (pauseAfterRetarget) {
+    pauseAfterRetarget = false;
+    togglePause();
   }
 }
 
@@ -286,10 +292,17 @@ function stopRecording() {
 }
 
 function togglePause() {
-  if (!capture || retargeting) return;
-  const pause = capture.recorder.state === 'recording';
+  if (retargeting) {
+    // Pressing it twice during the switch cancels out.
+    pauseAfterRetarget = !pauseAfterRetarget;
+    return;
+  }
+  if (!capture) return;
+  const { state: recorderState } = capture.recorder;
+  if (recorderState !== 'recording' && recorderState !== 'paused') return;
+  const pause = recorderState === 'recording';
   if (pause) capture.recorder.pause();
-  else if (capture.recorder.state === 'paused') capture.recorder.resume();
+  else capture.recorder.resume();
   api.recording.setPaused(pause);
 }
 

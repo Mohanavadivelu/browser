@@ -190,7 +190,7 @@ async function start(options = {}) {
   const trackInput = (contents) => {
     contents.on('before-input-event', (event, input) => {
       idle?.activity();
-      shortcutHandler(event, input);
+      shortcutHandler(event, input, contents);
     });
     contents.on('before-mouse-event', () => idle?.activity());
   };
@@ -237,8 +237,8 @@ async function start(options = {}) {
 
   // History is only written when the user has turned it on, and never for private tabs.
   const shouldRecordHistory = (tab) => settings.data.historyEnabled && !tab.isPrivate && tab.kind === 'web';
-  tabs.on('navigated', (tab, url) => {
-    if (shouldRecordHistory(tab)) history.add({ url, title: tab.title });
+  tabs.on('navigated', (tab, url, { inPage = false } = {}) => {
+    if (shouldRecordHistory(tab)) history.add({ url, title: tab.title, inPage });
   });
   tabs.on('titled', (tab, url, title) => {
     if (shouldRecordHistory(tab)) history.updateTitle(url, title);
@@ -288,6 +288,8 @@ async function start(options = {}) {
   };
   tabs.on('navigated', scheduleSessionSave);
   tabs.on('activated', scheduleSessionSave);
+  // Closing a tab in the background activates nothing, but it still changes the session.
+  tabs.on('closed', scheduleSessionSave);
 
   // Actions shared by keyboard shortcuts, menus and the interface.
   const actions = {
@@ -384,6 +386,16 @@ async function start(options = {}) {
         else win.close();
       });
   });
+  // Starting the app again (it holds the single-instance lock) brings this window forward
+  // instead of the second start quitting with nothing on screen.
+  const onSecondInstance = () => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  };
+  if (!options.skipSingleInstanceLock) app.on('second-instance', onSecondInstance);
+
   win.on('closed', () => {
     if (options.quitOnClose !== false) app.quit();
   });
