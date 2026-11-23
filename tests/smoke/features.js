@@ -32,6 +32,12 @@ async function main() {
       res.end('MZ-not-a-real-program');
       return;
     }
+    if (req.url === '/disk.iso' || req.url === '/renamed.txt') {
+      res.setHeader('content-type', 'application/octet-stream');
+      res.setHeader('content-disposition', `attachment; filename="${req.url.slice(1)}"`);
+      res.end('not a real file\n'.repeat(500));
+      return;
+    }
     if (req.url === '/report.txt') {
       res.setHeader('content-type', 'application/octet-stream');
       res.setHeader('content-disposition', 'attachment; filename="report.txt"');
@@ -50,6 +56,8 @@ async function main() {
     autoConsent: true,
     idleMs: 60_000,
     downloadDir: path.join(work, 'downloads'),
+    // Stands in for the user typing a new name in the Save dialog.
+    downloadSaveName: (name) => (name === 'renamed.txt' ? 'renamed.exe' : path.basename(name)),
   });
   const { host, tabs, recorder, settings, history, ui, find, actions, recordingsIndex } = ctx;
   const bytes = trackBytes(recorder);
@@ -202,6 +210,19 @@ async function main() {
   await waitFor(async () => (await evalIn(downloadsPage.view, "document.querySelectorAll('#downloadList .row').length")) === 1, 'download row');
   const rowText = await evalIn(downloadsPage.view, "document.querySelector('#downloadList .row').textContent");
   check('the downloads page lists the download as completed', /report\.txt/.test(rowText) && /Completed/.test(rowText) && /Show in folder/.test(rowText), rowText);
+
+  // Newly blocked types, and a safe name changed to a blocked one in the Save dialog.
+  tabs.navigate(`${base}/disk.iso`);
+  await waitFor(() => noticeLike(/Blocked download of "disk\.iso"/), 'disk image download blocked', 8000);
+  check('disk image downloads are blocked', !fs.existsSync(path.join(work, 'downloads', 'disk.iso')));
+  tabs.navigate(`${base}/renamed.txt`);
+  await waitFor(() => noticeLike(/Blocked download of "renamed\.exe"/), 'renamed download blocked', 10000);
+  await waitFor(() => ctx.downloads.list()[0]?.filename === 'renamed.txt' && ctx.downloads.list()[0].state === 'blocked', 'renamed download marked blocked', 10000);
+  check('a download renamed to a blocked type in the Save dialog is removed', !fs.existsSync(path.join(work, 'downloads', 'renamed.exe')));
+  check('a renamed blocked download is not reported as complete', !noticeLike(/Download complete: renamed/));
+  tabs.openInternal('downloads');
+  await waitFor(async () => /Blocked/.test(await evalIn(downloadsPage.view, "document.querySelector('#downloadList .row').textContent")), 'blocked row shown');
+  check('the downloads page shows the renamed download as blocked', true);
 
   // ---------- Recordings page ----------
   tabs.openInternal('recordings');

@@ -87,6 +87,7 @@ function renderDownloads(items) {
       completed: `Completed · ${formatBytes(item.received)}`,
       cancelled: 'Cancelled',
       interrupted: 'Failed',
+      blocked: 'Blocked: this file type is not allowed',
     }[item.state] ?? item.state;
     main.append(element('div', 'meta', status));
     if (item.state === 'progressing' && item.total > 0) {

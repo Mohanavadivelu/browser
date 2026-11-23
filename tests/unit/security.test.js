@@ -4,7 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveInput, isAllowedUrl } = require('../../src/main/security/navigation');
 const { isPermissionAllowed } = require('../../src/main/security/permissions');
-const { isDangerousFile } = require('../../src/main/security/downloads');
+const path = require('node:path');
+const { EventEmitter } = require('node:events');
+const { isDangerousFile, guardDownload } = require('../../src/main/security/downloads');
+const { DownloadManager } = require('../../src/main/download-manager');
 const { isCertificateError } = require('../../src/main/security/certificates');
 const { validators, createIpc } = require('../../src/main/security/ipc-validate');
 const { baseWebPreferences, contentPreferences } = require('../../src/main/sandbox/web-preferences');
@@ -43,9 +46,114 @@ test('executable downloads are blocked, normal files are not', () => {
   for (const name of ['setup.exe', 'run.BAT', 'x.ps1', 'shortcut.lnk', 'lib.dll']) {
     assert.equal(isDangerousFile(name), true, name);
   }
-  for (const name of ['photo.jpg', 'notes.pdf', 'video.mp4', 'archive']) {
+  for (const name of ['photo.jpg', 'notes.pdf', 'video.mp4', 'archive', 'data.zip', 'image.png', '...']) {
     assert.equal(isDangerousFile(name), false, name);
   }
+});
+
+test('risky container, shortcut and installer types are blocked too', () => {
+  for (const name of ['disk.iso', 'disk.IMG', 'drive.vhdx', 'help.chm', 'site.url', 'x.scf', 'patch.msp',
+    'app.application', 'app.appref-ms', 'addin.xll', 'pack.cab', 'pkg.appinstaller']) {
+    assert.equal(isDangerousFile(name), true, name);
+  }
+});
+
+test('trailing dots and spaces and full Windows paths do not hide the extension', () => {
+  for (const name of ['setup.exe.', 'setup.exe ', 'setup.exe. .', 'C:\\Users\\me\\Downloads\\setup.exe', 'C:\\dl\\notes.txt\\..\\run.bat']) {
+    assert.equal(isDangerousFile(name), true, name);
+  }
+  assert.equal(isDangerousFile('C:\\dl.exe\\notes.txt'), false);
+});
+
+function fakeDownload(filename) {
+  const item = new EventEmitter();
+  let savePath = '';
+  Object.assign(item, {
+    cancelled: false,
+    dialogOptions: null,
+    getFilename: () => filename,
+    getSavePath: () => savePath,
+    setSavePath: (value) => { savePath = value; },
+    setSaveDialogOptions: (options) => { item.dialogOptions = options; },
+    cancel: () => { item.cancelled = true; item.emit('done', {}, 'cancelled'); },
+    choose: (value) => { savePath = value; },
+  });
+  return item;
+}
+
+function guard(item, extra = {}) {
+  const log = { blocked: [], started: 0, removed: [] };
+  const accepted = guardDownload(item, {
+    onBlocked: (name) => log.blocked.push(name),
+    onStart: () => { log.started += 1; },
+    defaultDir: 'C:\\Users\\me\\Downloads',
+    remove: (file) => log.removed.push(file),
+    ...extra,
+  });
+  return { accepted, log };
+}
+
+test('a blocked name from the website is refused before the Save dialog', () => {
+  const item = fakeDownload('setup.exe');
+  const { accepted, log } = guard(item);
+  assert.equal(accepted, false);
+  assert.equal(item.cancelled, true);
+  assert.equal(item.dialogOptions, null);
+  assert.deepEqual(log, { blocked: ['setup.exe'], started: 0, removed: [] });
+});
+
+test('a safe name gets a Save dialog in the Downloads folder', () => {
+  const item = fakeDownload('report.txt');
+  const { accepted, log } = guard(item);
+  assert.equal(accepted, true);
+  assert.equal(item.dialogOptions.defaultPath, path.join('C:\\Users\\me\\Downloads', 'report.txt'));
+  item.choose('C:\\Users\\me\\Downloads\\report.txt');
+  item.emit('updated', {}, 'progressing');
+  item.emit('done', {}, 'completed');
+  assert.equal(item.cancelled, false);
+  assert.deepEqual(log, { blocked: [], started: 1, removed: [] });
+});
+
+test('renaming to a blocked type in the Save dialog cancels the download', async () => {
+  const item = fakeDownload('report.txt');
+  const blockedEvents = [];
+  item.on('blocked', () => blockedEvents.push('blocked'));
+  const { log } = guard(item);
+  item.emit('updated', {}, 'progressing'); // still in the dialog: no path yet
+  assert.equal(item.cancelled, false);
+  item.choose('C:\\Users\\me\\Downloads\\report.exe');
+  item.emit('updated', {}, 'progressing');
+  item.emit('updated', {}, 'progressing');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(item.cancelled, true);
+  assert.deepEqual(blockedEvents, ['blocked']);
+  assert.deepEqual(log.blocked, ['report.exe']);
+  assert.deepEqual(log.removed, []);
+});
+
+test('a renamed download that finishes before any update is deleted', () => {
+  const item = fakeDownload('report.txt');
+  const blockedEvents = [];
+  item.on('blocked', () => blockedEvents.push('blocked'));
+  const { log } = guard(item);
+  item.choose('C:\\Users\\me\\Downloads\\report.bat.');
+  item.emit('done', {}, 'completed');
+  assert.deepEqual(blockedEvents, ['blocked']);
+  assert.deepEqual(log.blocked, ['report.bat.']);
+  assert.deepEqual(log.removed, ['C:\\Users\\me\\Downloads\\report.bat.']);
+});
+
+test('the download list marks a blocked download and does not report it as complete', () => {
+  const manager = new DownloadManager();
+  const completed = [];
+  manager.on('completed', (entry) => completed.push(entry.filename));
+  const item = fakeDownload('report.txt');
+  Object.assign(item, { getTotalBytes: () => 10, getReceivedBytes: () => 10, isPaused: () => false });
+  guard(item, { onStart: (download) => manager.track(download) });
+  item.choose('C:\\dl\\report.exe');
+  item.emit('done', {}, 'completed');
+  assert.equal(manager.list()[0].state, 'blocked');
+  assert.deepEqual(completed, []);
 });
 
 test('certificate failures are recognised', () => {

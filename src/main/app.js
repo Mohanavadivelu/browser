@@ -166,6 +166,7 @@ async function start(options = {}) {
       onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
       onStart: (item) => downloads.track(item),
       autoSaveDir: options.downloadDir,
+      saveName: options.downloadSaveName,
     });
     ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
   };

@@ -25,7 +25,13 @@ class DownloadManager extends EventEmitter {
     };
     this.items.set(id, { entry, item });
 
+    // The download policy refused the name chosen in the Save dialog.
+    item.once('blocked', () => {
+      entry.state = 'blocked';
+      this.emit('change');
+    });
     item.on('updated', (_event, state) => {
+      if (entry.state === 'blocked') return;
       entry.received = item.getReceivedBytes();
       entry.total = item.getTotalBytes();
       entry.path = item.getSavePath() || entry.path;
@@ -35,9 +41,9 @@ class DownloadManager extends EventEmitter {
     item.once('done', (_event, state) => {
       entry.received = item.getReceivedBytes();
       entry.path = item.getSavePath() || entry.path;
-      entry.state = state;
+      if (entry.state !== 'blocked') entry.state = state;
       this.emit('change');
-      if (state === 'completed') this.emit('completed', { ...entry });
+      if (entry.state === 'completed') this.emit('completed', { ...entry });
     });
 
     this.trim();
