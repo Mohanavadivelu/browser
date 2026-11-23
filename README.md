@@ -19,6 +19,10 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 
 Only record content you own or have permission to record, and respect the privacy of other people and the terms of the websites you visit.
 
+## Design
+
+The [design document](https://claude.ai/artifact/9qiJqgcBuDJVj4QLg8mAKA) covers the architecture and trust layers, each module, the recording flow, the IPC surface and stored data, plus code review findings and recommendations.
+
 ## Run
 
 Requires Node.js 20 or newer on Windows.
