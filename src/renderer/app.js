@@ -326,7 +326,13 @@ document.documentElement.addEventListener('mouseleave', () => {
   scheduleHide();
 });
 
-api.onState((next) => { state = next; render(); });
+api.onState((next) => {
+  state = next;
+  // The main process ended the recording on its own (a write error, or the toolbar did not stop
+  // in time): stop a capture that is still running, so it does not keep going unseen.
+  if (!state.recording.active && capture && !retargeting) stopRecording();
+  render();
+});
 api.onNotice(showNotice);
 api.onFocusAddress(() => $('address').focus());
 api.onRecordingCommand((command) => {

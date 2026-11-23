@@ -58,6 +58,8 @@ async function main() {
     downloadDir: path.join(work, 'downloads'),
     // Stands in for the user typing a new name in the Save dialog.
     downloadSaveName: (name) => (name === 'renamed.txt' ? 'renamed.exe' : path.basename(name)),
+    // The last check closes the window; keep the app running to report the results.
+    quitOnClose: false,
   });
   const { host, tabs, recorder, settings, history, ui, find, actions, recordingsIndex } = ctx;
   const bytes = trackBytes(recorder);
@@ -320,6 +322,50 @@ async function main() {
   const offFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && !beforeOff.has(f));
   check('with follow off, switching tabs keeps a single file', offFiles.length === 1, offFiles.join(', '));
   settings.update({ recordingFollowTab: true });
+
+  // ---------- Recording: a write error ends the recording ----------
+  const beforeFail = new Set(fs.readdirSync(recordingsFolder));
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started (write error)');
+  await bytes.waitForMore('first data (write error)');
+  const noticesBeforeFail = notices.length;
+  recorder.file.stream.destroy(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+  await waitFor(() => !recorder.active, 'recording ended after the write error', 8000);
+  check('a write error stops the recording and tells the user', noticeLike(/Recording stopped: the file could not be written/));
+  await sleep(800);
+  const afterFail = notices.slice(noticesBeforeFail);
+  check('a write error is not reported as a saved recording', !afterFail.some((text) => /^Recording saved/.test(text)), afterFail.join(' | '));
+  const toolbarRecording = await evalIn(ui, "document.getElementById('record').classList.contains('recording')");
+  check('the toolbar no longer shows a recording', toolbarRecording === false);
+  const failFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && !beforeFail.has(f));
+  check('a write error does not open a second file', failFiles.length <= 1, failFiles.join(', '));
+
+  // ---------- Recording: closing the window keeps the last chunks ----------
+  await sleep(500);
+  const beforeClose = new Set(fs.readdirSync(recordingsFolder));
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started (window close)');
+  await bytes.waitForMore('first data (window close)');
+  await sleep(1500);
+  let closedAt = 0;
+  let acceptedAfterClose = 0;
+  const countingWrite = recorder.write.bind(recorder);
+  recorder.write = (chunk) => {
+    const accepted = countingWrite(chunk);
+    if (closedAt && accepted) acceptedAfterClose += 1;
+    return accepted;
+  };
+  // Electron quits when its last window closes; keep running to report the results.
+  app.on('window-all-closed', () => {});
+  closedAt = Date.now();
+  ctx.win.close();
+  await waitFor(() => ctx.win.isDestroyed(), 'window closed while recording', 8000);
+  check('closing the window while recording takes under 3 s', Date.now() - closedAt < 3000, `${Date.now() - closedAt} ms`);
+  check('the last chunks are saved when the window closes', acceptedAfterClose >= 1, `${acceptedAfterClose} chunk(s) after close`);
+  check('the recording is finished when the window closes', !recorder.active);
+  const closeFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && !beforeClose.has(f));
+  const closeInfo = closeFiles[0] ? await inspectRecording(path.join(recordingsFolder, closeFiles[0])) : {};
+  check('the recording saved on close plays', closeInfo.width > 0 && closeInfo.seconds >= 1, JSON.stringify(closeInfo));
 
   server.close();
   const ok = finish();

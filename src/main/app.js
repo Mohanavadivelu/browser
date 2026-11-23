@@ -29,6 +29,9 @@ const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
 const SESSION_SAVE_DELAY_MS = 1000;
 const DOWNLOAD_BROADCAST_MS = 200;
+// How long the toolbar gets to stop its capture and send the last chunks before the recording
+// is closed without them.
+const CAPTURE_STOP_TIMEOUT_MS = 3000;
 
 const BLOCK_MESSAGES = {
   'blocked-scheme': 'Blocked: only http and https addresses can be opened.',
@@ -128,16 +131,26 @@ async function start(options = {}) {
       pushState();
     },
     notify,
-    onSegment: (filePath, durationMs, final) => {
+    onFailure: () => { stopCapture(); },
+    onSegment: (filePath, durationMs, final, { failed = false } = {}) => {
       if (recorder.removeIfEmpty(filePath)) {
-        if (final) notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
+        if (final && !failed) notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
         return;
       }
       recordingsIndex.set(path.basename(filePath), durationMs);
-      if (final) notify(`Recording saved: ${filePath}`);
+      // After a write error the error notice stays up instead of a "saved" message.
+      if (final && !failed) notify(`Recording saved: ${filePath}`);
       broadcastToLibrary('recordings:changed');
     },
   });
+
+  // Asks the toolbar to stop its capture, so the chunks it still holds are written, and makes
+  // sure the recording ends even if the toolbar does not answer in time.
+  const stopCapture = async () => {
+    if (!recorder.active) return;
+    if (!ui.webContents.isDestroyed()) ui.webContents.send('recording:command', 'stop');
+    if (!(await recorder.whenIdle(CAPTURE_STOP_TIMEOUT_MS))) await recorder.finish();
+  };
 
   const onBlocked = (_target, reason) => {
     if (reason === 'empty') return;
@@ -350,12 +363,21 @@ async function start(options = {}) {
   host.on('mode-change', pushState);
   tabs.on('change', pushState);
 
+  // A running recording is stopped through the toolbar first, so its last second is kept.
+  let closing = false;
   win.on('close', (event) => {
     saveSession();
     history.flush();
     if (!recorder.active) return;
     event.preventDefault();
-    recorder.finish().then(() => win.close());
+    if (closing) return;
+    closing = true;
+    stopCapture()
+      .catch((error) => console.error(`Could not stop the recording: ${error.message}`))
+      .finally(() => {
+        if (recorder.active) win.destroy();
+        else win.close();
+      });
   });
   win.on('closed', () => {
     if (options.quitOnClose !== false) app.quit();
@@ -376,7 +398,7 @@ async function start(options = {}) {
 
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
-    ui, indicator, find, win, idle, actions, saveSession,
+    ui, indicator, find, win, idle, actions, saveSession, stopCapture,
   };
 }
 
