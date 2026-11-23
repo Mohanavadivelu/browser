@@ -265,6 +265,12 @@ async function main() {
   check('a paused recording is shorter than the elapsed time', length !== null && length > 3500 && length < wall - 1500, `${length} ms of ${wall} ms`);
   const pausedInfo = await inspectRecording(path.join(recordingsFolder, pausedName));
   check('a paused recording still plays', pausedInfo.width > 0 && pausedInfo.seconds > 1, JSON.stringify(pausedInfo));
+  check('players see the recording length', pausedInfo.duration > 1 && Math.abs(pausedInfo.duration * 1000 - length) < 100,
+    `${pausedInfo.duration} s in the file, ${length} ms listed`);
+  check('the recording has a seek point at least every 2.5 s', pausedInfo.cuePoints >= Math.floor(pausedInfo.duration / 2.5) && pausedInfo.cuePoints >= 2,
+    `${pausedInfo.cuePoints} points in ${pausedInfo.duration} s`);
+  check('jumping to 70% of a recording works at once', Math.abs(pausedInfo.seekedTo - pausedInfo.seekTarget) < 0.1 && pausedInfo.seekMs < 2000,
+    `to ${pausedInfo.seekedTo} s of ${pausedInfo.duration} s in ${pausedInfo.seekMs} ms`);
 
   // ---------- Recording: quality ----------
   settings.update({ recordingQuality: 'low' });
@@ -305,6 +311,9 @@ async function main() {
   check('both parts contain video', sizes.every((size) => size > 5000), sizes.join(', '));
   const partTwo = await inspectRecording(path.join(recordingsFolder, partTwoName ?? newFiles[0]));
   check('the second part plays', partTwo.width > 0 && partTwo.seconds > 1, JSON.stringify(partTwo));
+  const partOne = await inspectRecording(path.join(recordingsFolder, newFiles.find((f) => f !== partTwoName) ?? newFiles[0]));
+  check('both parts report their length to players', partOne.duration > 0.5 && partTwo.duration > 0.5,
+    `${partOne.duration} s and ${partTwo.duration} s`);
 
   // ---------- Follow-tab switched off ----------
   settings.update({ recordingFollowTab: false });

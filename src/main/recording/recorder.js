@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { openRecordingFile } = require('./storage');
+const { WebmIndexer, applyIndex } = require('./webm');
 
 const AUTHORIZATION_WINDOW_MS = 15000;
 
@@ -111,18 +112,43 @@ class Recorder {
     }
     const date = new Date();
     try {
-      this.file = openRecordingFile(this.getFolder(), date, 1);
+      this.file = this.openPart(date, 1);
     } catch (error) {
       this.notify(`Could not create the recording file: ${error.message}`, 'error');
       return { ok: false, reason: 'file-error' };
     }
-    this.watch(this.file);
     this.session = { date, part: 1 };
     this.clock.start();
     this.segmentStartMs = 0;
     this.authorizedUntil = this.now() + AUTHORIZATION_WINDOW_MS;
     this.onChange();
     return { ok: true };
+  }
+
+  // Each part is written through a WebmIndexer, so it gets a length and a seek index when it closes.
+  openPart(date, part) {
+    const file = openRecordingFile(this.getFolder(), date, part);
+    file.indexer = new WebmIndexer();
+    this.watch(file);
+    return file;
+  }
+
+  // Closes a part's file and adds its index. Returns the part's length in milliseconds as stored
+  // in the file, or null if the file has no index (a write error, or an unexpected format).
+  async closePart(file) {
+    if (!file.failed && !file.stream.destroyed) {
+      const rest = file.indexer.flush();
+      if (rest.length) file.stream.write(rest);
+    }
+    await closeStream(file.stream);
+    if (file.failed) return null;
+    try {
+      const plan = file.indexer.finalize();
+      return applyIndex(file.filePath, plan) ? plan.duration : null;
+    } catch (error) {
+      console.error(`Could not index ${path.basename(file.filePath)}: ${error.message}`);
+      return null;
+    }
   }
 
   // A write error on the current part ends the recording: `onFailure` asks the interface to stop
@@ -177,7 +203,8 @@ class Recorder {
     const buffer = chunk instanceof ArrayBuffer
       ? Buffer.from(chunk)
       : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    this.file.stream.write(buffer);
+    const bytes = this.file.indexer.push(buffer);
+    if (bytes.length) this.file.stream.write(bytes);
     return true;
   }
 
@@ -200,33 +227,33 @@ class Recorder {
     const durationMs = this.clock.elapsed() - this.segmentStartMs;
     let next;
     try {
-      next = openRecordingFile(this.getFolder(), this.session.date, this.session.part + 1);
+      next = this.openPart(this.session.date, this.session.part + 1);
     } catch (error) {
       this.notify(`Could not create the next recording file: ${error.message}`, 'error');
       await this.finish();
       return { ok: false, reason: 'file-error' };
     }
-    this.watch(next);
     this.file = next;
     this.session.part += 1;
     this.segmentStartMs = this.clock.elapsed();
     this.authorizedUntil = this.now() + AUTHORIZATION_WINDOW_MS;
-    await closeStream(previous.stream);
-    this.onSegment(previous.filePath, durationMs, false);
+    const indexedMs = await this.closePart(previous);
+    this.onSegment(previous.filePath, indexedMs ?? durationMs, false);
     this.onChange();
     return { ok: true };
   }
 
   async finish() {
     if (!this.active) return null;
-    const { filePath, stream, failed = false } = this.file;
+    const file = this.file;
+    const { filePath, failed = false } = file;
     const durationMs = this.clock.elapsed() - this.segmentStartMs;
     this.file = null;
     this.session = null;
     this.authorizedUntil = 0;
     this.clock.reset();
-    await closeStream(stream);
-    this.onSegment(filePath, durationMs, true, { failed });
+    const indexedMs = await this.closePart(file);
+    this.onSegment(filePath, indexedMs ?? durationMs, true, { failed });
     this.onChange();
     this.settleIdle();
     return filePath;

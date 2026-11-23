@@ -139,6 +139,8 @@ let retargeting = false;
 let retargetAgain = false;
 let stopAfterRetarget = false;
 
+const KEYFRAME_INTERVAL_MS = 2000;
+
 function qualitySettings(key) {
   return state.qualities.find((quality) => quality.key === key) ?? state.qualities[1];
 }
@@ -173,6 +175,8 @@ async function beginCapture(qualityKey) {
     mimeType,
     videoBitsPerSecond: quality.videoBitsPerSecond,
     audioBitsPerSecond: quality.audioBitsPerSecond,
+    // A keyframe every 2 s gives the seek index a point at least every 2 s.
+    videoKeyFrameIntervalDuration: KEYFRAME_INTERVAL_MS,
   });
   const current = { recorder, final: true, pending: Promise.resolve(), stopped: null };
 
