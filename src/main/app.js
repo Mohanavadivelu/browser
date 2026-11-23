@@ -343,15 +343,20 @@ async function start(options = {}) {
   shortcutHandler = createShortcutHandler({ tabs, host, ui, actions });
   for (const view of [ui, indicator, find]) trackInput(view.webContents);
 
-  const rendererUrl = pathToFileURL(RENDERER_DIR).href;
-  const isTrustedSender = (event) => {
-    const trusted = new Set([ui, indicator, find].map((view) => view.webContents.id));
-    for (const contents of tabs.internalContents()) trusted.add(contents.id);
-    return trusted.has(event.sender.id) &&
-      event.senderFrame === event.sender.mainFrame &&
-      event.senderFrame.url.startsWith(rendererUrl);
+  // The trailing slash keeps a sibling folder such as "renderer-old" from matching.
+  const rendererUrl = `${pathToFileURL(RENDERER_DIR).href}/`;
+  // Which of the browser's own pages sent an IPC call, or null for anything else.
+  const senderRole = (event) => {
+    const frame = event.senderFrame;
+    if (!frame || frame !== event.sender.mainFrame || !frame.url.startsWith(rendererUrl)) return null;
+    const id = event.sender.id;
+    if (id === ui.webContents.id) return 'toolbar';
+    if (id === indicator.webContents.id) return 'indicator';
+    if (id === find.webContents.id) return 'find';
+    if (tabs.internalContents().some((contents) => contents.id === id)) return 'library';
+    return null;
   };
-  const ipc = createIpc(ipcMain, isTrustedSender);
+  const ipc = createIpc(ipcMain, senderRole);
 
   const context = {
     app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,

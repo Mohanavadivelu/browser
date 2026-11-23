@@ -13,9 +13,10 @@ const { isCertificateError } = require('./security/certificates');
 class TabManager extends EventEmitter {
   constructor({
     host, sessions, newTabPage, warningPage, libraryPage, preloadPath, zoom,
-    getEngine, getHome, onBlocked, onInput,
+    getEngine, getHome, onBlocked, onInput, fetchFavicon = require('./favicons').fetchFavicon,
   }) {
     super();
+    this.fetchFavicon = fetchFavicon;
     this.host = host;
     this.sessions = sessions;
     this.newTabPage = newTabPage;
@@ -104,9 +105,20 @@ class TabManager extends EventEmitter {
       this.emit('titled', tab, contents.getURL(), title);
       changed();
     });
+    // The icon is fetched here, through the tab's own session, and passed on as a data: URL.
     contents.on('page-favicon-updated', (_event, favicons) => {
-      tab.favicon = favicons.find((icon) => icon.startsWith('https:')) ?? '';
-      changed();
+      const source = favicons.find((icon) => isAllowedUrl(icon)) ?? '';
+      tab.faviconSource = source;
+      if (!source) {
+        tab.favicon = '';
+        changed();
+        return;
+      }
+      this.fetchFavicon(contents.session, source).then((dataUrl) => {
+        if (tab.faviconSource !== source || contents.isDestroyed()) return;
+        tab.favicon = dataUrl;
+        changed();
+      });
     });
     contents.on('enter-html-full-screen', () => this.host.setHtmlFullscreen(true));
     contents.on('leave-html-full-screen', () => this.host.setHtmlFullscreen(false));

@@ -19,17 +19,32 @@ const PAGES = {
   '/other': '<!doctype html><title>Other Page</title><body>other</body>',
   '/text': '<!doctype html><title>Text Page</title><body><p>banana apple banana</p><p>banana cherry</p><p>Banana split and banana bread</p></body>',
 };
+// A 1x1 red PNG for the tab icon test.
+const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
 const ANIMATED = '<!doctype html><title>Animated</title><style>@keyframes m{from{left:0}to{left:70vw}}' +
   'body{margin:0}h1{margin:0;height:200px;background:#e00}#b{position:absolute;top:240px;width:120px;height:120px;background:#06c;animation:m 2s linear infinite alternate}</style><h1></h1><div id=b></div>';
 
 async function main() {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
   const work = makeTempDir();
+  const iconRequests = []; // the Cookie header of each request for /icon.png
   const server = http.createServer((req, res) => {
     if (req.url === '/setup.exe') {
       res.setHeader('content-type', 'application/octet-stream');
       res.setHeader('content-disposition', 'attachment; filename="setup.exe"');
       res.end('MZ-not-a-real-program');
+      return;
+    }
+    if (req.url === '/icon-page') {
+      res.setHeader('set-cookie', 'icon-probe=private; Path=/');
+      res.setHeader('content-type', 'text/html');
+      res.end('<!doctype html><title>Icon Page</title><link rel="icon" href="/icon.png"><p>icon</p>');
+      return;
+    }
+    if (req.url === '/icon.png') {
+      iconRequests.push(req.headers.cookie ?? '');
+      res.setHeader('content-type', 'image/png');
+      res.end(TINY_PNG);
       return;
     }
     if (req.url === '/disk.iso' || req.url === '/renamed.txt') {
@@ -157,6 +172,20 @@ async function main() {
   await waitFor(() => privateTab2.view.webContents.getURL().endsWith('/anim-private'), 'private page loaded');
   check('private tabs are never added to history', history.entries.length === before);
   tabs.close(privateTab2.id);
+
+  // ---------- Tab icons ----------
+  // The page sets a cookie in the private tab's session; only that session sends it back with
+  // the icon request, so the cookie shows which session fetched the icon.
+  const iconTab = tabs.create({ url: `${base}/icon-page`, isPrivate: true });
+  await waitFor(() => iconTab.favicon.startsWith('data:'), 'private tab icon', 10000);
+  check('tab icons reach the toolbar as data: URLs', iconTab.favicon.startsWith('data:image/png;base64,'), iconTab.favicon.slice(0, 30));
+  check("a private tab's icon is fetched through its own session", iconRequests.length > 0 && iconRequests.every((cookie) => /icon-probe=private/.test(cookie)),
+    JSON.stringify(iconRequests));
+  const stripIcon = () => evalIn(ui, "document.querySelector('.tab.active img.fav')?.src ?? ''");
+  await waitFor(async () => (await stripIcon()) !== '', 'icon shown in the tab strip').catch(() => {});
+  const shownIcon = await stripIcon();
+  check('the toolbar shows the icon without loading it itself', shownIcon.startsWith('data:image/png'), shownIcon.slice(0, 30));
+  tabs.close(iconTab.id);
 
   // ---------- Library pages ----------
   const webTabCount = tabs.order.length;

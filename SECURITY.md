@@ -15,10 +15,12 @@ Web pages are untrusted. The browser keeps them away from your files, from the a
 | Certificates | Invalid HTTPS certificates show a warning page with no way to continue. | `src/main/tabs.js`, `src/renderer/warning.html` |
 | Downloads | Executable and script file types are refused. Other files need an explicit Save dialog. "Show in folder" is the only action offered on a finished download. | `src/main/security/downloads.js`, `src/main/download-manager.js` |
 | Right-click menu | Built in the main process; only `http(s)` links and images are offered, so a page cannot place an unsafe address in it. | `src/main/context-menu.js` |
-| IPC | Every handler checks the sender is one of the browser's own pages (main frame, app URL) and validates the arguments. The settings page can change only a fixed list of settings. | `src/main/security/ipc-validate.js`, `src/main/ipc-handlers.js`, `src/main/storage/settings.js` |
+| IPC | Every handler checks the sender is one of the browser's own pages (main frame, app URL), that this page is allowed that call, and validates the arguments. Each page gets only the calls it needs: the History / Downloads / Recordings / Settings tab, which shows text from websites, cannot control recording, tabs or navigation, and the toolbar cannot reach files, settings or history. The settings page can change only a fixed list of settings. | `src/main/security/ipc-validate.js`, `src/main/ipc-handlers.js`, `src/main/storage/settings.js` |
 | Recordings files | Rename, open, show and delete accept only plain `.webm` / `.png` file names inside the recordings folder; deleting moves the file to the Recycle Bin. | `src/main/recording/library.js` |
 | Content-Security-Policy | The browser UI and internal pages use strict CSPs with no inline scripts. Library pages build their content with `textContent`, never `innerHTML`, because page titles and addresses come from websites. | `src/renderer/*.html`, `src/renderer/library.js` |
 | User agent | The Electron and app identifiers are removed from the user agent. | `src/main/app.js` |
+| Tab icons | Each tab's icon is fetched by the main process through that tab's own session (a private tab's stays in its private session) and handed to the toolbar as a `data:` URL, only if it is a real image under 256 KB. The toolbar itself has no network access (`img-src data:`). | `src/main/favicons.js`, `src/main/tabs.js` |
+| Packaged app | Electron fuses are set at build time: the app cannot run as plain Node.js (`ELECTRON_RUN_AS_NODE`), ignores `NODE_OPTIONS` and `--inspect`, loads code only from its `app.asar` and checks that archive's integrity, and encrypts cookies on disk. | `package.json` (`build.electronFuses`) |
 
 ## Recording
 
@@ -42,7 +44,8 @@ Web pages are untrusted. The browser keeps them away from your files, from the a
 - When a recording follows you to another tab, each tab becomes its own file; switching tabs very quickly can leave short or empty parts (empty parts are discarded).
 - A minimized window cannot be recorded, because Windows stops painting it.
 - The pointer is hidden with a page style, so a native video control inside a page may still show it.
-- Favicons are fetched by the browser chrome session (HTTPS only).
+- The app's own pages are loaded from `file://`, so Electron's extra `file://` privileges stay on (turning that fuse off stops these pages loading). Moving them to a custom `app://` protocol would allow it to be turned off.
+- The full-screen pointer is hidden by a style added to the page, which the page itself can remove; it only affects that page's own pointer.
 
 ## Release checklist
 

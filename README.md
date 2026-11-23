@@ -84,7 +84,7 @@ src/
 mockup/            Original design mockup
 tests/
   unit/            node:test unit tests
-  smoke/           End-to-end Electron tests (run.js, features.js, restore.js)
+  smoke/           End-to-end Electron tests (run.js, features.js, restore.js; launch.js runs them)
 ```
 
 ## Build the .exe
@@ -101,5 +101,7 @@ This creates, in `dist\` (not committed to git):
 The build is **not code-signed**, so Windows SmartScreen may show an "unknown publisher" warning. Signing needs a code-signing certificate (see the release checklist in [SECURITY.md](SECURITY.md)). The app icon is `build\icon.ico`.
 
 ## Status
+
+Version 0.4.0: recordings now have a length and a seek index, so players show their length and can jump around; recording survives closing the window and stops cleanly on disk errors; downloads renamed to a blocked type in the Save dialog are refused; each of the browser's own pages can call only what it needs; tab icons are fetched through the tab's own session; and the packaged app is locked down with Electron fuses. Tests run on GitHub Actions for every push.
 
 Version 0.3.0: core browsing features (right-click menu, find, zoom, history, downloads, settings, restore tabs), recording controls (pause, hotkeys, quality, screenshot, recordings list) and recording that follows the active tab. Windows installer and portable builds.

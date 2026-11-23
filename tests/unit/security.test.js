@@ -10,6 +10,7 @@ const { isDangerousFile, guardDownload } = require('../../src/main/security/down
 const { DownloadManager } = require('../../src/main/download-manager');
 const { isCertificateError } = require('../../src/main/security/certificates');
 const { validators, createIpc } = require('../../src/main/security/ipc-validate');
+const { registerIpcHandlers } = require('../../src/main/ipc-handlers');
 const { baseWebPreferences, contentPreferences } = require('../../src/main/sandbox/web-preferences');
 const { sanitizeSettings } = require('../../src/main/storage/settings');
 
@@ -162,18 +163,62 @@ test('certificate failures are recognised', () => {
   assert.equal(isCertificateError(-105), false);
 });
 
-test('IPC rejects untrusted senders and malformed arguments', async () => {
+function fakeIpcMain() {
   const handlers = new Map();
-  const ipc = createIpc({ removeHandler: () => {}, handle: (channel, fn) => handlers.set(channel, fn) }, (event) => event.trusted);
-  let calls = 0;
-  ipc.handle('tabs:close', validators.tabId, () => { calls += 1; return 'ok'; });
-  const invoke = handlers.get('tabs:close');
+  return { handlers, removeHandler: () => {}, handle: (channel, fn) => handlers.set(channel, fn) };
+}
 
-  assert.equal(invoke({ trusted: true }, 3), 'ok');
-  assert.throws(() => invoke({ trusted: false }, 3), /untrusted sender/);
-  assert.throws(() => invoke({ trusted: true }, '3'), /invalid arguments/);
-  assert.throws(() => invoke({ trusted: true }, 3, 'extra'), /invalid arguments/);
+test('IPC rejects untrusted senders, other pages and malformed arguments', async () => {
+  const ipcMain = fakeIpcMain();
+  const ipc = createIpc(ipcMain, (event) => event.role ?? null);
+  let calls = 0;
+  ipc.handle('tabs:close', ['toolbar'], validators.tabId, () => { calls += 1; return 'ok'; });
+  const invoke = ipcMain.handlers.get('tabs:close');
+
+  assert.equal(invoke({ role: 'toolbar' }, 3), 'ok');
+  assert.throws(() => invoke({}, 3), /untrusted sender/);
+  assert.throws(() => invoke({ role: 'library' }, 3), /from the library page/);
+  assert.throws(() => invoke({ role: 'toolbar' }, '3'), /invalid arguments/);
+  assert.throws(() => invoke({ role: 'toolbar' }, 3, 'extra'), /invalid arguments/);
   assert.equal(calls, 1);
+});
+
+test('every IPC channel must name the pages allowed to call it', () => {
+  const ipc = createIpc(fakeIpcMain(), () => 'toolbar');
+  assert.throws(() => ipc.handle('x', validators.none, () => {}), /must name the pages/);
+  assert.throws(() => ipc.handle('x', [], validators.none, () => {}), /must name the pages/);
+  assert.throws(() => ipc.handle('x', ['website'], validators.none, () => {}), /must name the pages/);
+});
+
+test('each of the browser pages can call only the channels it needs', () => {
+  const ipcMain = fakeIpcMain();
+  registerIpcHandlers(createIpc(ipcMain, (event) => event.role), {});
+  // Arguments no validator accepts: an allowed page is stopped by validation, never reaching
+  // a handler; a page that is not allowed is stopped before that.
+  const junk = [Symbol('a'), Symbol('b'), Symbol('c')];
+  const refused = (role, channel) => {
+    try {
+      ipcMain.handlers.get(channel)({ role }, ...junk);
+    } catch (error) {
+      return /from the \w+ page/.test(error.message);
+    }
+    return false;
+  };
+  const channels = [...ipcMain.handlers.keys()];
+  const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
+
+  assert.equal(channels.length, 43);
+  assert.deepEqual(allowed('indicator'), ['recording:request-pause', 'recording:request-stop', 'ui:get-state']);
+  assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
+  // The library tab shows text from websites: no recording, navigation or tab controls.
+  assert.ok(allowed('library').every((channel) => /^(history|downloads|recordings|settings):|^tabs:open$/.test(channel)), allowed('library').join());
+  // The toolbar has no access to files, settings or history.
+  assert.ok(allowed('toolbar').every((channel) => !/^(history|downloads|recordings|settings):/.test(channel)), allowed('toolbar').join());
+  assert.ok(allowed('toolbar').includes('recording:chunk'));
+  // Every channel is open to exactly the pages listed, and to at least one of them.
+  for (const channel of channels) {
+    assert.ok(['toolbar', 'indicator', 'find', 'library'].some((role) => !refused(role, channel)), channel);
+  }
 });
 
 test('recording chunks must be non-empty binary data within the size limit', () => {

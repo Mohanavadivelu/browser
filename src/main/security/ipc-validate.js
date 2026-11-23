@@ -30,13 +30,24 @@ const validators = {
   },
 };
 
-// Every IPC handler rejects unknown senders and malformed arguments before running.
-function createIpc(ipcMain, isTrustedSender) {
+// The browser's own pages, by what they may do. Each channel names the pages allowed to call it.
+const ROLES = Object.freeze(['toolbar', 'indicator', 'find', 'library']);
+
+// Every IPC handler rejects unknown senders, pages that are not allowed that channel, and
+// malformed arguments before running. `senderRole(event)` returns one of ROLES, or null for
+// anything that is not one of the browser's own pages.
+function createIpc(ipcMain, senderRole) {
   return {
-    handle(channel, validate, handler) {
+    handle(channel, roles, validate, handler) {
+      if (!Array.isArray(roles) || roles.length === 0 || !roles.every((role) => ROLES.includes(role))) {
+        throw new Error(`IPC "${channel}" must name the pages allowed to call it`);
+      }
+      const allowed = new Set(roles);
       ipcMain.removeHandler(channel);
       ipcMain.handle(channel, (event, ...args) => {
-        if (!isTrustedSender(event)) throw new Error(`Rejected IPC "${channel}" from an untrusted sender`);
+        const role = senderRole(event);
+        if (!role) throw new Error(`Rejected IPC "${channel}" from an untrusted sender`);
+        if (!allowed.has(role)) throw new Error(`Rejected IPC "${channel}" from the ${role} page`);
         if (!validate(...args)) throw new Error(`Rejected IPC "${channel}": invalid arguments`);
         return handler(event, ...args);
       });
@@ -44,4 +55,4 @@ function createIpc(ipcMain, isTrustedSender) {
   };
 }
 
-module.exports = { validators, createIpc, MAX_CHUNK_BYTES };
+module.exports = { validators, createIpc, ROLES, MAX_CHUNK_BYTES };

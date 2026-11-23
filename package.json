@@ -1,7 +1,7 @@
 {
   "name": "simple-browser",
   "productName": "Simple Browser",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A simple, sandboxed Windows browser with full-screen mode and consent-based page recording.",
   "main": "src/main/main.js",
   "private": true,
@@ -39,7 +39,15 @@
     "portable": {
       "artifactName": "Simple-Browser-${version}-portable.exe"
     },
-    "artifactName": "Simple-Browser-Setup-${version}.${ext}"
+    "artifactName": "Simple-Browser-Setup-${version}.${ext}",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
   },
   "engines": {
     "node": ">=20"
