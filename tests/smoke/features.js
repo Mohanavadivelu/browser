@@ -1,0 +1,311 @@
+'use strict';
+
+// Smoke test for find, zoom, history, the library pages, screenshots, downloads policy,
+// recording pause, recording quality and recording that follows the active tab.
+// Run with: npm run smoke
+const fs = require('node:fs');
+const http = require('node:http');
+const path = require('node:path');
+const { app } = require('electron');
+const { start } = require('../../src/main/app');
+const {
+  sleep, waitFor, createChecker, makeTempDir, trackBytes, ensureWindowReady, inspectRecording,
+} = require('./helpers');
+
+const { check, finish } = createChecker();
+
+const PAGES = {
+  '/': '<!doctype html><title>Home Page</title><body style="margin:0"><h1 style="margin:0;height:240px;background:#e00;color:#fff">HOME</h1></body>',
+  '/other': '<!doctype html><title>Other Page</title><body>other</body>',
+  '/text': '<!doctype html><title>Text Page</title><body><p>banana apple banana</p><p>banana cherry</p><p>Banana split and banana bread</p></body>',
+};
+const ANIMATED = '<!doctype html><title>Animated</title><style>@keyframes m{from{left:0}to{left:70vw}}' +
+  'body{margin:0}h1{margin:0;height:200px;background:#e00}#b{position:absolute;top:240px;width:120px;height:120px;background:#06c;animation:m 2s linear infinite alternate}</style><h1></h1><div id=b></div>';
+
+async function main() {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  const work = makeTempDir();
+  const server = http.createServer((req, res) => {
+    if (req.url === '/setup.exe') {
+      res.setHeader('content-type', 'application/octet-stream');
+      res.setHeader('content-disposition', 'attachment; filename="setup.exe"');
+      res.end('MZ-not-a-real-program');
+      return;
+    }
+    if (req.url === '/report.txt') {
+      res.setHeader('content-type', 'application/octet-stream');
+      res.setHeader('content-disposition', 'attachment; filename="report.txt"');
+      res.end('quarterly numbers\n'.repeat(1000));
+      return;
+    }
+    res.setHeader('content-type', 'text/html');
+    res.end(req.url.startsWith('/anim') ? ANIMATED : PAGES[req.url] ?? PAGES['/other']);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const ctx = await start({
+    userDataDir: path.join(work, 'profile'),
+    skipSingleInstanceLock: true,
+    autoConsent: true,
+    idleMs: 60_000,
+    downloadDir: path.join(work, 'downloads'),
+  });
+  const { host, tabs, recorder, settings, history, ui, find, actions, recordingsIndex } = ctx;
+  const bytes = trackBytes(recorder);
+  const startRecording = async () => {
+    await ensureWindowReady(ctx);
+    ui.webContents.send('recording:command', 'start');
+  };
+  const recordingsFolder = path.join(work, 'recordings');
+  settings.update({ recordingFolder: recordingsFolder });
+  await waitFor(() => !ui.webContents.isLoading() && !find.webContents.isLoading() && ctx.win.isVisible(), 'window ready');
+  ui.webContents.on('console-message', (event) => { if (event.level === 'error') console.log(`[chrome error] ${event.message}`); });
+
+  const notices = [];
+  const originalSend = ui.webContents.send.bind(ui.webContents);
+  ui.webContents.send = (channel, ...args) => {
+    if (channel === 'ui:notice') notices.push(args[0].text);
+    return originalSend(channel, ...args);
+  };
+  const noticeLike = (pattern) => notices.some((text) => pattern.test(text));
+  const load = async (url, tab = tabs.active) => {
+    tab.view.webContents.loadURL(url).catch(() => {});
+    await waitFor(() => tab.view.webContents.getURL() === url && !tab.view.webContents.isLoading(), `load ${url}`);
+  };
+  const evalIn = (view, code) => view.webContents.executeJavaScript(code);
+
+  // ---------- Defaults ----------
+  check('search engine defaults to Google', settings.data.searchEngine === 'google');
+  check('history is off by default', settings.data.historyEnabled === false);
+  check('restoring tabs is off by default', settings.data.restoreTabs === false);
+
+  // ---------- Find in page ----------
+  await load(`${base}/text`);
+  actions.find();
+  await waitFor(() => host.mode.findOpen, 'find bar opens');
+  const findBounds = find.getBounds();
+  check('find bar opens below the toolbar', find.getVisible() && findBounds.y >= 116, `y=${findBounds.y}`);
+  await sleep(300);
+  await evalIn(find, "(() => { const i = document.getElementById('query'); i.value = 'banana'; i.dispatchEvent(new Event('input')); })()");
+  await waitFor(async () => (await evalIn(find, "document.getElementById('count').textContent")) !== '', 'find result');
+  const count = await evalIn(find, "document.getElementById('count').textContent");
+  check('find counts every match (case-insensitive)', count === '1/5', count);
+  await evalIn(find, "window.browserApi.find.query('banana', { next: true, forward: true })");
+  await waitFor(async () => (await evalIn(find, "document.getElementById('count').textContent")) === '2/5', 'next match');
+  check('find moves to the next match', true);
+  await evalIn(find, "(() => { const i = document.getElementById('query'); i.value = 'zzzz'; i.dispatchEvent(new Event('input')); })()");
+  await waitFor(async () => (await evalIn(find, "document.getElementById('count').textContent")) === 'No results', 'no results');
+  check('find reports when there is no match', true);
+  await evalIn(find, "window.browserApi.find.close()");
+  await waitFor(() => !host.mode.findOpen, 'find bar closes');
+  check('closing find hides the bar', !find.getVisible());
+
+  // ---------- Keyboard shortcuts ----------
+  const tabContents = tabs.active.view.webContents;
+  tabContents.focus();
+  tabContents.sendInputEvent({ type: 'keyDown', keyCode: 'F', modifiers: ['control'] });
+  await sleep(400);
+  const shortcutWorks = host.mode.findOpen;
+  check('Ctrl+F opens find from the page', shortcutWorks);
+  if (shortcutWorks) {
+    find.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+    await sleep(300);
+    check('Esc closes find', !host.mode.findOpen);
+  }
+  host.closeFind();
+
+  // ---------- Zoom ----------
+  await load(`${base}/`);
+  actions.zoom(1);
+  check('zoom in goes to 110%', Math.abs(tabs.active.view.webContents.getZoomFactor() - 1.1) < 0.001);
+  check('zoom is saved per site', settings.data.zoom['127.0.0.1'] === 1.1, JSON.stringify(settings.data.zoom));
+  await load(`${base}/other`);
+  check('zoom is remembered after navigating within the site', Math.abs(tabs.active.view.webContents.getZoomFactor() - 1.1) < 0.001);
+  await sleep(400);
+  const chip = await evalIn(ui, "(() => { const c = document.getElementById('zoom'); return c.classList.contains('show') ? c.textContent : ''; })()");
+  check('the address bar shows the zoom level', chip === '110%', chip);
+  await evalIn(ui, "document.getElementById('zoom').click()");
+  await waitFor(() => Math.abs(tabs.active.view.webContents.getZoomFactor() - 1) < 0.001, 'zoom reset');
+  check('clicking the zoom chip resets zoom', !('127.0.0.1' in settings.data.zoom));
+  const privateTab = tabs.create({ url: `${base}/`, isPrivate: true });
+  await waitFor(() => privateTab.view.webContents.getURL() === `${base}/`, 'private tab loaded');
+  actions.zoom(1);
+  check('private tabs do not save zoom', Object.keys(settings.data.zoom).length === 0);
+  tabs.close(privateTab.id);
+
+  // ---------- History ----------
+  await load(`${base}/`);
+  check('nothing is recorded while history is off', history.entries.length === 0);
+  settings.update({ historyEnabled: true });
+  await load(`${base}/text`);
+  await load(`${base}/other`);
+  check('history records pages once it is on', history.list().some((e) => e.url === `${base}/text`) && history.list().length >= 2);
+  check('history stores page titles', history.list().find((e) => e.url === `${base}/text`)?.title === 'Text Page');
+  const before = history.entries.length;
+  const privateTab2 = tabs.create({ url: `${base}/anim-private`, isPrivate: true });
+  await waitFor(() => privateTab2.view.webContents.getURL().endsWith('/anim-private'), 'private page loaded');
+  check('private tabs are never added to history', history.entries.length === before);
+  tabs.close(privateTab2.id);
+
+  // ---------- Library pages ----------
+  const webTabCount = tabs.order.length;
+  tabs.navigate('simple-browser://settings');
+  const internal = tabs.active;
+  await waitFor(() => internal.kind === 'internal' && !internal.view.webContents.isLoading() && internal.title === 'Settings', 'settings page loaded');
+  check('settings opens in its own tab', internal.kind === 'internal' && tabs.order.length === webTabCount + 1);
+  check('settings page shows the saved search engine',
+    (await evalIn(internal.view, "document.getElementById('searchEngine').value")) === 'google');
+  await evalIn(internal.view, "(() => { const s = document.getElementById('searchEngine'); s.value = 'bing'; s.dispatchEvent(new Event('change')); })()");
+  await waitFor(() => settings.data.searchEngine === 'bing', 'search engine saved');
+  check('changing a setting saves it', settings.data.searchEngine === 'bing');
+  await evalIn(internal.view, "(() => { const s = document.getElementById('searchEngine'); s.value = 'google'; s.dispatchEvent(new Event('change')); })()");
+  await waitFor(() => settings.data.searchEngine === 'google', 'search engine restored');
+  const patchResult = await evalIn(internal.view, "window.browserApi.settings.update({ bookmarks: [{ url: 'https://evil.example' }], zoom: { a: 3 } }).then((s) => Object.keys(s).includes('bookmarks'))");
+  check('settings page cannot change protected data', patchResult === false && settings.data.bookmarks.length === 0 && !settings.data.zoom.a);
+  tabs.navigate(`${base}/`);
+  await waitFor(() => tabs.active !== internal && tabs.active.kind === 'web', 'web address opens a new tab');
+  check('web addresses never load inside an internal tab', internal.view.webContents.getURL().includes('library.html'));
+  tabs.openInternal('history');
+  await waitFor(() => internal.title === 'History', 'history page');
+  await waitFor(async () => (await evalIn(internal.view, "document.querySelectorAll('#historyList .row').length")) >= 2, 'history rows');
+  check('history page lists visited pages', true);
+  await evalIn(internal.view, "document.getElementById('historyClear').click()");
+  await waitFor(() => history.entries.length === 0, 'history cleared');
+  check('history can be cleared', history.entries.length === 0);
+
+  // ---------- Screenshot ----------
+  const web = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');
+  tabs.activate(web.id);
+  await load(`${base}/`, web);
+  await sleep(500);
+  const shot = await actions.screenshot();
+  const png = shot ? fs.readFileSync(shot) : Buffer.alloc(0);
+  check('screenshot saves a PNG file', shot && png.subarray(1, 4).toString() === 'PNG' && png.length > 2000, shot ? `${png.length} bytes` : notices.at(-1));
+
+  // ---------- Downloads policy ----------
+  tabs.navigate(`${base}/setup.exe`);
+  await waitFor(() => noticeLike(/Blocked download of "setup\.exe"/), 'executable download blocked', 8000);
+  check('executable downloads are blocked with a message', true);
+  check('a blocked download is not tracked as a download', ctx.downloads.list().length === 0);
+
+  // A normal download is tracked and shown on the Downloads page.
+  tabs.navigate(`${base}/report.txt`);
+  await waitFor(() => ctx.downloads.list().some((d) => d.state === 'completed'), 'download completed', 10000);
+  const downloaded = ctx.downloads.list()[0];
+  check('a normal download completes and is tracked', downloaded.filename === 'report.txt' && downloaded.received === 18000,
+    JSON.stringify(downloaded));
+  check('the downloaded file is saved where expected', fs.existsSync(path.join(work, 'downloads', 'report.txt')));
+  tabs.openInternal('downloads');
+  const downloadsPage = tabs.active;
+  await waitFor(() => downloadsPage.title === 'Downloads', 'downloads page');
+  await waitFor(async () => (await evalIn(downloadsPage.view, "document.querySelectorAll('#downloadList .row').length")) === 1, 'download row');
+  const rowText = await evalIn(downloadsPage.view, "document.querySelector('#downloadList .row').textContent");
+  check('the downloads page lists the download as completed', /report\.txt/.test(rowText) && /Completed/.test(rowText) && /Show in folder/.test(rowText), rowText);
+
+  // ---------- Recordings page ----------
+  tabs.openInternal('recordings');
+  const library = tabs.active;
+  await waitFor(() => library.title === 'Recordings', 'recordings page');
+  await waitFor(async () => (await evalIn(library.view, "document.querySelectorAll('#recList .row').length")) >= 1, 'recordings listed');
+  const listed = await evalIn(library.view, 'window.browserApi.recordings.list().then((r) => r.entries.map((e) => e.name))');
+  check('recordings page lists the screenshot', shot && listed.includes(path.basename(shot)), listed.join(','));
+  const renamed = await evalIn(library.view, `window.browserApi.recordings.rename(${JSON.stringify(path.basename(shot))}, 'my shot')`);
+  check('a recording can be renamed', renamed.ok && fs.existsSync(path.join(recordingsFolder, 'my shot.png')), JSON.stringify(renamed));
+  const evil = await evalIn(library.view, "window.browserApi.recordings.rename('..\\\\..\\\\evil.png', 'x')");
+  check('rename refuses names outside the recordings folder', evil.ok === false);
+  tabs.activate(web.id);
+
+  // ---------- Recording: pause ----------
+  await load(`${base}/anim`, web);
+  const wallStart = Date.now();
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started');
+  await bytes.waitForMore('first recorded data');
+  await sleep(2500);
+  ui.webContents.send('recording:command', 'toggle-pause');
+  await waitFor(() => recorder.paused, 'recording paused');
+  const frozen = recorder.info;
+  await sleep(2500);
+  const badge = await evalIn(ui, "document.getElementById('recTime').textContent");
+  check('pause freezes the timer and shows PAUSED', recorder.info.baseMs === frozen.baseMs && /^PAUSED/.test(badge), badge);
+  ui.webContents.send('recording:command', 'toggle-pause');
+  await waitFor(() => !recorder.paused, 'recording resumed');
+  await sleep(2500);
+  ui.webContents.send('recording:command', 'stop');
+  await waitFor(() => !recorder.active, 'recording stopped');
+  await sleep(500);
+  const wall = Date.now() - wallStart;
+  const pausedFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm'));
+  const pausedName = pausedFiles[0];
+  const length = recordingsIndex.get(pausedName);
+  check('a paused recording is shorter than the elapsed time', length !== null && length > 3500 && length < wall - 1500, `${length} ms of ${wall} ms`);
+  const pausedInfo = await inspectRecording(path.join(recordingsFolder, pausedName));
+  check('a paused recording still plays', pausedInfo.width > 0 && pausedInfo.seconds > 1, JSON.stringify(pausedInfo));
+
+  // ---------- Recording: quality ----------
+  settings.update({ recordingQuality: 'low' });
+  await sleep(300);
+  await startRecording();
+  await waitFor(() => recorder.active, 'low-quality recording started');
+  await bytes.waitForMore('first low-quality data');
+  await sleep(2000);
+  ui.webContents.send('recording:command', 'stop');
+  await waitFor(() => !recorder.active, 'low-quality recording stopped');
+  await sleep(500);
+  const lowName = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && f !== pausedName)[0];
+  const lowInfo = await inspectRecording(path.join(recordingsFolder, lowName));
+  check('low quality limits the video to 720p width', lowInfo.width > 0 && lowInfo.width <= 1280, JSON.stringify(lowInfo));
+  settings.update({ recordingQuality: 'medium' });
+
+  // ---------- Recording follows the active tab ----------
+  const tabA = web;
+  await load(`${base}/anim-a`, tabA);
+  const beforeFiles = new Set(fs.readdirSync(recordingsFolder));
+  await startRecording();
+  await waitFor(() => recorder.active, 'follow recording started');
+  await bytes.waitForMore('first data of the follow recording');
+  await sleep(1500);
+  const tabB = tabs.create({ url: `${base}/anim-b` });
+  await waitFor(() => tabB.view.webContents.getURL().endsWith('/anim-b'), 'second tab loaded');
+  await waitFor(() => recorder.session?.part === 2, 'recording moved to a second part');
+  await bytes.waitForMore('data in the second part');
+  await sleep(2000);
+  check('the recording keeps going when the tab changes', recorder.active);
+  ui.webContents.send('recording:command', 'stop');
+  await waitFor(() => !recorder.active, 'follow recording stopped');
+  await sleep(800);
+  const newFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && !beforeFiles.has(f));
+  const partTwoName = newFiles.find((f) => /-part2\.webm$/.test(f));
+  check('switching tabs saves a second part', newFiles.length === 2 && Boolean(partTwoName), newFiles.join(', '));
+  const sizes = newFiles.map((f) => fs.statSync(path.join(recordingsFolder, f)).size);
+  check('both parts contain video', sizes.every((size) => size > 5000), sizes.join(', '));
+  const partTwo = await inspectRecording(path.join(recordingsFolder, partTwoName ?? newFiles[0]));
+  check('the second part plays', partTwo.width > 0 && partTwo.seconds > 1, JSON.stringify(partTwo));
+
+  // ---------- Follow-tab switched off ----------
+  settings.update({ recordingFollowTab: false });
+  tabs.activate(tabA.id);
+  const beforeOff = new Set(fs.readdirSync(recordingsFolder));
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started (follow off)');
+  await bytes.waitForMore('first data (follow off)');
+  await sleep(1000);
+  tabs.activate(tabB.id);
+  await sleep(2000);
+  ui.webContents.send('recording:command', 'stop');
+  await waitFor(() => !recorder.active, 'recording stopped (follow off)');
+  await sleep(600);
+  const offFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && !beforeOff.has(f));
+  check('with follow off, switching tabs keeps a single file', offFiles.length === 1, offFiles.join(', '));
+  settings.update({ recordingFollowTab: true });
+
+  server.close();
+  const ok = finish();
+  app.exit(ok ? 0 : 1);
+}
+
+main().catch((error) => {
+  console.error('SMOKE ERROR', error);
+  app.exit(2);
+});

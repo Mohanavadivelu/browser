@@ -56,7 +56,7 @@ test('certificate failures are recognised', () => {
 
 test('IPC rejects untrusted senders and malformed arguments', async () => {
   const handlers = new Map();
-  const ipc = createIpc({ handle: (channel, fn) => handlers.set(channel, fn) }, (event) => event.trusted);
+  const ipc = createIpc({ removeHandler: () => {}, handle: (channel, fn) => handlers.set(channel, fn) }, (event) => event.trusted);
   let calls = 0;
   ipc.handle('tabs:close', validators.tabId, () => { calls += 1; return 'ok'; });
   const invoke = handlers.get('tabs:close');

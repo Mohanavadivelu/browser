@@ -77,7 +77,7 @@ class FullscreenIdle {
   hideCursor() {
     this.cursorHidden = true;
     this.hideTabCursor();
-    for (const view of [this.host.ui, this.host.indicator]) {
+    for (const view of this.host.overlays) {
       const contents = view.webContents;
       contents.insertCSS(CHROME_CURSOR_CSS).then((key) => {
         if (this.cursorHidden) this.chromeKeys.set(contents, key);

@@ -2,9 +2,38 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { isAllowedUrl } = require('../security/navigation');
+const { isAllowedUrl, SEARCH_ENGINES, DEFAULT_ENGINE } = require('../security/navigation');
+const { QUALITY, DEFAULT_QUALITY } = require('../recording/quality');
 
 const MAX_BOOKMARKS = 200;
+const MAX_ZOOM_SITES = 500;
+const MAX_SESSION_TABS = 50;
+const ZOOM_RANGE = [0.25, 5];
+
+// Only these keys can be changed from the settings page.
+const EDITABLE_KEYS = Object.freeze([
+  'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab',
+]);
+
+function sanitizeZoom(raw) {
+  const zoom = {};
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return zoom;
+  for (const [host, factor] of Object.entries(raw)) {
+    if (Object.keys(zoom).length >= MAX_ZOOM_SITES) break;
+    if (host.length > 253 || typeof factor !== 'number' || !Number.isFinite(factor)) continue;
+    if (factor < ZOOM_RANGE[0] || factor > ZOOM_RANGE[1] || factor === 1) continue;
+    zoom[host] = factor;
+  }
+  return zoom;
+}
+
+function sanitizeSession(raw) {
+  const urls = Array.isArray(raw?.urls)
+    ? raw.urls.filter((url) => typeof url === 'string' && isAllowedUrl(url)).slice(0, MAX_SESSION_TABS)
+    : [];
+  const active = Number.isInteger(raw?.active) && raw.active >= 0 && raw.active < urls.length ? raw.active : 0;
+  return { urls, active };
+}
 
 function sanitizeSettings(raw) {
   const source = raw !== null && typeof raw === 'object' ? raw : {};
@@ -17,10 +46,30 @@ function sanitizeSettings(raw) {
     recordingFolder: typeof source.recordingFolder === 'string' && path.isAbsolute(source.recordingFolder)
       ? source.recordingFolder
       : null,
+    homePage: typeof source.homePage === 'string' && isAllowedUrl(source.homePage.trim())
+      ? new URL(source.homePage.trim()).href
+      : '',
+    searchEngine: Object.hasOwn(SEARCH_ENGINES, source.searchEngine) ? source.searchEngine : DEFAULT_ENGINE,
+    historyEnabled: source.historyEnabled === true,
+    restoreTabs: source.restoreTabs === true,
+    recordingQuality: Object.hasOwn(QUALITY, source.recordingQuality) ? source.recordingQuality : DEFAULT_QUALITY,
+    recordingFollowTab: source.recordingFollowTab !== false,
+    zoom: sanitizeZoom(source.zoom),
+    session: sanitizeSession(source.session),
   };
 }
 
-// Settings live in the user's profile folder as JSON; no history is stored anywhere.
+// Keeps only the fields the settings page may change.
+function pickEditable(partial) {
+  const picked = {};
+  if (partial === null || typeof partial !== 'object') return picked;
+  for (const key of EDITABLE_KEYS) {
+    if (Object.hasOwn(partial, key)) picked[key] = partial[key];
+  }
+  return picked;
+}
+
+// Settings live in the user's profile folder as JSON.
 class Settings {
   constructor(filePath) {
     this.filePath = filePath;
@@ -46,4 +95,4 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings };
+module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS };

@@ -10,7 +10,8 @@ const TOOLBAR_HEIGHT = 46;
 const BOOKMARKS_HEIGHT = 30;
 const NORMAL_CHROME_HEIGHT = TAB_BAR_HEIGHT + TOOLBAR_HEIGHT + BOOKMARKS_HEIGHT;
 const HOTZONE_HEIGHT = 6;
-const INDICATOR_SIZE = { width: 190, height: 34, margin: 8 };
+const INDICATOR_SIZE = { width: 260, height: 34, margin: 8 };
+const FIND_SIZE = { width: 380, height: 46 };
 const BACKGROUND = '#1a1b1e';
 
 function lockDown(contents) {
@@ -18,11 +19,11 @@ function lockDown(contents) {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
 }
 
-// Owns the window, the browser-chrome view and the layout of tab content around it.
+// Owns the window, the browser-chrome views and the layout of tab content around them.
 class BrowserWindow extends EventEmitter {
   constructor({ rendererDir, preloadPath }) {
     super();
-    this.mode = { fullscreen: false, htmlFullscreen: false, revealed: false, recording: false };
+    this.mode = { fullscreen: false, htmlFullscreen: false, revealed: false, recording: false, findOpen: false };
     this.contentViews = new Set();
     this.enteredFullscreenForHtml = false;
 
@@ -40,18 +41,23 @@ class BrowserWindow extends EventEmitter {
 
     this.ui = new WebContentsView({ webPreferences: uiPreferences(preloadPath) });
     this.indicator = new WebContentsView({ webPreferences: uiPreferences(preloadPath) });
-    for (const view of [this.ui, this.indicator]) {
+    this.find = new WebContentsView({ webPreferences: uiPreferences(preloadPath) });
+    this.overlays = [this.ui, this.indicator, this.find];
+    for (const view of this.overlays) {
       view.setBackgroundColor('#00000000');
       lockDown(view.webContents);
+      this.win.contentView.addChildView(view);
     }
-    this.win.contentView.addChildView(this.ui);
-    this.win.contentView.addChildView(this.indicator);
     this.indicator.setVisible(false);
+    this.find.setVisible(false);
 
     this.ui.webContents.loadFile(path.join(rendererDir, 'index.html'));
     this.indicator.webContents.loadFile(path.join(rendererDir, 'indicator.html'));
+    this.find.webContents.loadFile(path.join(rendererDir, 'find.html'));
 
     this.win.on('resize', () => this.layout());
+    // A minimized window reports no size; lay the views out again as soon as it is back.
+    for (const name of ['restore', 'show', 'maximize', 'unmaximize']) this.win.on(name, () => this.layout());
     this.win.on('enter-full-screen', () => this.setFullscreenState(true));
     this.win.on('leave-full-screen', () => this.setFullscreenState(false));
   }
@@ -95,6 +101,23 @@ class BrowserWindow extends EventEmitter {
     this.layout();
   }
 
+  openFind() {
+    if (!this.mode.findOpen) {
+      this.mode.findOpen = true;
+      this.layout();
+      this.emit('find-change', true);
+    }
+    this.find.webContents.focus();
+    this.find.webContents.send('find:focus');
+  }
+
+  closeFind() {
+    if (!this.mode.findOpen) return;
+    this.mode.findOpen = false;
+    this.layout();
+    this.emit('find-change', false);
+  }
+
   // A page asked for HTML5 fullscreen (e.g. a video player): fill the whole window.
   setHtmlFullscreen(on) {
     if (this.mode.htmlFullscreen === on) return;
@@ -112,7 +135,9 @@ class BrowserWindow extends EventEmitter {
 
   layout() {
     const { width, height } = this.win.getContentBounds();
-    const { fullscreen, htmlFullscreen, revealed, recording } = this.mode;
+    // A minimized window has no size; keep the previous layout until it is restored.
+    if (width <= 0 || height <= 0) return;
+    const { fullscreen, htmlFullscreen, revealed, recording, findOpen } = this.mode;
     const immersive = fullscreen || htmlFullscreen;
 
     let uiHeight = NORMAL_CHROME_HEIGHT;
@@ -127,14 +152,31 @@ class BrowserWindow extends EventEmitter {
 
     const showIndicator = recording && immersive && (htmlFullscreen || !revealed);
     this.indicator.setVisible(showIndicator);
+    let overlayRight = width - 12;
     if (showIndicator) {
+      const indicatorX = Math.max(0, width - INDICATOR_SIZE.width - INDICATOR_SIZE.margin);
       this.indicator.setBounds({
-        x: Math.max(0, width - INDICATOR_SIZE.width - INDICATOR_SIZE.margin),
+        x: indicatorX,
         y: INDICATOR_SIZE.margin,
         width: INDICATOR_SIZE.width,
         height: INDICATOR_SIZE.height,
       });
       this.win.contentView.addChildView(this.indicator);
+      overlayRight = indicatorX - 8;
+    }
+
+    // The find bar floats at the top right of the page, beside the REC indicator if it is showing.
+    this.find.setVisible(findOpen);
+    if (findOpen) {
+      let findTop = NORMAL_CHROME_HEIGHT + 8;
+      if (immersive) findTop = revealed && !htmlFullscreen ? TOOLBAR_HEIGHT + 8 : 8;
+      this.find.setBounds({
+        x: Math.max(0, overlayRight - FIND_SIZE.width),
+        y: findTop,
+        width: FIND_SIZE.width,
+        height: FIND_SIZE.height,
+      });
+      this.win.contentView.addChildView(this.find);
     }
   }
 }

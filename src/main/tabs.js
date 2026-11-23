@@ -2,18 +2,29 @@
 
 const { EventEmitter } = require('node:events');
 const { WebContentsView } = require('electron');
-const { contentPreferences } = require('./sandbox/web-preferences');
-const { attachNavigationGuards, isAllowedUrl, resolveInput } = require('./security/navigation');
+const { contentPreferences, uiPreferences } = require('./sandbox/web-preferences');
+const {
+  attachNavigationGuards, isAllowedUrl, resolveInput, internalUrl,
+} = require('./security/navigation');
 const { isCertificateError } = require('./security/certificates');
 
 // One sandboxed view per tab. Regular tabs share a saved profile; private tabs are isolated.
+// "Internal" tabs show the app's own History / Downloads / Recordings / Settings pages.
 class TabManager extends EventEmitter {
-  constructor({ host, sessions, newTabPage, warningPage, onBlocked, onInput }) {
+  constructor({
+    host, sessions, newTabPage, warningPage, libraryPage, preloadPath, zoom,
+    getEngine, getHome, onBlocked, onInput,
+  }) {
     super();
     this.host = host;
     this.sessions = sessions;
     this.newTabPage = newTabPage;
     this.warningPage = warningPage;
+    this.libraryPage = libraryPage;
+    this.preloadPath = preloadPath;
+    this.zoom = zoom;
+    this.getEngine = getEngine;
+    this.getHome = getHome;
     this.onBlocked = onBlocked;
     this.onInput = onInput;
     this.tabs = new Map();
@@ -30,43 +41,72 @@ class TabManager extends EventEmitter {
     view.setBackgroundColor('#ffffff');
     view.setVisible(false);
 
-    const tab = { id, view, isPrivate, title: '', favicon: '', loading: false };
-    this.tabs.set(id, tab);
-    this.order.push(id);
-    this.host.addContentView(view);
-    this.wire(tab);
+    const tab = { id, view, isPrivate, kind: 'web', title: '', favicon: '', loading: false };
+    this.register(tab);
+    this.wireCommon(tab);
+    this.wireWeb(tab);
+    this.emit('created', tab);
 
     if (url && isAllowedUrl(url)) view.webContents.loadURL(url).catch(() => {});
-    else view.webContents.loadFile(this.newTabPage);
+    else this.loadNewTabPage(view.webContents);
 
     if (activate || this.activeId === null) this.activate(id);
     this.emit('change');
     return tab;
   }
 
-  wire(tab) {
+  loadNewTabPage(contents) {
+    contents.loadFile(this.newTabPage, { query: { engine: this.getEngine() } });
+  }
+
+  register(tab) {
+    this.tabs.set(tab.id, tab);
+    this.order.push(tab.id);
+    this.host.addContentView(tab.view);
+  }
+
+  // Opens (or switches the existing internal tab to) one of the app's own pages.
+  openInternal(page) {
+    const existing = [...this.tabs.values()].find((tab) => tab.kind === 'internal');
+    if (existing) {
+      existing.page = page;
+      existing.view.webContents.send('library:show', page);
+      this.activate(existing.id);
+      return existing;
+    }
+    const id = this.nextId++;
+    const view = new WebContentsView({ webPreferences: uiPreferences(this.preloadPath) });
+    view.setBackgroundColor('#1a1b1e');
+    view.setVisible(false);
+    const tab = { id, view, isPrivate: false, kind: 'internal', page, title: '', favicon: '', loading: false };
+    this.register(tab);
+    this.wireCommon(tab);
+
+    // These pages have the app bridge, so they must never leave the app's own files.
+    const contents = view.webContents;
+    contents.on('will-navigate', (event) => event.preventDefault());
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.loadFile(this.libraryPage, { hash: page });
+    this.activate(id);
+    this.emit('change');
+    return tab;
+  }
+
+  wireCommon(tab) {
     const contents = tab.view.webContents;
     const changed = () => this.emit('change');
-
-    attachNavigationGuards(contents, {
-      openInNewTab: (url) => this.create({ url, isPrivate: tab.isPrivate }),
-      onBlocked: this.onBlocked,
-    });
     this.onInput(contents);
 
     contents.on('did-start-loading', () => { tab.loading = true; changed(); });
     contents.on('did-stop-loading', () => { tab.loading = false; changed(); });
-    contents.on('did-navigate', changed);
-    contents.on('did-navigate-in-page', changed);
-    contents.on('page-title-updated', (_event, title) => { tab.title = title; changed(); });
+    contents.on('page-title-updated', (_event, title) => {
+      tab.title = title;
+      this.emit('titled', tab, contents.getURL(), title);
+      changed();
+    });
     contents.on('page-favicon-updated', (_event, favicons) => {
       tab.favicon = favicons.find((icon) => icon.startsWith('https:')) ?? '';
       changed();
-    });
-    contents.on('did-fail-load', (_event, code, _description, url, isMainFrame) => {
-      if (isMainFrame && isCertificateError(code)) {
-        contents.loadFile(this.warningPage, { query: { url, code: String(code) } });
-      }
     });
     contents.on('enter-html-full-screen', () => this.host.setHtmlFullscreen(true));
     contents.on('leave-html-full-screen', () => this.host.setHtmlFullscreen(false));
@@ -75,8 +115,46 @@ class TabManager extends EventEmitter {
     });
   }
 
+  wireWeb(tab) {
+    const contents = tab.view.webContents;
+    const changed = () => this.emit('change');
+
+    attachNavigationGuards(contents, {
+      openInNewTab: (url) => this.create({ url, isPrivate: tab.isPrivate }),
+      onBlocked: this.onBlocked,
+    });
+    contents.on('did-navigate', (_event, url) => {
+      this.zoom?.apply(tab);
+      this.emit('navigated', tab, url);
+      changed();
+    });
+    contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+      if (isMainFrame) {
+        this.zoom?.apply(tab);
+        this.emit('navigated', tab, url);
+      }
+      changed();
+    });
+    contents.on('did-fail-load', (_event, code, _description, url, isMainFrame) => {
+      if (isMainFrame && isCertificateError(code)) {
+        contents.loadFile(this.warningPage, { query: { url, code: String(code) } });
+      }
+    });
+    contents.on('zoom-changed', (_event, direction) => {
+      this.zoom?.change(tab, direction === 'in' ? 1 : -1);
+      changed();
+    });
+    contents.on('found-in-page', (_event, result) => this.emit('found', tab, result));
+  }
+
   get active() {
     return this.tabs.get(this.activeId) ?? null;
+  }
+
+  internalContents() {
+    return [...this.tabs.values()]
+      .filter((tab) => tab.kind === 'internal' && !tab.view.webContents.isDestroyed())
+      .map((tab) => tab.view.webContents);
   }
 
   activate(id) {
@@ -85,6 +163,7 @@ class TabManager extends EventEmitter {
     this.activeId = id;
     for (const other of this.tabs.values()) other.view.setVisible(other === tab);
     tab.view.webContents.focus();
+    this.emit('activated', id);
     this.emit('change');
   }
 
@@ -113,18 +192,34 @@ class TabManager extends EventEmitter {
     this.emit('change');
   }
 
+  // Address-bar input: internal pages open in their own tab; web addresses never load inside
+  // an internal tab (those have the app bridge), so they open a new regular tab instead.
   navigate(input) {
-    const resolved = resolveInput(input);
+    const resolved = resolveInput(input, this.getEngine());
     if (!resolved.ok) {
       this.onBlocked(String(input), resolved.reason);
       return resolved;
     }
-    this.active?.view.webContents.loadURL(resolved.url).catch(() => {});
+    if (resolved.internal) this.openInternal(resolved.internal);
+    else this.open(resolved.url);
     return resolved;
   }
 
+  open(url) {
+    const tab = this.active;
+    if (!tab || tab.kind === 'internal') this.create({ url });
+    else tab.view.webContents.loadURL(url).catch(() => {});
+  }
+
   goHome() {
-    this.active?.view.webContents.loadFile(this.newTabPage);
+    const home = this.getHome();
+    if (home) {
+      this.open(home);
+      return;
+    }
+    const tab = this.active;
+    if (!tab || tab.kind === 'internal') this.create();
+    else this.loadNewTabPage(tab.view.webContents);
   }
 
   back() {
@@ -150,17 +245,35 @@ class TabManager extends EventEmitter {
       const tab = this.tabs.get(id);
       const contents = tab.view.webContents;
       const url = contents.getURL();
+      const internal = tab.kind === 'internal';
       return {
         id,
-        title: tab.title || (url.startsWith('file:') ? 'New tab' : url),
-        url: url.startsWith('file:') ? '' : url,
+        kind: tab.kind,
+        title: tab.title || (internal ? 'Simple Browser' : url.startsWith('file:') ? 'New tab' : url),
+        url: internal ? internalUrl(tab.page) : url.startsWith('file:') ? '' : url,
         favicon: tab.favicon,
         loading: tab.loading,
         isPrivate: tab.isPrivate,
+        zoom: Math.round(contents.getZoomFactor() * 100) / 100,
         canGoBack: contents.navigationHistory.canGoBack(),
         canGoForward: contents.navigationHistory.canGoForward(),
       };
     });
+  }
+
+  // Open regular web pages, for restoring the session on the next start.
+  sessionSnapshot() {
+    const urls = [];
+    let active = 0;
+    for (const id of this.order) {
+      const tab = this.tabs.get(id);
+      if (tab.kind !== 'web' || tab.isPrivate) continue;
+      const url = tab.view.webContents.getURL();
+      if (!isAllowedUrl(url)) continue;
+      if (id === this.activeId) active = urls.length;
+      urls.push(url);
+    }
+    return { urls, active };
   }
 }
 

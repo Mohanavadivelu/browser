@@ -22,15 +22,18 @@
       <form class="address" id="addressForm" autocomplete="off">
         <span class="security" id="security"></span>
         <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address">
+        <button class="zoom-chip" id="zoom" type="button" title="Reset zoom"></button>
         <button class="star" id="star" type="button" title="Bookmark (Ctrl+D)">☆</button>
         <div class="notice" id="notice" role="status"></div>
       </form>
 
       <div class="rec-badge" id="recBadge">
         <span class="dot"></span><span id="recTime">REC 00:00</span>
+        <button id="recPause" type="button">Pause</button>
         <button id="recStop" type="button">Stop</button>
       </div>
-      <button class="icon-btn rec-btn" id="record" title="Record this page">●</button>
+      <button class="icon-btn" id="shot" title="Screenshot (Ctrl+Shift+S)">📷</button>
+      <button class="icon-btn rec-btn" id="record" title="Record this page (Ctrl+Shift+R)">●</button>
       <button class="icon-btn" id="fullscreen" title="Full screen (F11)">⛶</button>
       <button class="icon-btn" id="menu" title="Menu">⋮</button>
     </div>

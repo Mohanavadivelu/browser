@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow: ElectronWindow } = require('electron');
 const { start } = require('../../src/main/app');
+const { trackBytes, ensureWindowReady } = require('./helpers');
 
 const results = [];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -110,15 +111,18 @@ async function main() {
   await sleep(300);
 
   // Recording (with a test tone playing in the page)
+  const bytes = trackBytes(recorder);
   await sleep(500);
   const audioState = await tabs.active.view.webContents.executeJavaScript(
     `(() => { const c = new AudioContext(); const o = c.createOscillator(); const g = c.createGain();
       g.gain.value = 0.3; o.frequency.value = 440; o.connect(g).connect(c.destination); o.start();
       return c.resume().then(() => c.state); })()`, true);
   check('test tone is playing in the page', audioState === 'running', audioState);
+  await ensureWindowReady(ctx);
   ui.webContents.send('recording:command', 'start');
   await waitFor(() => recorder.active, 'recording started');
-  await sleep(3500);
+  await bytes.waitForMore('first recorded data');
+  await sleep(2500);
   const during = recorder.info;
   ui.webContents.send('recording:command', 'stop');
   await waitFor(() => !recorder.active, 'recording stopped');

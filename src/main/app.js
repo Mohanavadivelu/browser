@@ -2,36 +2,60 @@
 
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const {
-  app, ipcMain, session, shell, dialog, Menu, webContents,
-} = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, webContents } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION } = require('./sandbox/session-manager');
 const { applyPermissionPolicy } = require('./security/permissions');
 const { attachDownloadPolicy } = require('./security/downloads');
-const { isAllowedUrl } = require('./security/navigation');
-const { createIpc, validators } = require('./security/ipc-validate');
+const { engineFor } = require('./security/navigation');
+const { createIpc } = require('./security/ipc-validate');
 const { Recorder } = require('./recording/recorder');
 const { askRecordingConsent } = require('./recording/consent');
+const { publicQualities } = require('./recording/quality');
+const { RecordingIndex } = require('./recording/library');
+const { saveScreenshot } = require('./recording/storage');
 const { Settings } = require('./storage/settings');
+const { History } = require('./storage/history');
+const { DownloadManager } = require('./download-manager');
+const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
+const { attachContextMenu } = require('./context-menu');
+const { registerIpcHandlers } = require('./ipc-handlers');
+const { showMainMenu } = require('./menus');
 
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
+const SESSION_SAVE_DELAY_MS = 1000;
+const DOWNLOAD_BROADCAST_MS = 200;
 
 const BLOCK_MESSAGES = {
   'blocked-scheme': 'Blocked: only http and https addresses can be opened.',
   'too-long': 'That address is too long.',
 };
+const EDIT_COMMANDS = new Set(['cut', 'copy', 'paste', 'selectAll']);
 
 function cleanUserAgent(userAgent) {
   return userAgent.replace(/\s?Electron\/\S+/, '').replace(/\s?simple-browser\/\S+/i, '');
 }
 
+// Resolves when the page has finished loading, or after a short limit so capture is never blocked.
+function waitUntilLoaded(contents, limitMs = 4000) {
+  if (!contents || contents.isDestroyed() || !contents.isLoading()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      contents.removeListener('did-stop-loading', done);
+      resolve();
+    };
+    const timer = setTimeout(done, limitMs);
+    contents.once('did-stop-loading', done);
+  });
+}
+
 async function start(options = {}) {
-  app.enableSandbox();
+  if (!app.isReady()) app.enableSandbox();
   if (options.userDataDir) app.setPath('userData', options.userDataDir);
   if (!options.skipSingleInstanceLock && !app.requestSingleInstanceLock()) {
     app.quit();
@@ -44,14 +68,25 @@ async function start(options = {}) {
     contents.on('will-attach-webview', (event) => event.preventDefault());
   });
 
-  const settings = new Settings(path.join(app.getPath('userData'), 'settings.json'));
+  const userData = app.getPath('userData');
+  const settings = new Settings(path.join(userData, 'settings.json'));
   settings.load();
+  const history = new History(path.join(userData, 'history.json'));
+  history.load();
+  const recordingsIndex = new RecordingIndex(path.join(userData, 'recordings-index.json'));
+  recordingsIndex.load();
+  const downloads = new DownloadManager();
+  const zoom = new ZoomController({ settings });
 
   const host = new BrowserWindow({ rendererDir: RENDERER_DIR, preloadPath: PRELOAD_PATH });
-  const { win, ui, indicator } = host;
+  const { win, ui, indicator, find } = host;
+  const getRecordingFolder = () => settings.data.recordingFolder ?? path.join(app.getPath('videos'), 'Simple Browser');
 
   let tabs;
-  let pushScheduled = false;
+  let recorder;
+  let idle;
+  let recordingTabId = null;
+
   const buildState = () => ({
     tabs: tabs.snapshot(),
     activeId: tabs.activeId,
@@ -59,8 +94,12 @@ async function start(options = {}) {
     htmlFullscreen: host.mode.htmlFullscreen,
     revealed: host.mode.revealed,
     recording: recorder.info,
+    recordingQuality: settings.data.recordingQuality,
+    qualities: publicQualities(),
     bookmarks: settings.data.bookmarks,
   });
+
+  let pushScheduled = false;
   const pushState = () => {
     if (pushScheduled) return;
     pushScheduled = true;
@@ -76,15 +115,28 @@ async function start(options = {}) {
   const notify = (text, kind = 'info') => {
     if (!ui.webContents.isDestroyed()) ui.webContents.send('ui:notice', { text, kind });
   };
+  // The Downloads / Recordings / History / Settings pages live in internal tabs.
+  const broadcastToLibrary = (channel, payload) => {
+    for (const contents of tabs.internalContents()) contents.send(channel, payload);
+  };
 
-  const recorder = new Recorder({
-    getFolder: () => settings.data.recordingFolder ?? path.join(app.getPath('videos'), 'Simple Browser'),
+  recorder = new Recorder({
+    getFolder: getRecordingFolder,
     requestConsent: options.autoConsent ? async () => ({ granted: true }) : () => askRecordingConsent(win),
     onChange: () => {
       host.setRecording(recorder.active);
       pushState();
     },
     notify,
+    onSegment: (filePath, durationMs, final) => {
+      if (recorder.removeIfEmpty(filePath)) {
+        if (final) notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
+        return;
+      }
+      recordingsIndex.set(path.basename(filePath), durationMs);
+      if (final) notify(`Recording saved: ${filePath}`);
+      broadcastToLibrary('recordings:changed');
+    },
   });
 
   const onBlocked = (_target, reason) => {
@@ -94,14 +146,17 @@ async function start(options = {}) {
 
   const configureSession = (ses, kind) => {
     if (kind === 'ui') {
-      // The chrome view may ask for screen capture, but the handler below only grants it
-      // right after the consent dialog.
+      // The browser's own views may ask for screen capture, but the handler below only grants it
+      // to the main interface, right after the consent dialog.
       applyPermissionPolicy(ses, new Set(['display-capture']));
       ses.setDisplayMediaRequestHandler(async (request, callback) => {
         const requester = request.frame ? webContents.fromFrame(request.frame) : null;
         const allowed = requester?.id === ui.webContents.id && recorder.consumeAuthorization();
+        // A tab that is still loading swaps its frame when the page commits, so wait for it to settle.
+        if (allowed) await waitUntilLoaded(tabs.active?.view.webContents);
         // Capture the active tab's page and its sound; never other windows, apps or the microphone.
         const page = allowed ? tabs.active?.view.webContents.mainFrame : null;
+        if (page) recordingTabId = tabs.activeId;
         callback(page ? { video: page, audio: page } : null);
       }, { useSystemPicker: false });
       return;
@@ -109,6 +164,8 @@ async function start(options = {}) {
     applyPermissionPolicy(ses);
     attachDownloadPolicy(ses, {
       onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
+      onStart: (item) => downloads.track(item),
+      autoSaveDir: options.downloadDir,
     });
     ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
   };
@@ -116,7 +173,6 @@ async function start(options = {}) {
   sessions.ensure(UI_PARTITION, 'ui');
 
   let shortcutHandler = () => {};
-  let idle;
   const trackInput = (contents) => {
     contents.on('before-input-event', (event, input) => {
       idle?.activity();
@@ -124,142 +180,203 @@ async function start(options = {}) {
     });
     contents.on('before-mouse-event', () => idle?.activity());
   };
+
   tabs = new TabManager({
     host,
     sessions,
+    zoom,
+    preloadPath: PRELOAD_PATH,
     newTabPage: path.join(RENDERER_DIR, 'newtab.html'),
     warningPage: path.join(RENDERER_DIR, 'warning.html'),
+    libraryPage: path.join(RENDERER_DIR, 'library.html'),
+    getEngine: () => settings.data.searchEngine,
+    getHome: () => settings.data.homePage,
     onBlocked,
     onInput: trackInput,
   });
   idle = new FullscreenIdle({ host, tabs, idleMs: options.idleMs });
 
-  const toggleBookmark = () => {
-    const tab = tabs.active;
-    if (!tab) return;
-    if (tab.isPrivate) {
-      notify('Bookmarks are not saved from private tabs.', 'warning');
-      return;
+  // Right-click menus: full menu in web pages, only edit commands in the browser's own text boxes.
+  const edit = (contents) => (name) => { if (EDIT_COMMANDS.has(name)) contents[name](); };
+  tabs.on('created', (tab) => {
+    const contents = tab.view.webContents;
+    attachContextMenu(contents, win, () => ({
+      openInNewTab: (url) => tabs.create({ url, isPrivate: tab.isPrivate }),
+      copyText: (text) => clipboard.writeText(text),
+      saveImage: (url) => contents.downloadURL(url),
+      copyImage: (x, y) => contents.copyImageAt(x, y),
+      edit: edit(contents),
+      searchFor: (text) => tabs.create({ url: engineFor(settings.data.searchEngine).url + encodeURIComponent(text), isPrivate: tab.isPrivate }),
+      searchEngine: () => settings.data.searchEngine,
+      navigation: {
+        canGoBack: () => contents.navigationHistory.canGoBack(),
+        canGoForward: () => contents.navigationHistory.canGoForward(),
+        back: () => contents.navigationHistory.goBack(),
+        forward: () => contents.navigationHistory.goForward(),
+        reload: () => contents.reload(),
+      },
+    }));
+  });
+  for (const view of [ui, find]) {
+    attachContextMenu(view.webContents, win, () => ({ edit: edit(view.webContents), searchEngine: () => settings.data.searchEngine }));
+  }
+
+  // History is only written when the user has turned it on, and never for private tabs.
+  const shouldRecordHistory = (tab) => settings.data.historyEnabled && !tab.isPrivate && tab.kind === 'web';
+  tabs.on('navigated', (tab, url) => {
+    if (shouldRecordHistory(tab)) history.add({ url, title: tab.title });
+  });
+  tabs.on('titled', (tab, url, title) => {
+    if (shouldRecordHistory(tab)) history.updateTitle(url, title);
+  });
+
+  tabs.on('found', (tab, result) => {
+    if (tab.id !== tabs.activeId || !result.finalUpdate) return;
+    find.webContents.send('find:result', { active: result.activeMatchOrdinal, matches: result.matches });
+  });
+  host.on('find-change', (open) => {
+    if (open) return;
+    const contents = tabs.active?.view.webContents;
+    contents?.stopFindInPage('clearSelection');
+    contents?.focus();
+  });
+
+  tabs.on('activated', (id) => {
+    host.closeFind();
+    if (recorder.active && settings.data.recordingFollowTab && id !== recordingTabId) {
+      ui.webContents.send('recording:command', 'retarget');
     }
-    const url = tab.view.webContents.getURL();
-    if (!isAllowedUrl(url)) return;
-    const current = settings.data.bookmarks;
-    const exists = current.some((bookmark) => bookmark.url === url);
-    settings.update({
-      bookmarks: exists
-        ? current.filter((bookmark) => bookmark.url !== url)
-        : [...current, { url, title: tab.title || url }],
-    });
-    notify(exists ? 'Bookmark removed.' : 'Bookmark added.');
-    pushState();
+  });
+
+  let downloadTimer = null;
+  downloads.on('started', (entry) => notify(`Downloading ${entry.filename}…`));
+  downloads.on('completed', (entry) => notify(`Download complete: ${entry.filename}`));
+  downloads.on('change', () => {
+    if (downloadTimer) return;
+    downloadTimer = setTimeout(() => {
+      downloadTimer = null;
+      broadcastToLibrary('downloads:changed', downloads.list());
+    }, DOWNLOAD_BROADCAST_MS);
+  });
+
+  // Session restore: only regular web tabs are remembered, and only if the user turned it on.
+  let sessionTimer = null;
+  const saveSession = () => {
+    clearTimeout(sessionTimer);
+    sessionTimer = null;
+    if (settings.data.restoreTabs) settings.update({ session: tabs.sessionSnapshot() });
+    else if (settings.data.session.urls.length) settings.update({ session: { urls: [], active: 0 } });
+  };
+  const scheduleSessionSave = () => {
+    if (!settings.data.restoreTabs || sessionTimer) return;
+    sessionTimer = setTimeout(saveSession, SESSION_SAVE_DELAY_MS);
+    sessionTimer.unref?.();
+  };
+  tabs.on('navigated', scheduleSessionSave);
+  tabs.on('activated', scheduleSessionSave);
+
+  // Actions shared by keyboard shortcuts, menus and the interface.
+  const actions = {
+    toggleBookmark: () => {
+      const tab = tabs.active;
+      if (!tab || tab.kind !== 'web') return;
+      if (tab.isPrivate) {
+        notify('Bookmarks are not saved from private tabs.', 'warning');
+        return;
+      }
+      const url = tab.view.webContents.getURL();
+      const current = settings.data.bookmarks;
+      const exists = current.some((bookmark) => bookmark.url === url);
+      settings.update({
+        bookmarks: exists
+          ? current.filter((bookmark) => bookmark.url !== url)
+          : [...current, { url, title: tab.title || url }],
+      });
+      notify(exists ? 'Bookmark removed.' : 'Bookmark added.');
+      pushState();
+    },
+    zoom: (direction) => {
+      const tab = tabs.active;
+      if (!tab || tab.kind !== 'web') return;
+      const factor = zoom.change(tab, direction);
+      if (factor === null) return;
+      pushState();
+      notify(`Zoom ${Math.round(factor * 100)}%`);
+    },
+    find: () => host.openFind(),
+    openLibrary: (page) => tabs.openInternal(page),
+    toggleRecording: () => ui.webContents.send('recording:command', recorder.active ? 'stop' : 'start'),
+    togglePause: () => {
+      if (recorder.active) ui.webContents.send('recording:command', 'toggle-pause');
+    },
+    screenshot: async () => {
+      const tab = tabs.active;
+      if (!tab) return null;
+      try {
+        const image = await tab.view.webContents.capturePage();
+        if (image.isEmpty()) throw new Error('The page is not visible.');
+        const filePath = saveScreenshot(getRecordingFolder(), image.toPNG());
+        notify(`Screenshot saved: ${filePath}`);
+        broadcastToLibrary('recordings:changed');
+        return filePath;
+      } catch (error) {
+        notify(`Could not capture a screenshot: ${error.message}`, 'error');
+        return null;
+      }
+    },
   };
 
-  shortcutHandler = createShortcutHandler({ tabs, host, ui, actions: { toggleBookmark } });
-  trackInput(ui.webContents);
-  trackInput(indicator.webContents);
+  shortcutHandler = createShortcutHandler({ tabs, host, ui, actions });
+  for (const view of [ui, indicator, find]) trackInput(view.webContents);
 
   const rendererUrl = pathToFileURL(RENDERER_DIR).href;
-  const trustedIds = () => new Set([ui.webContents.id, indicator.webContents.id]);
-  const isTrustedSender = (event) =>
-    trustedIds().has(event.sender.id) &&
-    event.senderFrame === event.sender.mainFrame &&
-    event.senderFrame.url.startsWith(rendererUrl);
+  const isTrustedSender = (event) => {
+    const trusted = new Set([ui, indicator, find].map((view) => view.webContents.id));
+    for (const contents of tabs.internalContents()) trusted.add(contents.id);
+    return trusted.has(event.sender.id) &&
+      event.senderFrame === event.sender.mainFrame &&
+      event.senderFrame.url.startsWith(rendererUrl);
+  };
   const ipc = createIpc(ipcMain, isTrustedSender);
 
-  const showMenu = () => {
-    const recording = recorder.active;
-    Menu.buildFromTemplate([
-      { label: 'New tab', accelerator: 'Ctrl+T', click: () => tabs.create() },
-      { label: 'New private tab', accelerator: 'Ctrl+Shift+N', click: () => tabs.create({ isPrivate: true }) },
-      { type: 'separator' },
-      {
-        label: recording ? 'Stop recording' : 'Record this page…',
-        click: () => ui.webContents.send('recording:command', recording ? 'stop' : 'start'),
-      },
-      {
-        label: 'Choose recording folder…',
-        click: async () => {
-          const result = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
-          if (!result.canceled && result.filePaths[0]) {
-            settings.update({ recordingFolder: result.filePaths[0] });
-            notify('Recording folder updated.');
-          }
-        },
-      },
-      {
-        label: 'Open recordings folder',
-        click: () => {
-          const folder = settings.data.recordingFolder ?? path.join(app.getPath('videos'), 'Simple Browser');
-          require('node:fs').mkdirSync(folder, { recursive: true });
-          shell.openPath(folder);
-        },
-      },
-      { type: 'separator' },
-      { label: 'Full screen', accelerator: 'F11', click: () => host.toggleFullscreen() },
-      { type: 'separator' },
-      {
-        label: 'About Simple Browser',
-        click: () => dialog.showMessageBox(win, {
-          type: 'info',
-          title: 'About',
-          message: `Simple Browser ${app.getVersion()}`,
-          detail: `Electron ${process.versions.electron}\nChromium ${process.versions.chrome}`,
-        }),
-      },
-    ]).popup({ window: win });
+  const context = {
+    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary,
+    showMenu: () => showMainMenu(context),
   };
-
-  const { none, tabId, text, bool, tabOptions, chunk } = validators;
-  ipc.handle('ui:get-state', none, () => buildState());
-  ipc.handle('tabs:create', tabOptions, (_e, opts = {}) => { tabs.create({ isPrivate: opts.private === true }); });
-  ipc.handle('tabs:close', tabId, (_e, id) => tabs.close(id));
-  ipc.handle('tabs:activate', tabId, (_e, id) => tabs.activate(id));
-  ipc.handle('nav:go', text, (_e, input) => tabs.navigate(input).ok);
-  ipc.handle('nav:back', none, () => tabs.back());
-  ipc.handle('nav:forward', none, () => tabs.forward());
-  ipc.handle('nav:reload', none, () => tabs.reload());
-  ipc.handle('nav:stop', none, () => tabs.stop());
-  ipc.handle('nav:home', none, () => tabs.goHome());
-  ipc.handle('window:toggle-fullscreen', none, () => host.toggleFullscreen());
-  ipc.handle('window:reveal', bool, (_e, revealed) => host.setRevealed(revealed));
-  ipc.handle('window:menu', none, () => showMenu());
-  ipc.handle('bookmarks:toggle', none, () => toggleBookmark());
-  ipc.handle('recording:request-start', none, () => recorder.requestStart());
-  ipc.handle('recording:chunk', chunk, (_e, data) => recorder.write(data));
-  ipc.handle('recording:request-stop', none, () => ui.webContents.send('recording:command', 'stop'));
-  ipc.handle('recording:finish', none, async () => {
-    const filePath = await recorder.finish();
-    if (!filePath) return null;
-    if (recorder.removeIfEmpty(filePath)) {
-      notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
-      return null;
-    }
-    notify(`Recording saved: ${filePath}`);
-    return filePath;
-  });
-  ipc.handle('recording:abort', none, async () => {
-    await recorder.abort();
-    notify('Recording could not start.', 'error');
-  });
+  registerIpcHandlers(ipc, context);
 
   host.on('mode-change', pushState);
   tabs.on('change', pushState);
 
   win.on('close', (event) => {
+    saveSession();
+    history.flush();
     if (!recorder.active) return;
     event.preventDefault();
     recorder.finish().then(() => win.close());
   });
-  win.on('closed', () => app.quit());
+  win.on('closed', () => {
+    if (options.quitOnClose !== false) app.quit();
+  });
 
-  tabs.create();
+  const restored = settings.data.restoreTabs ? settings.data.session : { urls: [], active: 0 };
+  if (restored.urls.length) {
+    restored.urls.forEach((url) => tabs.create({ url, activate: false }));
+    tabs.activate(tabs.order[restored.active] ?? tabs.order[0]);
+  } else {
+    tabs.create({ url: settings.data.homePage || undefined });
+  }
   ui.webContents.once('did-finish-load', () => {
     host.layout();
     win.show();
     pushState();
   });
 
-  return { app, host, tabs, recorder, settings, ui, indicator, win, session, idle };
+  return {
+    app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    ui, indicator, find, win, idle, actions, saveSession,
+  };
 }
 
 module.exports = { start };

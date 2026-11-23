@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Simple Browser</title>
+  <link rel="stylesheet" href="library.css">
+</head>
+<body>
+  <nav class="side">
+    <h1>Simple Browser</h1>
+    <button type="button" data-page="history">History</button>
+    <button type="button" data-page="downloads">Downloads</button>
+    <button type="button" data-page="recordings">Recordings</button>
+    <button type="button" data-page="settings">Settings</button>
+  </nav>
+
+  <main>
+    <section id="page-history" hidden>
+      <header>
+        <h2>History</h2>
+        <input id="historySearch" type="search" placeholder="Search history" autocomplete="off">
+        <button id="historyClear" type="button" class="danger">Clear all history</button>
+      </header>
+      <p id="historyOff" class="note" hidden>History is turned off, so new pages are not saved. You can turn it on in Settings.</p>
+      <div id="historyList" class="list"></div>
+    </section>
+
+    <section id="page-downloads" hidden>
+      <header><h2>Downloads</h2></header>
+      <p class="note">Downloads from this session. Programs and scripts (.exe, .bat, .ps1 and similar) are blocked.</p>
+      <div id="downloadList" class="list"></div>
+    </section>
+
+    <section id="page-recordings" hidden>
+      <header>
+        <h2>Recordings</h2>
+        <button id="recOpenFolder" type="button">Open folder</button>
+      </header>
+      <p class="note">Folder: <span id="recFolder"></span></p>
+      <p id="recMessage" class="note warn" hidden></p>
+      <div id="recList" class="list"></div>
+    </section>
+
+    <section id="page-settings" hidden>
+      <header><h2>Settings</h2></header>
+
+      <div class="group">
+        <h3>General</h3>
+        <label class="field">
+          <span>Home page</span>
+          <input id="homePage" type="text" placeholder="Leave empty for the new tab page" spellcheck="false">
+          <small id="homeHint">Must start with http:// or https://</small>
+        </label>
+        <label class="field">
+          <span>Search engine</span>
+          <select id="searchEngine"></select>
+        </label>
+        <label class="check"><input id="restoreTabs" type="checkbox"> Reopen my tabs when the browser starts (private tabs are never restored)</label>
+      </div>
+
+      <div class="group">
+        <h3>Privacy</h3>
+        <label class="check"><input id="historyEnabled" type="checkbox"> Keep browsing history (off by default; never saved from private tabs)</label>
+        <button id="settingsClearHistory" type="button" class="danger">Clear history now</button>
+        <p id="settingsHistoryMsg" class="note" hidden></p>
+      </div>
+
+      <div class="group">
+        <h3>Recording</h3>
+        <label class="field">
+          <span>Quality</span>
+          <select id="recordingQuality"></select>
+          <small id="qualityHint"></small>
+        </label>
+        <label class="check"><input id="recordingFollowTab" type="checkbox"> Keep recording when I switch tabs (each tab is saved as its own part)</label>
+        <div class="field">
+          <span>Save recordings and screenshots in</span>
+          <div class="inline">
+            <code id="folderPath"></code>
+            <button id="folderChange" type="button">Change…</button>
+            <button id="folderOpen" type="button">Open</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="library.js"></script>
+</body>
+</html>
