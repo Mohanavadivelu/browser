@@ -19,6 +19,13 @@ async function waitFor(predicate, label, timeout = 15000) {
 
 function createChecker() {
   const results = [];
+  // Without a listener Electron shows a blocking error dialog and the run carries on; collect the
+  // errors instead, so an exception in the main process fails the run.
+  const uncaught = [];
+  process.on('uncaughtException', (error) => {
+    uncaught.push(error);
+    console.log(`UNCAUGHT  ${error.stack ?? error}`);
+  });
   return {
     results,
     check(name, condition, detail = '') {
@@ -26,6 +33,8 @@ function createChecker() {
       console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
     },
     finish() {
+      results.push({ name: 'no uncaught errors in the main process', pass: uncaught.length === 0 });
+      console.log(`${uncaught.length ? 'FAIL' : 'PASS'}  no uncaught errors in the main process${uncaught.length ? `  (${uncaught.length})` : ''}`);
       const failed = results.filter((result) => !result.pass);
       console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
       return failed.length === 0;

@@ -8,24 +8,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow: ElectronWindow } = require('electron');
 const { start } = require('../../src/main/app');
-const { trackBytes, ensureWindowReady } = require('./helpers');
+const {
+  trackBytes, ensureWindowReady, sleep, waitFor, createChecker,
+} = require('./helpers');
 
-const results = [];
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitFor(predicate, label, timeout = 15000) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (await predicate()) return;
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for: ${label}`);
-}
-
-function check(name, condition, detail = '') {
-  results.push({ name, pass: Boolean(condition), detail });
-  console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
-}
+const { check, finish } = createChecker();
 
 const PAGE = '<!doctype html><title>Smoke Page</title><body style="margin:0">' +
   '<h1 style="margin:0;height:240px;background:#e00000;color:#fff">SMOKE TEST PAGE</h1>' +
@@ -194,9 +181,7 @@ async function main() {
   }
 
   server.close();
-  const failed = results.filter((r) => !r.pass);
-  console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
-  app.exit(failed.length ? 1 : 0);
+  app.exit(finish() ? 0 : 1);
 }
 
 main().catch((error) => {

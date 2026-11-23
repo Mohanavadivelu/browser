@@ -28,6 +28,14 @@ async function main() {
   const profile = path.join(work, 'profile');
   fs.mkdirSync(profile, { recursive: true });
 
+  // Closing the window before the toolbar has loaded must not throw in the main process
+  // (checked by "no uncaught errors" at the end of the run).
+  const early = await launch(path.join(work, 'early-profile'));
+  early.win.destroy();
+  await waitFor(() => early.ui.webContents.isDestroyed() || !early.ui.webContents.isLoading(), 'toolbar load settled', 5000)
+    .catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
   // A saved session is ignored unless the user turned restoring on.
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({
     restoreTabs: false,

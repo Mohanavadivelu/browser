@@ -134,6 +134,8 @@ class BrowserWindow extends EventEmitter {
   }
 
   layout() {
+    // Views and timers can still ask for a layout after the window was closed.
+    if (this.win.isDestroyed()) return;
     const { width, height } = this.win.getContentBounds();
     // A minimized window has no size; keep the previous layout until it is restored.
     if (width <= 0 || height <= 0) return;

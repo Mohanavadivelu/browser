@@ -391,6 +391,8 @@ async function start(options = {}) {
     tabs.create({ url: settings.data.homePage || undefined });
   }
   ui.webContents.once('did-finish-load', () => {
+    // The window can be closed before the toolbar has finished loading.
+    if (win.isDestroyed()) return;
     host.layout();
     win.show();
     pushState();
