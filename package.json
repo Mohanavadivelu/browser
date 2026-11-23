@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"tests/unit/*.test.js\"",
-    "smoke": "electron tests/smoke/run.js && electron tests/smoke/features.js && electron tests/smoke/restore.js",
+    "smoke": "node tests/smoke/launch.js",
     "audit:prod": "npm audit --omit=dev",
     "dist": "electron-builder --win nsis portable --x64"
   },
