@@ -29,6 +29,7 @@ async function main() {
   const ctx = await start({
     userDataDir: path.join(work, 'profile'),
     skipSingleInstanceLock: true,
+    blockerFilters: '', // no ad and tracker lists from the network during tests
     autoConsent: true,
     idleMs: 700,
   });

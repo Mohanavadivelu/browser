@@ -12,8 +12,17 @@ const ZOOM_RANGE = [0.25, 5];
 
 // Only these keys can be changed from the settings page.
 const EDITABLE_KEYS = Object.freeze([
-  'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab',
+  'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
 ]);
+const MAX_ALLOWED_SITES = 500;
+const HOST_NAME = /^[a-z0-9.-]{1,253}$/;
+
+// Sites where the user turned ad and tracker blocking off: plain lower-case host names.
+function sanitizeSites(raw) {
+  if (!Array.isArray(raw)) return [];
+  const sites = raw.filter((site) => typeof site === 'string' && HOST_NAME.test(site));
+  return [...new Set(sites)].slice(0, MAX_ALLOWED_SITES);
+}
 
 function sanitizeZoom(raw) {
   const zoom = {};
@@ -54,6 +63,8 @@ function sanitizeSettings(raw) {
     restoreTabs: source.restoreTabs === true,
     recordingQuality: Object.hasOwn(QUALITY, source.recordingQuality) ? source.recordingQuality : DEFAULT_QUALITY,
     recordingFollowTab: source.recordingFollowTab !== false,
+    blockTrackers: source.blockTrackers !== false,
+    blockerAllowedSites: sanitizeSites(source.blockerAllowedSites),
     zoom: sanitizeZoom(source.zoom),
     session: sanitizeSession(source.session),
   };

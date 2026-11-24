@@ -29,11 +29,28 @@ async function main() {
   const work = makeTempDir();
   const iconRequests = []; // the Cookie header of each request for /icon.png
   const dialogTargets = { save: '', open: '' }; // what the stubbed Save and Open dialogs answer
+  const adRequests = []; // requests that reached the server for blocked paths
   const server = http.createServer((req, res) => {
     if (req.url === '/setup.exe') {
       res.setHeader('content-type', 'application/octet-stream');
       res.setHeader('content-disposition', 'attachment; filename="setup.exe"');
       res.end('MZ-not-a-real-program');
+      return;
+    }
+    if (req.url === '/ad-page') {
+      res.setHeader('content-type', 'text/html');
+      res.end('<!doctype html><title>Ad Page</title><script src="/adserver/ad.js"></script><img src="/tracker/pixel.gif"><script src="/app.js"></script><p>article</p>');
+      return;
+    }
+    if (req.url.startsWith('/adserver/') || req.url.startsWith('/tracker/')) {
+      adRequests.push(req.url);
+      res.setHeader('content-type', req.url.endsWith('.js') ? 'text/javascript' : 'image/png');
+      res.end(req.url.endsWith('.js') ? 'window.adLoaded = true;' : TINY_PNG);
+      return;
+    }
+    if (req.url === '/app.js') {
+      res.setHeader('content-type', 'text/javascript');
+      res.end('window.appLoaded = true;');
       return;
     }
     if (req.url === '/icon-page') {
@@ -69,6 +86,8 @@ async function main() {
   const ctx = await start({
     userDataDir: path.join(work, 'profile'),
     skipSingleInstanceLock: true,
+    // Test filters instead of downloading the real ad and tracker lists.
+    blockerFilters: ['/adserver/*', '/tracker/*'].join('\n'),
     autoConsent: true,
     idleMs: 60_000,
     downloadDir: path.join(work, 'downloads'),
@@ -323,6 +342,33 @@ async function main() {
   check('bookmarks import from another browser, skipping duplicates and unsafe links',
     settings.data.bookmarks.at(-1)?.title === 'New & imported' && settings.data.bookmarks.length === 3 && /Imported 1 bookmark\. 1 skipped/.test(importMessage), importMessage);
   settings.update({ bookmarks: [] });
+
+  // ---------- Ad and tracker blocking ----------
+  const adTab = tabs.create({ url: `${base}/ad-page` });
+  await waitFor(() => adTab.view.webContents.getURL().endsWith('/ad-page') && !adTab.view.webContents.isLoading(), 'ad page loaded');
+  const adState = (tab = adTab) => tab.view.webContents.executeJavaScript('JSON.stringify([window.adLoaded === true, window.appLoaded === true])');
+  check("ads and trackers are blocked while the page's own script runs", (await adState()) === '[false,true]' && adRequests.length === 0,
+    `${await adState()}, server saw ${adRequests.join(', ') || 'nothing'}`);
+  const shieldText = () => evalIn(ui, "document.getElementById('shield').hidden ? '' : document.getElementById('shield').textContent");
+  await waitFor(async () => (await shieldText()) === '🛡 2', 'shield count', 3000).catch(() => {});
+  check('the shield in the address bar counts what was blocked', adTab.blocked === 2 && (await shieldText()) === '🛡 2', `${adTab.blocked}, ${await shieldText()}`);
+  await evalIn(ui, "document.getElementById('shield').click()");
+  await waitFor(async () => (await adState()) === '[true,true]', 'ads allowed after the shield click', 8000).catch(() => {});
+  check('the shield allows ads and trackers on this site', settings.data.blockerAllowedSites.includes('127.0.0.1') && (await adState()) === '[true,true]' && (await shieldText()) === '🛡 off',
+    `${settings.data.blockerAllowedSites.join(',')}, ${await adState()}, ${await shieldText()}`);
+  await evalIn(ui, "document.getElementById('shield').click()");
+  await waitFor(async () => !settings.data.blockerAllowedSites.length && (await adState()) === '[false,true]', 'blocked again', 8000).catch(() => {});
+  check('clicking the shield again blocks them again', settings.data.blockerAllowedSites.length === 0 && (await adState()) === '[false,true]');
+  const privateAdTab = tabs.create({ url: `${base}/ad-page`, isPrivate: true });
+  await waitFor(() => privateAdTab.view.webContents.getURL().endsWith('/ad-page') && !privateAdTab.view.webContents.isLoading(), 'private ad page loaded');
+  check('blocking also works in private tabs', (await adState(privateAdTab)) === '[false,true]');
+  settings.update({ blockTrackers: false });
+  adTab.view.webContents.reload();
+  await waitFor(async () => (await adState()) === '[true,true]', 'blocking off', 8000).catch(() => {});
+  check('turning blocking off in Settings lets everything load', (await adState()) === '[true,true]' && (await shieldText()) === '');
+  settings.update({ blockTrackers: true });
+  tabs.close(privateAdTab.id);
+  tabs.close(adTab.id);
 
   // ---------- Print and Save as PDF ----------
   const pdfTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');

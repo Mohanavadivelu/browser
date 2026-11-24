@@ -142,6 +142,7 @@ class TabManager extends EventEmitter {
       onBlocked: this.onBlocked,
     });
     contents.on('did-navigate', (_event, url) => {
+      tab.blocked = 0; // a new page: count its own blocked requests
       this.zoom?.apply(tab);
       this.emit('navigated', tab, url);
       changed();
@@ -232,6 +233,16 @@ class TabManager extends EventEmitter {
     return true;
   }
 
+  // One more ad or tracker request blocked in the tab showing `contentsId`.
+  countBlocked(contentsId) {
+    for (const tab of this.tabs.values()) {
+      if (tab.view.webContents.id !== contentsId) continue;
+      tab.blocked = (tab.blocked ?? 0) + 1;
+      this.emit('change');
+      return;
+    }
+  }
+
   toggleMute(id) {
     const contents = this.tabs.get(id)?.view.webContents;
     if (!contents || contents.isDestroyed()) return null;
@@ -308,6 +319,7 @@ class TabManager extends EventEmitter {
         loading: tab.loading,
         isPrivate: tab.isPrivate,
         zoom: Math.round(contents.getZoomFactor() * 100) / 100,
+        blocked: tab.blocked ?? 0,
         audible: contents.isCurrentlyAudible(),
         muted: contents.isAudioMuted(),
         canGoBack: contents.navigationHistory.canGoBack(),

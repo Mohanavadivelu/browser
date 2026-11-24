@@ -12,7 +12,8 @@ const { waitFor, createChecker, makeTempDir } = require('./helpers');
 const { check, finish } = createChecker();
 
 async function launch(userDataDir) {
-  return start({ userDataDir, skipSingleInstanceLock: true, quitOnClose: false });
+  // blockerFilters: no ad and tracker lists from the network during tests.
+  return start({ userDataDir, skipSingleInstanceLock: true, quitOnClose: false, blockerFilters: '' });
 }
 
 async function main() {

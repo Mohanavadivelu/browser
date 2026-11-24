@@ -74,6 +74,11 @@
       <div class="group">
         <h3>Privacy</h3>
         <label class="check"><input id="historyEnabled" type="checkbox"> Keep browsing history (off by default; never saved from private tabs)</label>
+        <label class="check"><input id="blockTrackers" type="checkbox"> Block ads and trackers (uses the EasyList and EasyPrivacy lists, downloaded from easylist.to and refreshed every few days)</label>
+        <div class="field">
+          <span>Sites where ads and trackers are allowed (turn this on from the 🛡 in the address bar)</span>
+          <div id="allowedSites" class="list"></div>
+        </div>
         <button id="settingsClearHistory" type="button" class="danger">Clear history now</button>
         <p id="settingsHistoryMsg" class="note" hidden></p>
       </div>

@@ -9,6 +9,7 @@ const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
 const bookmarkList = require('./bookmarks');
 const { MAX_BOOKMARKS } = require('./storage/settings');
+const { hostOf } = require('./blocker');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const {
@@ -28,7 +29,7 @@ const LIBRARY = ['library'];
 // arguments are checked by `ipc.handle` before any handler runs.
 function registerIpcHandlers(ipc, ctx) {
   const {
-    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex,
+    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, refreshBlockerLists,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
@@ -37,6 +38,7 @@ function registerIpcHandlers(ipc, ctx) {
 
   const settingsPayload = () => ({
     ...pickEditable(settings.data),
+    blockerAllowedSites: settings.data.blockerAllowedSites,
     recordingFolder: getRecordingFolder(),
     engines: Object.entries(SEARCH_ENGINES).map(([key, engine]) => ({ key, name: engine.name })),
     qualities: publicQualities(),
@@ -89,6 +91,7 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('settings:get', LIBRARY, none, () => settingsPayload());
   ipc.handle('settings:update', LIBRARY, settingsPatch, (_e, patch) => {
     settings.update(pickEditable(patch));
+    if (patch.blockTrackers === true) refreshBlockerLists?.();
     if (!settings.data.restoreTabs) settings.update({ session: { urls: [], active: 0 } });
     pushState();
     return settingsPayload();
@@ -100,6 +103,25 @@ function registerIpcHandlers(ipc, ctx) {
       properties: ['openDirectory', 'createDirectory'],
     });
     if (!result.canceled && result.filePaths[0]) settings.update({ recordingFolder: result.filePaths[0] });
+    return settingsPayload();
+  });
+
+  // Ad and tracker blocking: the toolbar's shield turns it off or on again for the current site,
+  // and the settings page can remove sites from that list.
+  ipc.handle('blocker:toggle-site', TOOLBAR, none, () => {
+    const tab = tabs.active;
+    const site = tab?.kind === 'web' ? hostOf(tab.view.webContents.getURL()) : '';
+    if (!site) return null;
+    const sites = settings.data.blockerAllowedSites;
+    const allowed = !sites.includes(site);
+    settings.update({ blockerAllowedSites: allowed ? [...sites, site] : sites.filter((known) => known !== site) });
+    tab.view.webContents.reload();
+    pushState();
+    return { site, allowed };
+  });
+  ipc.handle('blocker:remove-site', LIBRARY, text, (_e, site) => {
+    settings.update({ blockerAllowedSites: settings.data.blockerAllowedSites.filter((known) => known !== site) });
+    pushState();
     return settingsPayload();
   });
 

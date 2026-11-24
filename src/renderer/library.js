@@ -285,6 +285,20 @@ function renderSettings(settings) {
   fillSelect($('recordingQuality'), settings.qualities.map((quality) => ({ key: quality.key, label: quality.label })), settings.recordingQuality);
   $('qualityHint').textContent = settings.qualities.find((quality) => quality.key === settings.recordingQuality)?.description ?? '';
   $('recordingFollowTab').checked = settings.recordingFollowTab;
+  $('blockTrackers').checked = settings.blockTrackers;
+  const sites = $('allowedSites');
+  sites.replaceChildren();
+  if (settings.blockerAllowedSites.length === 0) sites.append(element('p', 'empty', 'None.'));
+  for (const site of settings.blockerAllowedSites) {
+    const row = element('div', 'row');
+    row.dataset.site = site;
+    const main = element('div', 'main');
+    main.append(element('div', 'name', site));
+    const actions = element('div', 'actions');
+    actions.append(button('Block again', async () => renderSettings(await api.blocker.removeSite(site))));
+    row.append(main, actions);
+    sites.append(row);
+  }
   $('folderPath').textContent = settings.recordingFolder;
 }
 
@@ -297,6 +311,7 @@ function bindSettings() {
   $('searchEngine').addEventListener('change', () => saveSetting({ searchEngine: $('searchEngine').value }));
   $('restoreTabs').addEventListener('change', () => saveSetting({ restoreTabs: $('restoreTabs').checked }));
   $('historyEnabled').addEventListener('change', () => saveSetting({ historyEnabled: $('historyEnabled').checked }));
+  $('blockTrackers').addEventListener('change', () => saveSetting({ blockTrackers: $('blockTrackers').checked }));
   $('recordingQuality').addEventListener('change', () => saveSetting({ recordingQuality: $('recordingQuality').value }));
   $('recordingFollowTab').addEventListener('change', () => saveSetting({ recordingFollowTab: $('recordingFollowTab').checked }));
   $('folderChange').addEventListener('click', async () => renderSettings(await api.settings.chooseFolder()));

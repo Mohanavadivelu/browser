@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, ipcMain, shell, dialog, Menu, clipboard, webContents } = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION } = require('./sandbox/session-manager');
@@ -17,6 +17,7 @@ const { publicQualities } = require('./recording/quality');
 const { RecordingIndex } = require('./recording/library');
 const { saveScreenshot } = require('./recording/storage');
 const { sanitizeBaseName } = require('./recording/library');
+const { ContentBlocker, hostOf } = require('./blocker');
 const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
 const { DownloadManager } = require('./download-manager');
@@ -31,6 +32,8 @@ const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
 const SESSION_SAVE_DELAY_MS = 1000;
 const DOWNLOAD_BROADCAST_MS = 200;
+const BLOCKER_FIRST_UPDATE_MS = 10_000;
+const BLOCKER_CHECK_MS = 6 * 60 * 60 * 1000;
 // How long the toolbar gets to stop its capture and send the last chunks before the recording
 // is closed without them.
 const CAPTURE_STOP_TIMEOUT_MS = 3000;
@@ -87,6 +90,32 @@ async function start(options = {}) {
   const recordingsIndex = new RecordingIndex(path.join(userData, 'recordings-index.json'));
   recordingsIndex.load();
   const downloads = new DownloadManager();
+
+  // Ad and tracker blocking. Tests pass their own filters instead of downloading the lists.
+  const blocker = new ContentBlocker({
+    cacheDir: path.join(userData, 'blocker'),
+    fetchText: async (url) => {
+      const response = await net.fetch(url, { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      return response.text();
+    },
+  });
+  let refreshBlockerLists = () => {};
+  if (typeof options.blockerFilters === 'string') {
+    blocker.useFilters(options.blockerFilters);
+  } else {
+    blocker.loadCache();
+    refreshBlockerLists = () => {
+      if (!settings.data.blockTrackers || !blocker.stale) return;
+      blocker.update()
+        .then(() => pushState())
+        .catch((error) => console.error(`Could not update the ad and tracker lists: ${error.message}`));
+    };
+    setTimeout(refreshBlockerLists, BLOCKER_FIRST_UPDATE_MS).unref?.();
+    setInterval(refreshBlockerLists, BLOCKER_CHECK_MS).unref?.();
+  }
+  const blockingActiveFor = (pageUrl) => settings.data.blockTrackers &&
+    !settings.data.blockerAllowedSites.includes(hostOf(pageUrl));
   const zoom = new ZoomController({ settings });
 
   // `options.dialog` stands in for the Save and Open dialogs in automated tests.
@@ -110,6 +139,11 @@ async function start(options = {}) {
     recordingQuality: settings.data.recordingQuality,
     qualities: publicQualities(),
     bookmarks: settings.data.bookmarks,
+    blocker: {
+      enabled: settings.data.blockTrackers,
+      ready: blocker.ready,
+      allowedSites: settings.data.blockerAllowedSites,
+    },
   });
 
   let pushScheduled = false;
@@ -185,6 +219,14 @@ async function start(options = {}) {
       return;
     }
     applyPermissionPolicy(ses);
+    blocker.attach(ses, {
+      pageUrlOf: (details) => {
+        const contents = details.webContentsId ? webContents.fromId(details.webContentsId) : null;
+        return contents && !contents.isDestroyed() ? contents.getURL() : '';
+      },
+      isActive: blockingActiveFor,
+      onBlocked: (contentsId) => tabs.countBlocked(contentsId),
+    });
     attachDownloadPolicy(ses, {
       onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
       onStart: (item) => downloads.track(item),
@@ -400,7 +442,7 @@ async function start(options = {}) {
   const ipc = createIpc(ipcMain, senderRole);
 
   const context = {
-    app, shell, host, dialog: appDialog, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary,
     showMenu: () => showMainMenu(context),
   };

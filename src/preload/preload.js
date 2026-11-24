@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('browserApi', {
     home: () => invoke('nav:home'),
   },
   suggest: (input) => invoke('suggest:query', input),
+  blocker: {
+    toggleSite: () => invoke('blocker:toggle-site'),
+    removeSite: (site) => invoke('blocker:remove-site', site),
+  },
   window: {
     setSuggestionsHeight: (height) => invoke('window:suggestions', height),
     toggleFullscreen: () => invoke('window:toggle-fullscreen'),

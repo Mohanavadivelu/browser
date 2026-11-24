@@ -62,6 +62,9 @@ button:disabled { color: #5f6368; cursor: default; }
 .zoom-chip { display: none; flex: none; padding: 2px 8px; border-radius: 10px; background: var(--hover); color: var(--text); font-size: 11px; }
 .zoom-chip.show { display: block; }
 .zoom-chip:hover { background: var(--border); }
+.shield { flex: none; padding: 2px 8px; border-radius: 10px; color: #81c995; font-size: 11px; white-space: nowrap; }
+.shield:hover { background: var(--hover); }
+.shield.off { color: var(--muted); }
 
 .notice { display: none; position: absolute; inset: 0; align-items: center; padding: 0 16px; border-radius: 17px; background: #34363c; font-size: 13px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notice.show { display: flex; }
