@@ -15,6 +15,8 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
 
     if (input.key === 'F11') host.toggleFullscreen();
     else if (input.key === 'Escape' && host.mode.findOpen) host.closeFind();
+    // Esc in the address bar closes its suggestion list first.
+    else if (input.key === 'Escape' && host.mode.suggestionsHeight > 0 && !inPage) handled = false;
     else if (input.key === 'Escape' && host.mode.fullscreen && !host.mode.htmlFullscreen && escapeLeavesFullscreen) host.exitFullscreen();
     else if (ctrl && input.shift && key === 'n') tabs.create({ isPrivate: true });
     else if (ctrl && input.shift && key === 'e') actions.toggleRecording();

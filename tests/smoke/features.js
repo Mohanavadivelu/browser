@@ -167,6 +167,25 @@ async function main() {
   await load(`${base}/other`);
   check('history records pages once it is on', history.list().some((e) => e.url === `${base}/text`) && history.list().length >= 2);
   check('history stores page titles', history.list().find((e) => e.url === `${base}/text`)?.title === 'Text Page');
+
+  // ---------- Address-bar suggestions ----------
+  ui.webContents.focus(); // as Ctrl+L does: the address bar only takes focus inside a focused view
+  await evalIn(ui, `(() => { const a = document.getElementById('address'); a.focus(); a.value = 'text p';
+    a.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await waitFor(async () => /Text Page/.test(await evalIn(ui, "document.getElementById('suggestions').textContent")), 'suggestion list', 5000).catch(() => {});
+  const suggested = await evalIn(ui, "[...document.querySelectorAll('#suggestions .suggestion')].map((row) => row.textContent)");
+  check('typing in the address bar suggests a visited page', suggested.length >= 2 && /Search Google/.test(suggested[0]) && suggested.some((row) => /Text Page/.test(row)), suggested.join(' | '));
+  check('the suggestion list gets room below the bars', ui.getBounds().height > 116, `toolbar view ${ui.getBounds().height}px`);
+  await load(`${base}/other`);
+  ui.webContents.focus(); // as Ctrl+L does: the address bar only takes focus inside a focused view
+  await evalIn(ui, `(() => { const a = document.getElementById('address'); a.focus(); a.value = 'text p';
+    a.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await waitFor(async () => /Text Page/.test(await evalIn(ui, "document.getElementById('suggestions').textContent")), 'suggestion list again', 5000);
+  await evalIn(ui, "[...document.querySelectorAll('#suggestions .suggestion')].find((row) => /Text Page/.test(row.textContent)).click()");
+  await waitFor(() => tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/text`, 'suggestion opened', 5000).catch(() => {});
+  check('choosing a suggestion opens it', tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/text`);
+  await waitFor(() => ui.getBounds().height === 116, 'suggestion list closed', 3000).catch(() => {});
+  check('the toolbar view shrinks back when the list closes', ui.getBounds().height === 116, `${ui.getBounds().height}px`);
   const before = history.entries.length;
   const privateTab2 = tabs.create({ url: `${base}/anim-private`, isPrivate: true });
   await waitFor(() => privateTab2.view.webContents.getURL().endsWith('/anim-private'), 'private page loaded');
@@ -249,6 +268,8 @@ async function main() {
   tabs.navigate(`${base}/renamed.txt`);
   await waitFor(() => noticeLike(/Blocked download of "renamed\.exe"/), 'renamed download blocked', 10000);
   await waitFor(() => ctx.downloads.list()[0]?.filename === 'renamed.txt' && ctx.downloads.list()[0].state === 'blocked', 'renamed download marked blocked', 10000);
+  // Cancelled, or deleted once it finished: either way the file goes away within moments.
+  await waitFor(() => !fs.existsSync(path.join(work, 'downloads', 'renamed.exe')), 'renamed download removed', 5000).catch(() => {});
   check('a download renamed to a blocked type in the Save dialog is removed', !fs.existsSync(path.join(work, 'downloads', 'renamed.exe')));
   check('a renamed blocked download is not reported as complete', !noticeLike(/Download complete: renamed/));
   tabs.openInternal('downloads');

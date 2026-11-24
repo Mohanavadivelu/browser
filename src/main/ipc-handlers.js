@@ -6,6 +6,7 @@ const { validators } = require('./security/ipc-validate');
 const { isAllowedUrl, SEARCH_ENGINES } = require('./security/navigation');
 const { pickEditable } = require('./storage/settings');
 const { publicQualities } = require('./recording/quality');
+const { suggest } = require('./suggestions');
 const {
   isSafeName, listRecordings, renameRecording, deleteRecording,
 } = require('./recording/library');
@@ -27,7 +28,7 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, text, optionalText, twoTexts, bool, settingsPatch, findQuery, tabOptions, chunk,
+    none, tabId, text, optionalText, twoTexts, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -54,6 +55,16 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('window:menu', TOOLBAR, none, () => showMenu());
   ipc.handle('bookmarks:toggle', TOOLBAR, none, () => actions.toggleBookmark());
   ipc.handle('zoom:reset', TOOLBAR, none, () => actions.zoom(0));
+
+  // Address-bar suggestions: visited pages only while history is on.
+  ipc.handle('suggest:query', TOOLBAR, text, (_e, input) => suggest({
+    text: input,
+    history: settings.data.historyEnabled ? history.entries : [],
+    bookmarks: settings.data.bookmarks,
+    engine: settings.data.searchEngine,
+  }));
+  // The suggestion list needs the toolbar's view to reach below the browser bars while open.
+  ipc.handle('window:suggestions', TOOLBAR, pixels, (_e, height) => host.setSuggestionsHeight(height));
 
   // Find in page
   ipc.handle('find:query', FIND, findQuery, (_e, query, options) => {

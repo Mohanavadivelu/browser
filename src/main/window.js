@@ -23,7 +23,9 @@ function lockDown(contents) {
 class BrowserWindow extends EventEmitter {
   constructor({ rendererDir, preloadPath }) {
     super();
-    this.mode = { fullscreen: false, htmlFullscreen: false, revealed: false, recording: false, findOpen: false };
+    this.mode = {
+      fullscreen: false, htmlFullscreen: false, revealed: false, recording: false, findOpen: false, suggestionsHeight: 0,
+    };
     this.contentViews = new Set();
     this.enteredFullscreenForHtml = false;
 
@@ -101,6 +103,13 @@ class BrowserWindow extends EventEmitter {
     this.layout();
   }
 
+  // Extra height for the toolbar's view while the address-bar suggestions are open.
+  setSuggestionsHeight(height) {
+    if (this.mode.suggestionsHeight === height) return;
+    this.mode.suggestionsHeight = height;
+    this.layout();
+  }
+
   openFind() {
     if (!this.mode.findOpen) {
       this.mode.findOpen = true;
@@ -144,6 +153,8 @@ class BrowserWindow extends EventEmitter {
 
     let uiHeight = NORMAL_CHROME_HEIGHT;
     if (immersive) uiHeight = revealed && !htmlFullscreen ? TOOLBAR_HEIGHT : HOTZONE_HEIGHT;
+    // The suggestion list hangs below the address bar, over the page.
+    if (!htmlFullscreen && (!immersive || revealed)) uiHeight += this.mode.suggestionsHeight;
     this.ui.setVisible(!htmlFullscreen);
     this.ui.setBounds({ x: 0, y: 0, width, height: uiHeight });
 

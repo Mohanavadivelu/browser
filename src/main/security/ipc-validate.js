@@ -9,6 +9,7 @@ const validators = {
   optionalText: (...args) => args.length === 0 || (args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048),
   twoTexts: (...args) => args.length === 2 && args.every((value) => typeof value === 'string' && value.length <= 2048),
   bool: (...args) => args.length === 1 && typeof args[0] === 'boolean',
+  pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 1000,
   settingsPatch: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
     !Array.isArray(args[0]) && Object.keys(args[0]).length <= 20,
   findQuery: (...args) => args.length === 2 && typeof args[0] === 'string' && args[0].length <= 500 &&

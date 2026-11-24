@@ -12,6 +12,16 @@ const TESTS = ['run.js', 'features.js', 'restore.js'];
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 
+// A test file that does not even parse would stop Electron at a blocking error dialog, so
+// every file is checked with plain Node first.
+for (const name of [...TESTS, 'helpers.js']) {
+  const syntax = spawnSync(process.execPath, ['--check', path.join(__dirname, name)], { encoding: 'utf8' });
+  if (syntax.status !== 0) {
+    console.error(`${name} has a syntax error:\n${syntax.stderr}`);
+    process.exit(1);
+  }
+}
+
 for (const name of TESTS) {
   console.log(`\n=== ${name}`);
   const result = spawnSync(electron, [path.join(__dirname, name)], { stdio: 'inherit', env });
