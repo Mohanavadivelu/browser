@@ -19,6 +19,7 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
     else if (input.key === 'Escape' && host.mode.suggestionsHeight > 0 && !inPage) handled = false;
     else if (input.key === 'Escape' && host.mode.fullscreen && !host.mode.htmlFullscreen && escapeLeavesFullscreen) host.exitFullscreen();
     else if (ctrl && input.shift && key === 'n') tabs.create({ isPrivate: true });
+    else if (ctrl && input.shift && key === 't') tabs.reopenClosed();
     else if (ctrl && input.shift && key === 'e') actions.toggleRecording();
     else if ((ctrl && input.shift && key === 'r') || (ctrl && input.key === 'F5')) tabs.reloadIgnoringCache();
     else if (ctrl && input.shift && key === 'p') actions.togglePause();

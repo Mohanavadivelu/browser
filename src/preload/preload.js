@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('browserApi', {
     close: (id) => invoke('tabs:close', id),
     activate: (id) => invoke('tabs:activate', id),
     open: (url) => invoke('tabs:open', url),
+    move: (id, index) => invoke('tabs:move', id, index),
+    toggleMute: (id) => invoke('tabs:toggle-mute', id),
   },
   nav: {
     go: (input) => invoke('nav:go', input),

@@ -5,6 +5,8 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 ## Features
 
 - Tabs, address bar (URL or search, **Google** by default), back/forward/reload/home, bookmarks.
+- **Address-bar suggestions** as you type: the search or address itself, then matching bookmarks and visited pages (visited pages only while history is on). Use the arrow keys and Enter, or click.
+- **Tabs**: drag to reorder, reopen a closed tab with Ctrl+Shift+T (private tabs are never kept), and a 🔊 icon on tabs playing sound that mutes the tab when clicked.
 - **Private tabs**: each one has its own in-memory session that is wiped when the tab closes.
 - **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload.
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
@@ -48,6 +50,7 @@ npm start
 | Esc | Close the find bar. In full screen Esc goes to the page; hold Esc to leave full screen |
 | Ctrl+T, Ctrl+W | New tab, close tab |
 | Ctrl+Shift+N | New private tab |
+| Ctrl+Shift+T | Reopen the last closed tab |
 | Ctrl+L | Focus the address bar |
 | Ctrl+R / F5 | Reload |
 | Ctrl+Shift+R / Ctrl+F5 | Reload without the cache |

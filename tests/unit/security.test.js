@@ -207,7 +207,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   const channels = [...ipcMain.handlers.keys()];
   const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
 
-  assert.equal(channels.length, 45);
+  assert.equal(channels.length, 47);
   assert.deepEqual(allowed('indicator'), ['recording:request-pause', 'recording:request-stop', 'ui:get-state']);
   assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
   // The library tab shows text from websites: no recording, navigation or tab controls.

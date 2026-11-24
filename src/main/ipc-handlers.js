@@ -28,7 +28,7 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, text, optionalText, twoTexts, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
+    none, tabId, tabMove, text, optionalText, twoTexts, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -44,6 +44,8 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('tabs:close', TOOLBAR, tabId, (_e, id) => tabs.close(id));
   ipc.handle('tabs:activate', TOOLBAR, tabId, (_e, id) => tabs.activate(id));
   ipc.handle('tabs:open', LIBRARY, text, (_e, url) => { if (isAllowedUrl(url)) tabs.create({ url }); });
+  ipc.handle('tabs:move', TOOLBAR, tabMove, (_e, id, index) => tabs.move(id, index));
+  ipc.handle('tabs:toggle-mute', TOOLBAR, tabId, (_e, id) => tabs.toggleMute(id));
   ipc.handle('nav:go', TOOLBAR, text, (_e, input) => tabs.navigate(input).ok);
   ipc.handle('nav:back', TOOLBAR, none, () => tabs.back());
   ipc.handle('nav:forward', TOOLBAR, none, () => tabs.forward());

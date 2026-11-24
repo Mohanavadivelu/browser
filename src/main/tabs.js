@@ -8,6 +8,8 @@ const {
 } = require('./security/navigation');
 const { isCertificateError } = require('./security/certificates');
 
+const MAX_CLOSED = 25;
+
 // One sandboxed view per tab. Regular tabs share a saved profile; private tabs are isolated.
 // "Internal" tabs show the app's own History / Downloads / Recordings / Settings pages.
 class TabManager extends EventEmitter {
@@ -30,11 +32,14 @@ class TabManager extends EventEmitter {
     this.onInput = onInput;
     this.tabs = new Map();
     this.order = [];
+    // Regular web pages closed recently, newest last, for "Reopen closed tab". Private tabs
+    // are never kept.
+    this.closed = [];
     this.activeId = null;
     this.nextId = 1;
   }
 
-  create({ url, isPrivate = false, activate = true } = {}) {
+  create({ url, isPrivate = false, activate = true, index } = {}) {
     const id = this.nextId++;
     const partition = this.sessions.partitionFor(id, isPrivate);
     this.sessions.ensure(partition);
@@ -43,7 +48,7 @@ class TabManager extends EventEmitter {
     view.setVisible(false);
 
     const tab = { id, view, isPrivate, kind: 'web', title: '', favicon: '', loading: false };
-    this.register(tab);
+    this.register(tab, index);
     this.wireCommon(tab);
     this.wireWeb(tab);
     this.emit('created', tab);
@@ -60,9 +65,9 @@ class TabManager extends EventEmitter {
     contents.loadFile(this.newTabPage, { query: { engine: this.getEngine() } });
   }
 
-  register(tab) {
+  register(tab, index = this.order.length) {
     this.tabs.set(tab.id, tab);
-    this.order.push(tab.id);
+    this.order.splice(Math.max(0, Math.min(index, this.order.length)), 0, tab.id);
     this.host.addContentView(tab.view);
   }
 
@@ -120,6 +125,7 @@ class TabManager extends EventEmitter {
         changed();
       });
     });
+    contents.on('audio-state-changed', changed);
     contents.on('enter-html-full-screen', () => this.host.setHtmlFullscreen(true));
     contents.on('leave-html-full-screen', () => this.host.setHtmlFullscreen(false));
     contents.on('render-process-gone', (_event, details) => {
@@ -189,6 +195,11 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab) return;
     const index = this.order.indexOf(id);
+    const url = tab.view.webContents.getURL();
+    if (tab.kind === 'web' && !tab.isPrivate && isAllowedUrl(url)) {
+      this.closed.push({ url, index });
+      if (this.closed.length > MAX_CLOSED) this.closed.shift();
+    }
     this.order.splice(index, 1);
     this.tabs.delete(id);
     this.host.removeContentView(tab.view);
@@ -203,6 +214,30 @@ class TabManager extends EventEmitter {
     }
     if (this.activeId === id) this.activate(this.order[Math.min(index, this.order.length - 1)]);
     this.emit('change');
+  }
+
+  // Opens the most recently closed regular page again, where its tab was. Null if none is left.
+  reopenClosed() {
+    const last = this.closed.pop();
+    return last ? this.create({ url: last.url, index: last.index }) : null;
+  }
+
+  // Moves a tab to another place in the tab strip.
+  move(id, index) {
+    const from = this.order.indexOf(id);
+    if (from === -1) return false;
+    this.order.splice(from, 1);
+    this.order.splice(Math.max(0, Math.min(index, this.order.length)), 0, id);
+    this.emit('change');
+    return true;
+  }
+
+  toggleMute(id) {
+    const contents = this.tabs.get(id)?.view.webContents;
+    if (!contents || contents.isDestroyed()) return null;
+    contents.setAudioMuted(!contents.isAudioMuted());
+    this.emit('change');
+    return contents.isAudioMuted();
   }
 
   // Address-bar input: internal pages open in their own tab; web addresses never load inside
@@ -273,6 +308,8 @@ class TabManager extends EventEmitter {
         loading: tab.loading,
         isPrivate: tab.isPrivate,
         zoom: Math.round(contents.getZoomFactor() * 100) / 100,
+        audible: contents.isCurrentlyAudible(),
+        muted: contents.isAudioMuted(),
         canGoBack: contents.navigationHistory.canGoBack(),
         canGoForward: contents.navigationHistory.canGoForward(),
       };

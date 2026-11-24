@@ -206,6 +206,48 @@ async function main() {
   check('the toolbar shows the icon without loading it itself', shownIcon.startsWith('data:image/png'), shownIcon.slice(0, 30));
   tabs.close(iconTab.id);
 
+  // ---------- Tab basics: reopen, drag, mute ----------
+  const tabOne = tabs.create({ url: `${base}/tab-one` });
+  const tabTwo = tabs.create({ url: `${base}/tab-two` });
+  await waitFor(() => tabOne.view.webContents.getURL().endsWith('/tab-one') && tabTwo.view.webContents.getURL().endsWith('/tab-two'), 'tabs for the tab tests');
+  const placeOne = tabs.order.indexOf(tabOne.id);
+  tabs.close(tabOne.id);
+  const reopened = tabs.reopenClosed();
+  await waitFor(() => reopened?.view.webContents.getURL().endsWith('/tab-one'), 'closed tab reopened');
+  check('a closed tab reopens with its page, where it was', tabs.order.indexOf(reopened.id) === placeOne, `at ${tabs.order.indexOf(reopened.id)}, was ${placeOne}`);
+  const secretTab = tabs.create({ url: `${base}/secret`, isPrivate: true });
+  await waitFor(() => secretTab.view.webContents.getURL().endsWith('/secret'), 'private page for the reopen test');
+  tabs.close(secretTab.id);
+  check('closed private tabs are not kept for reopening', !tabs.closed.some((entry) => entry.url.endsWith('/secret')));
+
+  // Drag the last tab to the front of the strip, with real drag events in the toolbar.
+  const lastId = tabs.order.at(-1);
+  await evalIn(ui, `(() => {
+    const strip = document.getElementById('tabs');
+    const dragged = strip.querySelector('.tab[data-id="${lastId}"]');
+    const first = strip.children[0].getBoundingClientRect();
+    const data = new DataTransfer();
+    dragged.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }));
+    const at = { bubbles: true, cancelable: true, dataTransfer: data, clientX: first.left + 3, clientY: first.top + 5 };
+    strip.dispatchEvent(new DragEvent('dragover', at));
+    strip.dispatchEvent(new DragEvent('drop', at));
+    dragged.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }));
+  })()`);
+  await waitFor(() => tabs.order[0] === lastId, 'tab dragged to the front', 3000).catch(() => {});
+  check('dragging a tab moves it in the strip', tabs.order[0] === lastId, tabs.order.join(','));
+
+  tabs.activate(reopened.id);
+  await reopened.view.webContents.executeJavaScript(`(() => { const c = new AudioContext(); const o = c.createOscillator();
+    const g = c.createGain(); g.gain.value = 0.2; o.connect(g).connect(c.destination); o.start(); return c.resume(); })()`, true);
+  const soundIcon = () => evalIn(ui, `document.querySelector('.tab[data-id="${reopened.id}"] .sound')?.textContent ?? ''`);
+  await waitFor(async () => (await soundIcon()) === '🔊', 'sound icon on the playing tab', 8000).catch(() => {});
+  check('a tab playing sound shows a sound icon', (await soundIcon()) === '🔊', await soundIcon());
+  await evalIn(ui, `document.querySelector('.tab[data-id="${reopened.id}"] .sound').click()`);
+  await waitFor(async () => reopened.view.webContents.isAudioMuted() && (await soundIcon()) === '🔇', 'tab muted', 3000).catch(() => {});
+  check('clicking the sound icon mutes the tab', reopened.view.webContents.isAudioMuted() && (await soundIcon()) === '🔇', await soundIcon());
+  tabs.close(reopened.id);
+  tabs.close(tabTwo.id);
+
   // ---------- Library pages ----------
   const webTabCount = tabs.order.length;
   tabs.navigate('simple-browser://settings');

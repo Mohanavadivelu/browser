@@ -9,6 +9,7 @@ function showMainMenu(ctx) {
   const items = [
     { label: 'New tab', accelerator: 'Ctrl+T', click: () => tabs.create() },
     { label: 'New private tab', accelerator: 'Ctrl+Shift+N', click: () => tabs.create({ isPrivate: true }) },
+    { label: 'Reopen closed tab', accelerator: 'Ctrl+Shift+T', enabled: tabs.closed.length > 0, click: () => tabs.reopenClosed() },
     { type: 'separator' },
     { label: 'Find in page…', accelerator: 'Ctrl+F', click: () => actions.find() },
     {

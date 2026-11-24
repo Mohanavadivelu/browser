@@ -41,6 +41,11 @@ button:disabled { color: #5f6368; cursor: default; }
 .tab .private-tag { flex: none; padding: 1px 6px; border-radius: 8px; background: #3a2a5c; color: #cdb4ff; font-size: 10px; }
 .tab .close { flex: none; width: 18px; height: 18px; line-height: 18px; border-radius: 50%; font-size: 11px; text-align: center; color: inherit; }
 .tab .close:hover { background: var(--border); }
+.tab .sound { flex: none; width: 20px; height: 18px; border-radius: 4px; font-size: 12px; line-height: 18px; text-align: center; }
+.tab .sound:hover { background: var(--border); }
+.tab.dragging { opacity: .5; }
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
 .new-tab { margin: 0 0 2px 6px; -webkit-app-region: no-drag; }
 
 /* Toolbar */

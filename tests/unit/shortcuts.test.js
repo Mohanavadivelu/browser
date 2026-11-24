@@ -16,6 +16,7 @@ function setup(modeOverrides = {}) {
     close: record('close'),
     reload: record('reload'),
     reloadIgnoringCache: record('reloadIgnoringCache'),
+    reopenClosed: record('reopenClosed'),
     back: record('back'),
     forward: record('forward'),
     activateRelative: record('activateRelative'),
@@ -59,6 +60,13 @@ test('new shortcuts trigger their actions and are consumed', () => {
   assert.deepEqual(calls.map((call) => call.join(':')), [
     'find', 'openLibrary:history', 'openLibrary:downloads', 'toggleRecording', 'togglePause', 'screenshot',
   ]);
+});
+
+test('Ctrl+Shift+T reopens the last closed tab', () => {
+  const { calls, press } = setup();
+  assert.equal(press({ key: 'T', control: true, shift: true }), true);
+  assert.equal(press({ key: 't', control: true }), true);
+  assert.deepEqual(calls.map((call) => call[0]), ['reopenClosed', 'create']);
 });
 
 test('zoom shortcuts map to in, out and reset', () => {
