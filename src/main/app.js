@@ -309,6 +309,7 @@ async function start(options = {}) {
           : [...current, { url, title: tab.title || url }],
       });
       notify(exists ? 'Bookmark removed.' : 'Bookmark added.');
+      broadcastToLibrary('bookmarks:changed');
       pushState();
     },
     zoom: (direction) => {
@@ -361,7 +362,9 @@ async function start(options = {}) {
   const ipc = createIpc(ipcMain, senderRole);
 
   const context = {
-    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    app, shell, host,
+    // `options.dialog` stands in for the Save and Open dialogs in automated tests.
+    dialog: options.dialog ?? dialog, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary,
     showMenu: () => showMainMenu(context),
   };

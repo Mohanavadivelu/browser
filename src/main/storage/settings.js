@@ -5,7 +5,7 @@ const path = require('node:path');
 const { isAllowedUrl, SEARCH_ENGINES, DEFAULT_ENGINE } = require('../security/navigation');
 const { QUALITY, DEFAULT_QUALITY } = require('../recording/quality');
 
-const MAX_BOOKMARKS = 200;
+const MAX_BOOKMARKS = 1000;
 const MAX_ZOOM_SITES = 500;
 const MAX_SESSION_TABS = 50;
 const ZOOM_RANGE = [0.25, 5];
@@ -95,4 +95,4 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS };
+module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, MAX_BOOKMARKS };

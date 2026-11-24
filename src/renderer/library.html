@@ -10,6 +10,7 @@
   <nav class="side">
     <h1>Simple Browser</h1>
     <button type="button" data-page="history">History</button>
+    <button type="button" data-page="bookmarks">Bookmarks</button>
     <button type="button" data-page="downloads">Downloads</button>
     <button type="button" data-page="recordings">Recordings</button>
     <button type="button" data-page="settings">Settings</button>
@@ -24,6 +25,17 @@
       </header>
       <p id="historyOff" class="note" hidden>History is turned off, so new pages are not saved. You can turn it on in Settings.</p>
       <div id="historyList" class="list"></div>
+    </section>
+
+    <section id="page-bookmarks" hidden>
+      <header>
+        <h2>Bookmarks</h2>
+        <button id="bookmarksImport" type="button">Import…</button>
+        <button id="bookmarksExport" type="button">Export…</button>
+      </header>
+      <p class="note">Import and export use the bookmarks file that Chrome, Edge and Firefox read and write. Folders are flattened when importing.</p>
+      <p id="bookmarksMessage" class="note" hidden></p>
+      <div id="bookmarkList" class="list"></div>
     </section>
 
     <section id="page-downloads" hidden>

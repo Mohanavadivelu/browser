@@ -158,6 +158,17 @@ async function ensureWindowReady(ctx) {
   }, 'the page view has a size');
 }
 
+// Stands in for the Save and Open dialogs: answers with the paths in `targets` (set them before
+// clicking the button that opens the dialog), or "cancelled" when a path is empty.
+function stubDialog(targets) {
+  const { dialog } = require('electron');
+  return {
+    showSaveDialog: async () => (targets.save ? { canceled: false, filePath: targets.save } : { canceled: true }),
+    showOpenDialog: async () => (targets.open ? { canceled: false, filePaths: [targets.open] } : { canceled: true, filePaths: [] }),
+    showMessageBox: (...args) => dialog.showMessageBox(...args),
+  };
+}
+
 module.exports = {
-  sleep, waitFor, createChecker, makeTempDir, trackBytes, ensureWindowReady, inspectRecording,
+  sleep, waitFor, createChecker, makeTempDir, trackBytes, ensureWindowReady, inspectRecording, stubDialog,
 };

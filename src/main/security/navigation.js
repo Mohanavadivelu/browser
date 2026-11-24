@@ -6,7 +6,7 @@ const SEARCH_ENGINES = Object.freeze({
   bing: { name: 'Bing', url: 'https://www.bing.com/search?q=' },
 });
 const DEFAULT_ENGINE = 'google';
-const INTERNAL_PAGES = Object.freeze(['history', 'downloads', 'recordings', 'settings']);
+const INTERNAL_PAGES = Object.freeze(['history', 'bookmarks', 'downloads', 'recordings', 'settings']);
 const INTERNAL_SCHEME = 'simple-browser:';
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 const MAX_INPUT_LENGTH = 2048;

@@ -9,7 +9,7 @@ const path = require('node:path');
 const { app } = require('electron');
 const { start } = require('../../src/main/app');
 const {
-  sleep, waitFor, createChecker, makeTempDir, trackBytes, ensureWindowReady, inspectRecording,
+  sleep, waitFor, createChecker, makeTempDir, trackBytes, ensureWindowReady, inspectRecording, stubDialog,
 } = require('./helpers');
 
 const { check, finish } = createChecker();
@@ -28,6 +28,7 @@ async function main() {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
   const work = makeTempDir();
   const iconRequests = []; // the Cookie header of each request for /icon.png
+  const dialogTargets = { save: '', open: '' }; // what the stubbed Save and Open dialogs answer
   const server = http.createServer((req, res) => {
     if (req.url === '/setup.exe') {
       res.setHeader('content-type', 'application/octet-stream');
@@ -75,6 +76,7 @@ async function main() {
     downloadSaveName: (name) => (name === 'renamed.txt' ? 'renamed.exe' : path.basename(name)),
     // The last check closes the window; keep the app running to report the results.
     quitOnClose: false,
+    dialog: stubDialog(dialogTargets),
   });
   const { host, tabs, recorder, settings, history, ui, find, actions, recordingsIndex } = ctx;
   const bytes = trackBytes(recorder);
@@ -282,6 +284,45 @@ async function main() {
   const shot = await actions.screenshot();
   const png = shot ? fs.readFileSync(shot) : Buffer.alloc(0);
   check('screenshot saves a PNG file', shot && png.subarray(1, 4).toString() === 'PNG' && png.length > 2000, shot ? `${png.length} bytes` : notices.at(-1));
+
+  // ---------- Bookmarks page ----------
+  settings.update({ bookmarks: ['a', 'b', 'c'].map((key) => ({ url: `${base}/bm-${key}`, title: `Bm ${key.toUpperCase()}` })) });
+  tabs.openInternal('bookmarks');
+  const bookmarksPage = tabs.active;
+  await waitFor(() => bookmarksPage.title === 'Bookmarks', 'bookmarks page');
+  const bmRows = () => evalIn(bookmarksPage.view, "[...document.querySelectorAll('#bookmarkList .row')].map((row) => row.querySelector('.title').textContent)");
+  await waitFor(async () => (await bmRows()).length === 3, 'bookmark rows');
+  const clickInRow = (url, label) => evalIn(bookmarksPage.view, `[...document.querySelector('#bookmarkList .row[data-url="${url}"]').querySelectorAll('button')].find((b) => b.textContent === '${label}').click()`);
+  await clickInRow(`${base}/bm-b`, 'Rename');
+  await evalIn(bookmarksPage.view, `(() => { const input = document.querySelector('#bookmarkList .row[data-url="${base}/bm-b"] input');
+    input.value = 'Renamed B'; input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); })()`);
+  await waitFor(() => settings.data.bookmarks[1]?.title === 'Renamed B', 'bookmark renamed', 3000).catch(() => {});
+  check('a bookmark can be renamed on the bookmarks page', settings.data.bookmarks[1]?.title === 'Renamed B');
+  await clickInRow(`${base}/bm-c`, '↑');
+  await waitFor(() => settings.data.bookmarks[1]?.url === `${base}/bm-c`, 'bookmark moved', 3000).catch(() => {});
+  await clickInRow(`${base}/bm-a`, 'Delete');
+  await waitFor(() => settings.data.bookmarks.length === 2, 'bookmark deleted', 3000).catch(() => {});
+  check('bookmarks can be moved and deleted', JSON.stringify(settings.data.bookmarks.map((b) => b.title)) === JSON.stringify(['Bm C', 'Renamed B']),
+    settings.data.bookmarks.map((b) => b.title).join(', '));
+  await waitFor(async () => (await evalIn(ui, "[...document.querySelectorAll('#bookmarks .chip')].map((c) => c.textContent).join('|')")) === '★ Bm C|★ Renamed B', 'bookmarks bar updated', 3000).catch(() => {});
+  check('the bookmarks bar follows the changes', (await evalIn(ui, "[...document.querySelectorAll('#bookmarks .chip')].map((c) => c.textContent).join('|')")) === '★ Bm C|★ Renamed B');
+
+  dialogTargets.save = path.join(work, 'exported-bookmarks.html');
+  await evalIn(bookmarksPage.view, "document.getElementById('bookmarksExport').click()");
+  await waitFor(() => fs.existsSync(dialogTargets.save), 'bookmarks exported', 3000).catch(() => {});
+  const exported = fs.existsSync(dialogTargets.save) ? fs.readFileSync(dialogTargets.save, 'utf8') : '';
+  check('bookmarks export to a bookmarks file', /NETSCAPE-Bookmark-file-1/.test(exported) && exported.includes(`${base}/bm-c`) && exported.includes('Renamed B'));
+
+  dialogTargets.open = path.join(work, 'chrome-bookmarks.html');
+  fs.writeFileSync(dialogTargets.open, `<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p><DT><H3>Bar</H3><DL><p>
+    <DT><A HREF="${base}/bm-c">Duplicate</A><DT><A HREF="${base}/bm-new">New &amp; imported</A><DT><A HREF="javascript:alert(1)">Bad</A>
+    </DL><p></DL><p>`);
+  await evalIn(bookmarksPage.view, "document.getElementById('bookmarksImport').click()");
+  await waitFor(() => settings.data.bookmarks.length === 3, 'bookmarks imported', 3000).catch(() => {});
+  const importMessage = await evalIn(bookmarksPage.view, "document.getElementById('bookmarksMessage').textContent");
+  check('bookmarks import from another browser, skipping duplicates and unsafe links',
+    settings.data.bookmarks.at(-1)?.title === 'New & imported' && settings.data.bookmarks.length === 3 && /Imported 1 bookmark\. 1 skipped/.test(importMessage), importMessage);
+  settings.update({ bookmarks: [] });
 
   // ---------- Downloads policy ----------
   tabs.navigate(`${base}/setup.exe`);

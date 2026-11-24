@@ -7,6 +7,10 @@ const { isAllowedUrl, SEARCH_ENGINES } = require('./security/navigation');
 const { pickEditable } = require('./storage/settings');
 const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
+const bookmarkList = require('./bookmarks');
+const { MAX_BOOKMARKS } = require('./storage/settings');
+
+const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const {
   isSafeName, listRecordings, renameRecording, deleteRecording,
 } = require('./recording/library');
@@ -24,11 +28,11 @@ const LIBRARY = ['library'];
 // arguments are checked by `ipc.handle` before any handler runs.
 function registerIpcHandlers(ipc, ctx) {
   const {
-    shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex,
+    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, tabMove, text, optionalText, twoTexts, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
+    none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -97,6 +101,52 @@ function registerIpcHandlers(ipc, ctx) {
     });
     if (!result.canceled && result.filePaths[0]) settings.update({ recordingFolder: result.filePaths[0] });
     return settingsPayload();
+  });
+
+  // Bookmarks page. Every change is saved, shown in the bookmarks bar and sent back.
+  const saveBookmarks = (next) => {
+    if (next) {
+      settings.update({ bookmarks: next });
+      pushState();
+    }
+    return settings.data.bookmarks;
+  };
+  ipc.handle('bookmarks:list', LIBRARY, none, () => settings.data.bookmarks);
+  ipc.handle('bookmarks:rename', LIBRARY, twoTexts, (_e, url, title) => saveBookmarks(bookmarkList.rename(settings.data.bookmarks, url, title)));
+  ipc.handle('bookmarks:remove', LIBRARY, text, (_e, url) => saveBookmarks(bookmarkList.remove(settings.data.bookmarks, url)));
+  ipc.handle('bookmarks:move', LIBRARY, textAndIndex, (_e, url, index) => saveBookmarks(bookmarkList.move(settings.data.bookmarks, url, index)));
+  ipc.handle('bookmarks:export', LIBRARY, none, async () => {
+    const result = await dialog.showSaveDialog(host.win, {
+      title: 'Export bookmarks',
+      defaultPath: path.join(app.getPath('documents'), 'bookmarks.html'),
+      filters: [{ name: 'Bookmarks file', extensions: ['html', 'htm'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    try {
+      fs.writeFileSync(result.filePath, bookmarkList.toHtml(settings.data.bookmarks), 'utf8');
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+    return { ok: true, count: settings.data.bookmarks.length, path: result.filePath };
+  });
+  ipc.handle('bookmarks:import', LIBRARY, none, async () => {
+    const result = await dialog.showOpenDialog(host.win, {
+      title: 'Import bookmarks',
+      properties: ['openFile'],
+      filters: [{ name: 'Bookmarks file', extensions: ['html', 'htm'] }],
+    });
+    const filePath = result.filePaths?.[0];
+    if (result.canceled || !filePath) return { ok: false, canceled: true };
+    let html;
+    try {
+      if (fs.statSync(filePath).size > MAX_IMPORT_BYTES) return { ok: false, message: 'That file is too large to be a bookmarks file.' };
+      html = fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+    const merged = bookmarkList.merge(settings.data.bookmarks, bookmarkList.fromHtml(html), MAX_BOOKMARKS);
+    saveBookmarks(merged.list);
+    return { ok: true, added: merged.added, skipped: merged.skipped };
   });
 
   // History

@@ -1,8 +1,8 @@
 'use strict';
 
 const api = window.browserApi;
-const PAGES = ['history', 'downloads', 'recordings', 'settings'];
-const TITLES = { history: 'History', downloads: 'Downloads', recordings: 'Recordings', settings: 'Settings' };
+const PAGES = ['history', 'bookmarks', 'downloads', 'recordings', 'settings'];
+const TITLES = { history: 'History', bookmarks: 'Bookmarks', downloads: 'Downloads', recordings: 'Recordings', settings: 'Settings' };
 const $ = (id) => document.getElementById(id);
 
 let current = 'history';
@@ -65,6 +65,81 @@ async function loadHistory() {
     row.append(main, actions);
     list.append(row);
   }
+}
+
+// ---------- Bookmarks ----------
+function showBookmarksMessage(text) {
+  $('bookmarksMessage').textContent = text;
+  $('bookmarksMessage').hidden = !text;
+}
+
+function renderBookmarks(bookmarks) {
+  const list = $('bookmarkList');
+  list.replaceChildren();
+  if (bookmarks.length === 0) {
+    list.append(element('p', 'empty', 'No bookmarks yet. Press ☆ in the address bar to bookmark a page, or import a bookmarks file.'));
+    return;
+  }
+  bookmarks.forEach((bookmark, index) => {
+    const row = element('div', 'row');
+    row.dataset.url = bookmark.url;
+    row.append(element('div', 'icon', '★'));
+    const main = element('div', 'main');
+    const open = button(bookmark.title, () => api.tabs.open(bookmark.url), 'title');
+    open.title = bookmark.url;
+    main.append(open, element('div', 'meta', bookmark.url));
+    const actions = element('div', 'actions');
+    const up = button('↑', async () => renderBookmarks(await api.bookmarks.move(bookmark.url, index - 1)));
+    up.title = 'Move up';
+    up.disabled = index === 0;
+    const down = button('↓', async () => renderBookmarks(await api.bookmarks.move(bookmark.url, index + 1)));
+    down.title = 'Move down';
+    down.disabled = index === bookmarks.length - 1;
+    actions.append(up, down,
+      button('Rename', () => startBookmarkRename(row, bookmark)),
+      button('Delete', async () => renderBookmarks(await api.bookmarks.remove(bookmark.url)), 'danger'));
+    row.append(main, actions);
+    list.append(row);
+  });
+}
+
+function startBookmarkRename(row, bookmark) {
+  const input = element('input');
+  input.type = 'text';
+  input.value = bookmark.title;
+  input.maxLength = 200;
+  row.querySelector('.main').replaceChildren(input);
+  input.focus();
+  input.select();
+  const save = async () => renderBookmarks(await api.bookmarks.rename(bookmark.url, input.value));
+  const cancel = () => loadBookmarks();
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') save();
+    else if (event.key === 'Escape') cancel();
+  });
+  row.querySelector('.actions').replaceChildren(button('Save', save), button('Cancel', cancel));
+}
+
+async function loadBookmarks() {
+  renderBookmarks(await api.bookmarks.list());
+}
+
+async function importBookmarks() {
+  const result = await api.bookmarks.importFile();
+  if (result.canceled) return;
+  if (!result.ok) {
+    showBookmarksMessage(`Could not import: ${result.message}`);
+    return;
+  }
+  const skipped = result.skipped ? ` ${result.skipped} skipped (already bookmarked, or over the limit).` : '';
+  showBookmarksMessage(`Imported ${result.added} bookmark${result.added === 1 ? '' : 's'}.${skipped}`);
+  loadBookmarks();
+}
+
+async function exportBookmarks() {
+  const result = await api.bookmarks.exportFile();
+  if (result.canceled) return;
+  showBookmarksMessage(result.ok ? `Exported ${result.count} bookmark${result.count === 1 ? '' : 's'} to ${result.path}` : `Could not export: ${result.message}`);
 }
 
 // ---------- Downloads ----------
@@ -236,6 +311,7 @@ function bindSettings() {
 // ---------- Navigation ----------
 const loaders = {
   history: loadHistory,
+  bookmarks: () => { showBookmarksMessage(''); return loadBookmarks(); },
   downloads: async () => renderDownloads(await api.downloads.list()),
   recordings: loadRecordings,
   settings: async () => renderSettings(await api.settings.get()),
@@ -264,10 +340,13 @@ $('historyClear').addEventListener('click', async () => {
   loadHistory();
 });
 $('recOpenFolder').addEventListener('click', () => api.recordings.openFolder());
+$('bookmarksImport').addEventListener('click', importBookmarks);
+$('bookmarksExport').addEventListener('click', exportBookmarks);
 bindSettings();
 
 api.onLibraryShow(show);
 api.onDownloads((items) => { if (current === 'downloads') renderDownloads(items); });
 api.onRecordingsChanged(() => { if (current === 'recordings') loadRecordings(); });
+api.onBookmarksChanged(() => { if (current === 'bookmarks') loadBookmarks(); });
 
 show(location.hash.slice(1));

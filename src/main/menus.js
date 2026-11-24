@@ -22,6 +22,7 @@ function showMainMenu(ctx) {
     },
     { type: 'separator' },
     { label: 'History', accelerator: 'Ctrl+H', click: () => actions.openLibrary('history') },
+    { label: 'Bookmarks', accelerator: 'Ctrl+Shift+O', click: () => actions.openLibrary('bookmarks') },
     { label: 'Downloads', accelerator: 'Ctrl+J', click: () => actions.openLibrary('downloads') },
     { label: 'Recordings', click: () => actions.openLibrary('recordings') },
     { label: 'Settings', click: () => actions.openLibrary('settings') },

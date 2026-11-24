@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('browserApi', {
   },
   bookmarks: {
     toggle: () => invoke('bookmarks:toggle'),
+    list: () => invoke('bookmarks:list'),
+    rename: (url, title) => invoke('bookmarks:rename', url, title),
+    remove: (url) => invoke('bookmarks:remove', url),
+    move: (url, index) => invoke('bookmarks:move', url, index),
+    exportFile: () => invoke('bookmarks:export'),
+    importFile: () => invoke('bookmarks:import'),
   },
   zoom: {
     reset: () => invoke('zoom:reset'),
@@ -91,4 +97,5 @@ contextBridge.exposeInMainWorld('browserApi', {
   onDownloads: (callback) => subscribe('downloads:changed', callback),
   onRecordingsChanged: (callback) => subscribe('recordings:changed', callback),
   onLibraryShow: (callback) => subscribe('library:show', callback),
+  onBookmarksChanged: (callback) => subscribe('bookmarks:changed', callback),
 });

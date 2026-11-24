@@ -11,6 +11,8 @@ const validators = {
   bool: (...args) => args.length === 1 && typeof args[0] === 'boolean',
   tabMove: (...args) => args.length === 2 && Number.isInteger(args[0]) && args[0] > 0 &&
     Number.isInteger(args[1]) && args[1] >= 0 && args[1] < 1000,
+  textAndIndex: (...args) => args.length === 2 && typeof args[0] === 'string' && args[0].length <= 2048 &&
+    Number.isInteger(args[1]) && args[1] >= 0 && args[1] < 10000,
   pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 1000,
   settingsPatch: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
     !Array.isArray(args[0]) && Object.keys(args[0]).length <= 20,

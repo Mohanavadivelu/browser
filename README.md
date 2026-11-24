@@ -10,7 +10,8 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Private tabs**: each one has its own in-memory session that is wiped when the tab closes.
 - **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload.
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
-- **History** (off by default; never saved from private tabs), **Downloads** (progress, cancel, show in folder) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `downloads`, `recordings` or `settings` in the address bar.
+- **Bookmarks** page (Ctrl+Shift+O): rename, reorder and delete bookmarks, and import or export them as the bookmarks file Chrome, Edge and Firefox use (folders are flattened on import).
+- **History** (off by default; never saved from private tabs), **Downloads** (progress, cancel, show in folder) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `bookmarks`, `downloads`, `recordings` or `settings` in the address bar.
 - **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, recording quality, keep recording across tabs, and the folder for recordings and screenshots.
 - **Full screen** (F11 or the ⛶ button): only the page is shown. Move the mouse to the top edge to bring the toolbar back. After **5 seconds without mouse or keyboard activity**, the top bar and the mouse pointer hide automatically; move the mouse or press a key to bring them back. Pages can also take the whole window for their own video full screen.
 - **Record** (● button, Ctrl+Shift+E or menu): captures the current tab's page **and its sound** (not the browser bars, other windows or other apps) to a `.webm` file in `Videos\Simple Browser`. A native consent dialog comes first, and a REC indicator with **Pause/Resume** and **Stop** stays visible while recording, including in full screen. Paused time is not counted. Quality is Low (720p, 15 fps), Medium (1080p, 30 fps) or High (1440p, 60 fps).
@@ -60,6 +61,7 @@ npm start
 | Ctrl+F | Find in page (Enter / Shift+Enter for next / previous) |
 | Ctrl+Plus, Ctrl+Minus, Ctrl+0 | Zoom in, out, reset |
 | Ctrl+H, Ctrl+J | History, Downloads |
+| Ctrl+Shift+O | Bookmarks |
 | Ctrl+Shift+E | Start / stop recording |
 | Ctrl+Shift+P | Pause / resume recording |
 | Ctrl+Shift+S | Screenshot of the page |
