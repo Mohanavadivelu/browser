@@ -20,6 +20,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Recording follows you across tabs**: when you switch tabs, the recording carries on with the new tab and saves it as the next part (`…-part2.webm`). Turn this off in Settings to stay on the original tab.
 - **Screenshot** (📷 button or Ctrl+Shift+S): saves the current page as a PNG in the same folder.
 - **Recordings page**: lists recordings and screenshots with length and size, and lets you open, show in folder, rename and delete (to the Recycle Bin).
+- **Updates**: installed copies check GitHub Releases every few hours, download a new version in the background and install it when you close the browser (or restart from the ⋮ menu). The portable `.exe` cannot replace itself, so it tells you about a new version and opens its download page from the ⋮ menu. Turn the checks off in Settings.
 - Security model: see [SECURITY.md](SECURITY.md).
 
 Only record content you own or have permission to record, and respect the privacy of other people and the terms of the websites you visit.
@@ -115,7 +116,7 @@ The build is **not code-signed**, so Windows SmartScreen may show an "unknown pu
 1. Set the new version in `package.json` and add a section for it to [CHANGELOG.md](CHANGELOG.md).
 2. Push a tag with the same version: `git tag v0.4.0` then `git push origin v0.4.0`.
 
-The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums.
+The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums. It also uploads `latest.yml` and the installer's `.blockmap`, which installed copies use to find and download the update.
 
 ## Status
 

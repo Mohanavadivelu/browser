@@ -70,6 +70,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            dist/Simple-Browser-Setup-*.exe dist/Simple-Browser-*-portable.exe dist/SHA256SUMS.txt \
+            dist/Simple-Browser-Setup-*.exe dist/Simple-Browser-Setup-*.exe.blockmap dist/latest.yml \
+            dist/Simple-Browser-*-portable.exe dist/SHA256SUMS.txt \
             --title "Simple Browser ${GITHUB_REF_NAME#v}" \
             --notes-file release-notes.md

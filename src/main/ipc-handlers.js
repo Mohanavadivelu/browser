@@ -29,7 +29,7 @@ const LIBRARY = ['library'];
 // arguments are checked by `ipc.handle` before any handler runs.
 function registerIpcHandlers(ipc, ctx) {
   const {
-    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, refreshBlockerLists,
+    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, refreshBlockerLists, updates,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
@@ -95,6 +95,10 @@ function registerIpcHandlers(ipc, ctx) {
     if (!settings.data.restoreTabs) settings.update({ session: { urls: [], active: 0 } });
     pushState();
     return settingsPayload();
+  });
+  ipc.handle('updates:check', LIBRARY, none, async () => {
+    const state = await updates.check({ manual: true });
+    return { status: state.status, version: state.version, mode: updates.mode };
   });
   ipc.handle('settings:choose-folder', LIBRARY, none, async () => {
     const result = await dialog.showOpenDialog(host.win, {

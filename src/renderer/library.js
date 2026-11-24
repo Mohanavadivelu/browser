@@ -286,6 +286,7 @@ function renderSettings(settings) {
   $('qualityHint').textContent = settings.qualities.find((quality) => quality.key === settings.recordingQuality)?.description ?? '';
   $('recordingFollowTab').checked = settings.recordingFollowTab;
   $('blockTrackers').checked = settings.blockTrackers;
+  $('checkForUpdates').checked = settings.checkForUpdates;
   const sites = $('allowedSites');
   sites.replaceChildren();
   if (settings.blockerAllowedSites.length === 0) sites.append(element('p', 'empty', 'None.'));
@@ -312,6 +313,19 @@ function bindSettings() {
   $('restoreTabs').addEventListener('change', () => saveSetting({ restoreTabs: $('restoreTabs').checked }));
   $('historyEnabled').addEventListener('change', () => saveSetting({ historyEnabled: $('historyEnabled').checked }));
   $('blockTrackers').addEventListener('change', () => saveSetting({ blockTrackers: $('blockTrackers').checked }));
+  $('checkForUpdates').addEventListener('change', () => saveSetting({ checkForUpdates: $('checkForUpdates').checked }));
+  $('updatesCheck').addEventListener('click', async () => {
+    $('updatesMessage').textContent = 'Checking…';
+    const result = await api.updates.check();
+    const messages = {
+      'up-to-date': 'You have the latest version.',
+      available: `Version ${result.version} is available: download it from the ⋮ menu.`,
+      downloading: `Downloading version ${result.version}…`,
+      ready: `Version ${result.version} is ready: restart from the ⋮ menu.`,
+      error: 'Could not check for updates.',
+    };
+    $('updatesMessage').textContent = result.mode === 'off' ? 'Updates are not checked when running from source.' : messages[result.status] ?? '';
+  });
   $('recordingQuality').addEventListener('change', () => saveSetting({ recordingQuality: $('recordingQuality').value }));
   $('recordingFollowTab').addEventListener('change', () => saveSetting({ recordingFollowTab: $('recordingFollowTab').checked }));
   $('folderChange').addEventListener('click', async () => renderSettings(await api.settings.chooseFolder()));

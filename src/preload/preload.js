@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('browserApi', {
     query: (text, options) => invoke('find:query', text, options),
     close: () => invoke('find:close'),
   },
+  updates: {
+    check: () => invoke('updates:check'),
+  },
   settings: {
     get: () => invoke('settings:get'),
     update: (patch) => invoke('settings:update', patch),

@@ -18,6 +18,8 @@ const { RecordingIndex } = require('./recording/library');
 const { saveScreenshot } = require('./recording/storage');
 const { sanitizeBaseName } = require('./recording/library');
 const { ContentBlocker, hostOf } = require('./blocker');
+const { UpdateService, updateMode, fetchLatestRelease } = require('./updates');
+const { build: { publish: [RELEASES] } } = require('../../package.json');
 const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
 const { DownloadManager } = require('./download-manager');
@@ -139,6 +141,7 @@ async function start(options = {}) {
     recordingQuality: settings.data.recordingQuality,
     qualities: publicQualities(),
     bookmarks: settings.data.bookmarks,
+    update: { status: updates.state.status, version: updates.state.version },
     blocker: {
       enabled: settings.data.blockTrackers,
       ready: blocker.ready,
@@ -187,6 +190,20 @@ async function start(options = {}) {
       broadcastToLibrary('recordings:changed');
     },
   });
+
+  // Updates from GitHub Releases: installed copies update themselves, portable ones are told
+  // where to download. Nothing is checked when running from source.
+  const mode = options.updateMode ?? updateMode({ isPackaged: app.isPackaged });
+  const updates = new UpdateService({
+    mode,
+    currentVersion: app.getVersion(),
+    autoUpdater: mode === 'installer' ? require('electron-updater').autoUpdater : null,
+    fetchLatest: () => fetchLatestRelease((url, init) => net.fetch(url, init), RELEASES),
+    notify,
+    isEnabled: () => settings.data.checkForUpdates,
+  });
+  updates.on('change', () => pushState());
+  updates.start();
 
   // Asks the toolbar to stop its capture, so the chunks it still holds are written, and makes
   // sure the recording ends even if the toolbar does not answer in time.
@@ -442,7 +459,7 @@ async function start(options = {}) {
   const ipc = createIpc(ipcMain, senderRole);
 
   const context = {
-    app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary,
     showMenu: () => showMainMenu(context),
   };
@@ -498,7 +515,7 @@ async function start(options = {}) {
 
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
-    ui, indicator, find, win, idle, actions, saveSession, stopCapture,
+    ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates,
   };
 }
 

@@ -20,6 +20,7 @@ Web pages are untrusted. The browser keeps them away from your files, from the a
 | Content-Security-Policy | The browser UI and internal pages use strict CSPs with no inline scripts. Library pages build their content with `textContent`, never `innerHTML`, because page titles and addresses come from websites. | `src/renderer/*.html`, `src/renderer/library.js` |
 | User agent | The Electron and app identifiers are removed from the user agent. | `src/main/app.js` |
 | Ads and trackers | Requests on the EasyList and EasyPrivacy lists are cancelled in every web session (regular and private) before they leave the browser; the page itself is never blocked. Only network blocking is used, so nothing is injected into pages. Uses `@ghostery/adblocker` (MPL-2.0), pinned to an exact version. | `src/main/blocker.js`, `src/main/app.js` |
+| Updates | Installed copies use `electron-updater` (MIT, pinned) against this repository's GitHub Releases: the installer is downloaded over HTTPS and checked against the SHA-512 in the release's `latest.yml` before it runs. The builds are not code-signed, so that hash and GitHub's HTTPS are what the update relies on; signing would add a publisher check. Portable copies only read the latest release's version from the GitHub API and link to its page. | `src/main/updates.js`, `package.json` (`build.publish`) |
 | Tab icons | Each tab's icon is fetched by the main process through that tab's own session (a private tab's stays in its private session) and handed to the toolbar as a `data:` URL, only if it is a real image under 256 KB. The toolbar itself has no network access (`img-src data:`). | `src/main/favicons.js`, `src/main/tabs.js` |
 | Packaged app | Electron fuses are set at build time: the app cannot run as plain Node.js (`ELECTRON_RUN_AS_NODE`), ignores `NODE_OPTIONS` and `--inspect`, loads code only from its `app.asar` and checks that archive's integrity, and encrypts cookies on disk. | `package.json` (`build.electronFuses`) |
 
@@ -38,6 +39,7 @@ Web pages are untrusted. The browser keeps them away from your files, from the a
 - The list of open tabs is saved only if "Reopen my tabs" is turned on; private and internal tabs are never saved, and turning the option off deletes the saved list.
 - Zoom levels are saved per site for regular tabs only.
 - No analytics or telemetry.
+- Packaged copies ask GitHub for the latest release about every six hours (installed copies through `electron-updater`, portable ones through the GitHub API, with a generic `Simple-Browser-Update-Check` user agent). Turning off "Check for new versions" in Settings stops these requests; a check you start yourself still runs.
 - With ad and tracker blocking on, the browser downloads the two filter lists from `easylist.to` at most every few days and keeps them, compiled, in the profile folder (`blocker\`). Turning blocking off stops these downloads. Sites where blocking was turned off are kept in the settings file.
 
 ## Known limits

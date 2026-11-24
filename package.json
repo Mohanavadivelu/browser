@@ -40,6 +40,13 @@
       "artifactName": "Simple-Browser-${version}-portable.exe"
     },
     "artifactName": "Simple-Browser-Setup-${version}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Mohanavadivelu",
+        "repo": "browser"
+      }
+    ],
     "electronFuses": {
       "runAsNode": false,
       "enableCookieEncryption": true,
@@ -57,6 +64,7 @@
     "electron-builder": "26.18.0"
   },
   "dependencies": {
-    "@ghostery/adblocker": "2.20.3"
+    "@ghostery/adblocker": "2.20.3",
+    "electron-updater": "6.8.11"
   }
 }

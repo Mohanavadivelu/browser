@@ -4,7 +4,13 @@ const { Menu } = require('electron');
 
 // The ⋮ menu. Pages cannot open or change it.
 function showMainMenu(ctx) {
-  const { app, dialog, host, tabs, recorder, actions, shell, getRecordingFolder } = ctx;
+  const { app, dialog, host, tabs, recorder, actions, shell, getRecordingFolder, updates } = ctx;
+  const { status, version } = updates.state;
+  let updateItem = { label: 'Check for updates', click: () => updates.check({ manual: true }) };
+  if (status === 'ready') updateItem = { label: `Restart to update to ${version}`, click: () => updates.install() };
+  else if (status === 'available') updateItem = { label: `Download Simple Browser ${version}…`, click: () => tabs.create({ url: updates.install() }) };
+  else if (status === 'checking') updateItem = { label: 'Checking for updates…', enabled: false };
+  else if (status === 'downloading') updateItem = { label: `Downloading ${version}…`, enabled: false };
   const recording = recorder.active;
   const items = [
     { label: 'New tab', accelerator: 'Ctrl+T', click: () => tabs.create() },
@@ -48,6 +54,7 @@ function showMainMenu(ctx) {
     { type: 'separator' },
     { label: 'Full screen', accelerator: 'F11', click: () => host.toggleFullscreen() },
     { type: 'separator' },
+    updateItem,
     {
       label: 'About Simple Browser',
       click: () => dialog.showMessageBox(host.win, {

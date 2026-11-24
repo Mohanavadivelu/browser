@@ -370,6 +370,15 @@ async function main() {
   tabs.close(privateAdTab.id);
   tabs.close(adTab.id);
 
+  // ---------- Updates ----------
+  tabs.openInternal('settings');
+  const settingsTab = tabs.active;
+  await waitFor(() => settingsTab.title === 'Settings', 'settings page for updates');
+  await evalIn(settingsTab.view, "document.getElementById('updatesCheck').click()");
+  await waitFor(async () => /running from source/.test(await evalIn(settingsTab.view, "document.getElementById('updatesMessage').textContent")), 'update check answered', 5000).catch(() => {});
+  check('a run from source never checks for updates', ctx.updates.mode === 'off' && /running from source/.test(await evalIn(settingsTab.view, "document.getElementById('updatesMessage').textContent")));
+  check('automatic update checks are on by default', settings.data.checkForUpdates === true && (await evalIn(settingsTab.view, "document.getElementById('checkForUpdates').checked")) === true);
+
   // ---------- Print and Save as PDF ----------
   const pdfTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');
   tabs.activate(pdfTab.id);

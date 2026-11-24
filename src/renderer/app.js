@@ -125,6 +125,11 @@ function renderToolbar() {
 
   renderShield(tab);
 
+  const update = state.update ?? {};
+  const updateWaiting = update.status === 'ready' || update.status === 'available';
+  $('menu').classList.toggle('update', updateWaiting);
+  $('menu').title = updateWaiting ? `Menu: Simple Browser ${update.version} is ${update.status === 'ready' ? 'ready to install' : 'available'}` : 'Menu';
+
   const percent = Math.round((tab?.zoom ?? 1) * 100);
   $('zoom').classList.toggle('show', percent !== 100);
   $('zoom').textContent = `${percent}%`;
