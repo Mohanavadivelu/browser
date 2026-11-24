@@ -40,3 +40,11 @@ jobs:
 
       - name: Audit production dependencies
         run: npm run audit:prod
+
+      # The packaged app starts from app.asar with its fuses and packed dependencies, which the
+      # tests above (run from source) cannot show.
+      - name: Build the app folder
+        run: npx electron-builder --win dir --x64 --publish never
+
+      - name: Packaged app check
+        run: npm run test:packaged

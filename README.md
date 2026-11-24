@@ -43,6 +43,7 @@ npm start
 | `npm start` | Launch the browser |
 | `npm test` | Unit tests (security rules, settings, history, zoom, downloads, recordings, shortcuts) |
 | `npm run smoke` | End-to-end tests: launch the app against a local server and check sandboxing, navigation blocking, tabs, full screen, find, zoom, history, the library pages, downloads, screenshots, restoring tabs, and real recordings (audio, pause, quality, following tabs) |
+| `npm run test:packaged` | After a build: start the packaged app (`dist\win-unpacked`) with a temporary profile and check it works from its `app.asar` |
 | `npm run audit:prod` | Check production dependencies for known vulnerabilities |
 | `npm run dist` | Build the Windows installer and portable `.exe` into `dist\` |
 
@@ -95,6 +96,7 @@ src/
 mockup/            Original design mockup
 tests/
   unit/            node:test unit tests
+  packaged/        Check of the built app (check.js)
   smoke/           End-to-end Electron tests (run.js, features.js, restore.js; launch.js runs them)
 ```
 
@@ -119,6 +121,8 @@ The build is **not code-signed**, so Windows SmartScreen may show an "unknown pu
 The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums. It also uploads `latest.yml` and the installer's `.blockmap`, which installed copies use to find and download the update.
 
 ## Status
+
+Version 0.5.0: address-bar suggestions, reopen/drag/mute for tabs, a bookmarks page with import and export, print and save as PDF, ad and tracker blocking, and automatic updates from GitHub Releases. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.4.0: recordings now have a length and a seek index, so players show their length and can jump around; recording survives closing the window and stops cleanly on disk errors; downloads renamed to a blocked type in the Save dialog are refused; each of the browser's own pages can call only what it needs; tab icons are fetched through the tab's own session; and the packaged app is locked down with Electron fuses. Tests run on GitHub Actions for every push.
 

@@ -3,7 +3,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { UpdateService, compareVersions, updateMode, fetchLatestRelease } = require('../../src/main/updates');
+const { UpdateService, compareVersions, updateMode, fetchLatestRelease, RELEASES } = require('../../src/main/updates');
+
+test('the app checks the repository the builds are published to', () => {
+  const { build } = require('../../package.json');
+  assert.deepEqual(build.publish, [{ provider: 'github', ...RELEASES }]);
+});
+
+test('the app reads nothing from package.json at start-up that the packaged copy lacks', () => {
+  // electron-builder keeps only some fields of package.json inside app.asar ("build" is removed).
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const mainDir = path.join(__dirname, '..', '..', 'src', 'main');
+  const readers = fs.readdirSync(mainDir, { recursive: true })
+    .filter((file) => file.endsWith('.js'))
+    .filter((file) => /require\([^)]*package\.json/.test(fs.readFileSync(path.join(mainDir, file), 'utf8')));
+  assert.deepEqual(readers, []);
+});
 
 test('versions compare by number, not as text', () => {
   assert.equal(compareVersions('0.10.0', '0.9.1'), 1);

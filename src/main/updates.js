@@ -4,6 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
+// Where releases are published. It matches `build.publish` in package.json (a unit test checks),
+// but is kept here because electron-builder removes the `build` section from the packaged app.
+const RELEASES = Object.freeze({ owner: 'Mohanavadivelu', repo: 'browser' });
+
 const FIRST_CHECK_MS = 30_000;
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -147,4 +151,4 @@ async function fetchLatestRelease(fetch, { owner, repo }) {
   return { version: release.tag_name.replace(/^v/i, ''), url };
 }
 
-module.exports = { UpdateService, compareVersions, updateMode, fetchLatestRelease };
+module.exports = { UpdateService, compareVersions, updateMode, fetchLatestRelease, RELEASES };

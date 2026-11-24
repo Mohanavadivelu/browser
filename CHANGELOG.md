@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+Everyday browsing: suggestions as you type, tab handling, a bookmarks manager, PDF, ad and tracker blocking, and automatic updates.
+
+### New
+
+- **Address-bar suggestions** as you type: the search or address itself first, then matching bookmarks and visited pages (visited pages only while history is on). Use the arrow keys and Enter, or click.
+- **Tabs**: reopen the last closed tab with **Ctrl+Shift+T** (private tabs are never kept), drag tabs to reorder them, and mute a tab from the 🔊 icon that appears while it plays sound.
+- **Bookmarks page** (**Ctrl+Shift+O**): rename, reorder and delete bookmarks, and import or export them as the bookmarks file Chrome, Edge and Firefox use. Up to 1,000 bookmarks (was 200).
+- **Print** (**Ctrl+P**) and **Save page as PDF** (⋮ menu).
+- **Ad and tracker blocking**, on by default, with the EasyList and EasyPrivacy lists. The 🛡 in the address bar counts what was blocked on the page; click it to allow ads and trackers on that site. Turn it off, or see the allowed sites, in Settings. The lists are downloaded from easylist.to every few days.
+- **Automatic updates**: installed copies download new versions from GitHub Releases and install them when the browser closes; the portable `.exe` tells you about a new version and opens its download page. Turn the checks off in Settings.
 
 ### Changes
 
