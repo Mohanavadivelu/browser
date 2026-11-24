@@ -366,3 +366,12 @@ test('history skips jumps within a page but keeps single-page app page changes',
   history.add({ url: 'https://docs.example/api#top' });
   assert.equal(history.entries.length, 3);
 });
+
+test('a PDF is named after its page, without characters Windows forbids', () => {
+  const { pdfFileName } = require('../../src/main/app');
+  assert.equal(pdfFileName('Q3: sales / plan'), 'Q3 sales plan.pdf');
+  assert.equal(pdfFileName('  '), 'page.pdf');
+  assert.equal(pdfFileName('CON'), 'page.pdf');
+  assert.equal(pdfFileName(undefined), 'page.pdf');
+  assert.ok(pdfFileName('x'.repeat(300)).length <= 104);
+});

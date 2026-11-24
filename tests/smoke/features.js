@@ -324,6 +324,25 @@ async function main() {
     settings.data.bookmarks.at(-1)?.title === 'New & imported' && settings.data.bookmarks.length === 3 && /Imported 1 bookmark\. 1 skipped/.test(importMessage), importMessage);
   settings.update({ bookmarks: [] });
 
+  // ---------- Print and Save as PDF ----------
+  const pdfTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');
+  tabs.activate(pdfTab.id);
+  await load(`${base}/text`, pdfTab);
+  dialogTargets.save = path.join(work, 'saved-page.pdf');
+  const pdfPath = await actions.savePdf();
+  const pdfBytes = pdfPath ? fs.readFileSync(pdfPath) : Buffer.alloc(0);
+  check('a page can be saved as a PDF', pdfBytes.subarray(0, 5).toString() === '%PDF-' && pdfBytes.length > 1000, `${pdfBytes.length} bytes`);
+  // The real print dialog cannot run in a test; check Print reaches the page.
+  const printCalls = [];
+  const realPrint = pdfTab.view.webContents.print;
+  pdfTab.view.webContents.print = (options, callback) => { printCalls.push(options); callback(false, 'cancelled'); };
+  actions.print();
+  pdfTab.view.webContents.print = realPrint;
+  check('Print opens the print dialog for the current page', printCalls.length === 1);
+  tabs.openInternal('history');
+  check('the browser pages are not printed or saved as PDF', (await actions.savePdf()) === null);
+  dialogTargets.save = '';
+
   // ---------- Downloads policy ----------
   tabs.navigate(`${base}/setup.exe`);
   await waitFor(() => noticeLike(/Blocked download of "setup\.exe"/), 'executable download blocked', 8000);

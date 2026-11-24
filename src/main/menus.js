@@ -12,6 +12,8 @@ function showMainMenu(ctx) {
     { label: 'Reopen closed tab', accelerator: 'Ctrl+Shift+T', enabled: tabs.closed.length > 0, click: () => tabs.reopenClosed() },
     { type: 'separator' },
     { label: 'Find in page…', accelerator: 'Ctrl+F', click: () => actions.find() },
+    { label: 'Print…', accelerator: 'Ctrl+P', click: () => actions.print() },
+    { label: 'Save page as PDF…', click: () => actions.savePdf() },
     {
       label: 'Zoom',
       submenu: [

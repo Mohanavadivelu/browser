@@ -28,6 +28,7 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
     else if (ctrl && !input.shift && key === 't') tabs.create();
     else if (ctrl && !input.shift && key === 'w') tabs.close(tabs.activeId);
     else if (ctrl && !input.shift && key === 'f') actions.find();
+    else if (ctrl && !input.shift && key === 'p') actions.print();
     else if (ctrl && !input.shift && key === 'h') actions.openLibrary('history');
     else if (ctrl && !input.shift && key === 'j') actions.openLibrary('downloads');
     else if (ctrl && !input.alt && (input.key === '+' || input.key === '=')) actions.zoom(1);

@@ -37,6 +37,7 @@ function setup(modeOverrides = {}) {
     toggleRecording: record('toggleRecording'),
     togglePause: record('togglePause'),
     screenshot: record('screenshot'),
+    print: record('print'),
   };
   const handler = createShortcutHandler({ tabs, host, ui, actions });
   // `from` is where the key was pressed: the active page, or (by default) the browser's own bars.
@@ -67,6 +68,13 @@ test('Ctrl+Shift+T reopens the last closed tab', () => {
   assert.equal(press({ key: 'T', control: true, shift: true }), true);
   assert.equal(press({ key: 't', control: true }), true);
   assert.deepEqual(calls.map((call) => call[0]), ['reopenClosed', 'create']);
+});
+
+test('Ctrl+P prints the page and Ctrl+Shift+O opens the bookmarks page', () => {
+  const { calls, press } = setup();
+  assert.equal(press({ key: 'p', control: true }), true);
+  assert.equal(press({ key: 'O', control: true, shift: true }), true);
+  assert.deepEqual(calls.map((call) => call.join(':')), ['print', 'openLibrary:bookmarks']);
 });
 
 test('zoom shortcuts map to in, out and reset', () => {

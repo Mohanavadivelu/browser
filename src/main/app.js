@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { app, ipcMain, shell, dialog, Menu, clipboard, webContents } = require('electron');
@@ -15,6 +16,7 @@ const { askRecordingConsent } = require('./recording/consent');
 const { publicQualities } = require('./recording/quality');
 const { RecordingIndex } = require('./recording/library');
 const { saveScreenshot } = require('./recording/storage');
+const { sanitizeBaseName } = require('./recording/library');
 const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
 const { DownloadManager } = require('./download-manager');
@@ -38,6 +40,12 @@ const BLOCK_MESSAGES = {
   'too-long': 'That address is too long.',
 };
 const EDIT_COMMANDS = new Set(['cut', 'copy', 'paste', 'selectAll']);
+
+// A file name from the page title, without characters Windows forbids ("Q3: sales" -> "Q3 sales.pdf");
+// pages without a usable title get "page.pdf".
+function pdfFileName(title) {
+  return `${sanitizeBaseName(title)?.replace(/\s+/g, ' ') ?? 'page'}.pdf`;
+}
 
 function cleanUserAgent(userAgent) {
   return userAgent.replace(/\s?Electron\/\S+/, '').replace(/\s?simple-browser\/\S+/i, '');
@@ -81,6 +89,8 @@ async function start(options = {}) {
   const downloads = new DownloadManager();
   const zoom = new ZoomController({ settings });
 
+  // `options.dialog` stands in for the Save and Open dialogs in automated tests.
+  const appDialog = options.dialog ?? dialog;
   const host = new BrowserWindow({ rendererDir: RENDERER_DIR, preloadPath: PRELOAD_PATH });
   const { win, ui, indicator, find } = host;
   const getRecordingFolder = () => settings.data.recordingFolder ?? path.join(app.getPath('videos'), 'Simple Browser');
@@ -326,6 +336,34 @@ async function start(options = {}) {
     togglePause: () => {
       if (recorder.active) ui.webContents.send('recording:command', 'toggle-pause');
     },
+    // The system print dialog for the current page.
+    print: () => {
+      const tab = tabs.active;
+      if (!tab || tab.kind !== 'web') return;
+      tab.view.webContents.print({}, (success, reason) => {
+        if (!success && reason !== 'cancelled' && reason !== 'Print job canceled') notify(`Could not print: ${reason}`, 'error');
+      });
+    },
+    // Saves the current page as a PDF, named after its title.
+    savePdf: async () => {
+      const tab = tabs.active;
+      if (!tab || tab.kind !== 'web') return null;
+      const result = await appDialog.showSaveDialog(win, {
+        title: 'Save page as PDF',
+        defaultPath: path.join(app.getPath('documents'), pdfFileName(tab.title)),
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      try {
+        const pdf = await tab.view.webContents.printToPDF({ printBackground: true });
+        fs.writeFileSync(result.filePath, pdf);
+      } catch (error) {
+        notify(`Could not save the PDF: ${error.message}`, 'error');
+        return null;
+      }
+      notify(`Saved PDF: ${result.filePath}`);
+      return result.filePath;
+    },
     screenshot: async () => {
       const tab = tabs.active;
       if (!tab) return null;
@@ -362,9 +400,7 @@ async function start(options = {}) {
   const ipc = createIpc(ipcMain, senderRole);
 
   const context = {
-    app, shell, host,
-    // `options.dialog` stands in for the Save and Open dialogs in automated tests.
-    dialog: options.dialog ?? dialog, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    app, shell, host, dialog: appDialog, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary,
     showMenu: () => showMainMenu(context),
   };
@@ -424,4 +460,4 @@ async function start(options = {}) {
   };
 }
 
-module.exports = { start };
+module.exports = { start, pdfFileName };

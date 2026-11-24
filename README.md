@@ -9,6 +9,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Tabs**: drag to reorder, reopen a closed tab with Ctrl+Shift+T (private tabs are never kept), and a 🔊 icon on tabs playing sound that mutes the tab when clicked.
 - **Private tabs**: each one has its own in-memory session that is wiped when the tab closes.
 - **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload.
+- **Print** (Ctrl+P) and **Save page as PDF** (⋮ menu).
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
 - **Bookmarks** page (Ctrl+Shift+O): rename, reorder and delete bookmarks, and import or export them as the bookmarks file Chrome, Edge and Firefox use (folders are flattened on import).
 - **History** (off by default; never saved from private tabs), **Downloads** (progress, cancel, show in folder) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `bookmarks`, `downloads`, `recordings` or `settings` in the address bar.
@@ -59,6 +60,7 @@ npm start
 | Ctrl+Tab, Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+D | Bookmark the page |
 | Ctrl+F | Find in page (Enter / Shift+Enter for next / previous) |
+| Ctrl+P | Print the page |
 | Ctrl+Plus, Ctrl+Minus, Ctrl+0 | Zoom in, out, reset |
 | Ctrl+H, Ctrl+J | History, Downloads |
 | Ctrl+Shift+O | Bookmarks |
