@@ -431,6 +431,71 @@ async function main() {
   dialogTargets.save = '';
   dialogTargets.open = '';
 
+  // ---------- Bookmarks bar: icons, », Other bookmarks, right-click, hiding ----------
+  const barTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web' && !tab.isPrivate);
+  tabs.activate(barTab.id);
+  await load(`${base}/icon-page`, barTab);
+  await waitFor(() => barTab.favicon.startsWith('data:'), 'page icon', 8000).catch(() => {});
+  actions.toggleBookmark();
+  const barIconSrc = () => evalIn(ui, "document.querySelector('#bookmarks .chip .bm-icon')?.src ?? ''");
+  await waitFor(async () => (await barIconSrc()).startsWith('data:image/png'), 'icon on the bar', 5000).catch(() => {});
+  check('a bookmark shows its site icon on the bar', (await barIconSrc()).startsWith('data:image/png') &&
+    ctx.bookmarkIcons.get(`${base}/icon-page`)?.startsWith('data:image/png'));
+
+  settings.update({ bookmarks: {
+    bar: { children: Array.from({ length: 40 }, (_, i) => ({ type: 'link', url: `${base}/many-${i}`, title: `Many bookmarks ${i}` })) },
+    other: { children: [{ type: 'link', url: `${base}/kept-off`, title: 'Kept off the bar' }] },
+  } });
+  tabs.activate(barTab.id); // sends the toolbar fresh state
+  const barLayout = () => evalIn(ui, `(() => {
+    const more = document.querySelector('#bookmarks .more');
+    return {
+      hiddenIds: [...document.querySelectorAll('#bookmarks .chip[hidden]')].map((chip) => chip.dataset.id),
+      more: Boolean(more && !more.hidden),
+      other: document.querySelector('#bookmarks .chip.other')?.textContent ?? '',
+    };
+  })()`);
+  await waitFor(async () => (await barLayout()).more, 'the » button', 5000).catch(() => {});
+  const layout = await barLayout();
+  const titleOf = (id) => bookmarkTree.find(settings.data.bookmarks, id)?.node.title;
+  check('bookmarks that do not fit go under »', layout.more && layout.hiddenIds.length > 0 && layout.hiddenIds.length < 40, `${layout.hiddenIds.length} hidden`);
+  check('the » menu lists exactly the hidden bookmarks',
+    ctx.bookmarkMenus.items(layout.hiddenIds).map((item) => item.label).join('|') === layout.hiddenIds.map(titleOf).join('|'));
+  check('Other bookmarks has its own button on the bar', /Other bookmarks/.test(layout.other), layout.other);
+
+  const firstBookmark = settings.data.bookmarks.bar.children[0];
+  const contextMenu = ctx.bookmarkMenus.context(firstBookmark.id);
+  check('right-clicking a bookmark offers open, new tab, private tab, edit and delete',
+    contextMenu.map((item) => item.label ?? '').join('|') === 'Open|Open in new tab|Open in private tab||Edit…|Delete');
+  const tabsBefore = tabs.order.length;
+  contextMenu.find((item) => item.label === 'Open in private tab').click();
+  await waitFor(() => tabs.order.length === tabsBefore + 1 && tabs.active.isPrivate && tabs.active.view.webContents.getURL().endsWith('/many-0'), 'private tab from the menu', 5000).catch(() => {});
+  check('a bookmark opens in a private tab from its menu', tabs.active.isPrivate && tabs.active.view.webContents.getURL().endsWith('/many-0'));
+  tabs.close(tabs.activeId);
+
+  contextMenu.find((item) => item.label === 'Edit…').click();
+  const editField = `document.querySelector('#bookmarkList .bm-row[data-id="${firstBookmark.id}"] input[type=text]')`;
+  await waitFor(async () => tabs.active.kind === 'internal' && (await evalIn(tabs.active.view, `Boolean(${editField})`)), 'bookmark ready to edit', 5000).catch(() => {});
+  check('Edit… opens the bookmark ready to edit on the Bookmarks page', tabs.active.kind === 'internal' &&
+    (await evalIn(tabs.active.view, `${editField}?.value ?? ''`)) === 'Many bookmarks 0');
+
+  await contextMenu.find((item) => item.label === 'Delete').click();
+  await waitFor(() => !bookmarkTree.find(settings.data.bookmarks, firstBookmark.id), 'bookmark deleted', 3000).catch(() => {});
+  check('Delete in the menu removes the bookmark', !bookmarkTree.find(settings.data.bookmarks, firstBookmark.id));
+  const otherMenu = ctx.bookmarkMenus.context('other').map((item) => item.label ?? '');
+  check('Other bookmarks can be opened but not renamed or deleted', otherMenu.join('|') === 'Open all (1) in new tabs', otherMenu.join('|'));
+
+  tabs.activate(barTab.id);
+  actions.toggleBookmarksBar();
+  await waitFor(() => ui.getBounds().height === 86, 'bar hidden', 3000).catch(() => {});
+  check('Ctrl+Shift+B hides the bookmarks bar and the page moves up', settings.data.showBookmarksBar === false &&
+    ui.getBounds().height === 86 && barTab.view.getBounds().y === 86, `toolbar ${ui.getBounds().height}, page at ${barTab.view.getBounds().y}`);
+  actions.toggleBookmarksBar();
+  await waitFor(() => ui.getBounds().height === 116, 'bar shown', 3000).catch(() => {});
+  check('and shows it again', settings.data.showBookmarksBar === true && ui.getBounds().height === 116 && barTab.view.getBounds().y === 116);
+  settings.update({ bookmarks: [], bookmarkFolder: 'bar' });
+  tabs.activate(barTab.id);
+
   // ---------- Ad and tracker blocking ----------
   const adTab = tabs.create({ url: `${base}/ad-page` });
   await waitFor(() => adTab.view.webContents.getURL().endsWith('/ad-page') && !adTab.view.webContents.isLoading(), 'ad page loaded');

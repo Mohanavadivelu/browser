@@ -21,6 +21,7 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
     else if (ctrl && input.shift && key === 'n') tabs.create({ isPrivate: true });
     else if (ctrl && input.shift && key === 't') tabs.reopenClosed();
     else if (ctrl && input.shift && key === 'o') actions.openLibrary('bookmarks');
+    else if (ctrl && input.shift && key === 'b') actions.toggleBookmarksBar();
     else if (ctrl && input.shift && key === 'e') actions.toggleRecording();
     else if (ctrl && input.shift && key === 'm') actions.addMarker();
     else if ((ctrl && input.shift && key === 'r') || (ctrl && input.key === 'F5')) tabs.reloadIgnoringCache();

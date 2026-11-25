@@ -71,6 +71,7 @@ async function loadHistory() {
 // The folder tree on the left, the open folder (or search results) on the right. Every change
 // goes to the main process, which sends back the whole tree.
 let bookmarkTree = null;
+let pageIcons = {}; // site icons of bookmarks, by address
 let openFolderId = 'bar';
 const selectedBookmarks = new Set();
 let draggedBookmark = null;
@@ -152,7 +153,23 @@ function setBookmarkTree(tree) {
 }
 
 async function loadBookmarks() {
-  setBookmarkTree(await api.bookmarks.list());
+  const tree = await api.bookmarks.list();
+  bookmarkTree = tree;
+  pageIcons = await api.bookmarks.icons(bookmarkRoots().flatMap(linksIn).map((link) => link.url));
+  setBookmarkTree(tree);
+}
+
+// From "Edit…" in the bar's right-click menu: open this bookmark's folder and edit it.
+async function revealBookmark(id) {
+  show('bookmarks');
+  await loadBookmarks();
+  const found = findBookmark(id);
+  if (!found) return;
+  $('bookmarksSearch').value = '';
+  openFolderId = found.parent?.id ?? found.node.id;
+  renderBookmarkPage();
+  const row = document.querySelector(`#bookmarkList .bm-row[data-id="${id}"]`);
+  if (row && found.parent) startBookmarkEdit(row, found.node);
 }
 
 // ---------- Dragging: reorder in a folder, or drop into a folder ----------
@@ -311,7 +328,17 @@ function bookmarkRow(node, index, { searching, folderName }) {
     else selectedBookmarks.delete(node.id);
     renderSelectionBar();
   });
-  row.append(tick, node.type === 'folder' ? folderSvg(false) : element('span', 'link-dot'));
+  let icon;
+  if (node.type === 'folder') {
+    icon = folderSvg(false);
+  } else if (pageIcons[node.url]) {
+    icon = element('img', 'bm-icon');
+    icon.src = pageIcons[node.url];
+    icon.alt = '';
+  } else {
+    icon = element('span', 'link-dot');
+  }
+  row.append(tick, icon);
   const main = element('div', 'main');
   const open = button(node.title, () => {
     if (node.type === 'folder') {
@@ -716,6 +743,7 @@ function renderSettings(settings) {
   fillSelect($('recordingQuality'), settings.qualities.map((quality) => ({ key: quality.key, label: quality.label })), settings.recordingQuality);
   $('qualityHint').textContent = settings.qualities.find((quality) => quality.key === settings.recordingQuality)?.description ?? '';
   $('recordingFollowTab').checked = settings.recordingFollowTab;
+  $('showBookmarksBar').checked = settings.showBookmarksBar;
   $('recordingMicrophone').checked = settings.recordingMicrophone;
   fillSelect($('recordingStopAfter'), settings.stopAfterChoices.map((minutes) => ({
     key: String(minutes),
@@ -765,6 +793,7 @@ function bindSettings() {
   $('recordingQuality').addEventListener('change', () => saveSetting({ recordingQuality: $('recordingQuality').value }));
   $('recordingStopAfter').addEventListener('change', () => saveSetting({ recordingStopAfter: Number($('recordingStopAfter').value) }));
   $('recordingMicrophone').addEventListener('change', () => saveSetting({ recordingMicrophone: $('recordingMicrophone').checked }));
+  $('showBookmarksBar').addEventListener('change', () => saveSetting({ showBookmarksBar: $('showBookmarksBar').checked }));
   $('recordingFollowTab').addEventListener('change', () => saveSetting({ recordingFollowTab: $('recordingFollowTab').checked }));
   $('folderChange').addEventListener('click', async () => renderSettings(await api.settings.chooseFolder()));
   $('folderOpen').addEventListener('click', () => api.recordings.openFolder());
@@ -827,5 +856,6 @@ api.onLibraryShow(show);
 api.onDownloads((items) => { if (current === 'downloads') renderDownloads(items); });
 api.onRecordingsChanged(() => { if (current === 'recordings') loadRecordings(); });
 api.onBookmarksChanged(() => { if (current === 'bookmarks') loadBookmarks(); });
+api.onBookmarkReveal(revealBookmark);
 
 show(location.hash.slice(1));

@@ -25,6 +25,10 @@ const validators = {
   bookmarkMove: (...args) => args.length === 3 && isId(args[0]) && isId(args[1]) &&
     Number.isInteger(args[2]) && args[2] >= 0 && args[2] <= 10000,
   idList: (...args) => args.length === 1 && Array.isArray(args[0]) && args[0].length > 0 && args[0].length <= 5000 && args[0].every(isId),
+  idListAt: (...args) => args.length === 3 && Array.isArray(args[0]) && args[0].length > 0 && args[0].length <= 1000 &&
+    args[0].every(isId) && [args[1], args[2]].every((n) => Number.isInteger(n) && n >= 0 && n <= 20000),
+  urlList: (...args) => args.length === 1 && Array.isArray(args[0]) && args[0].length <= 5000 &&
+    args[0].every((url) => typeof url === 'string' && url.length <= 2048),
   menuAt: (...args) => args.length === 3 && isId(args[0]) && [args[1], args[2]].every((n) => Number.isInteger(n) && n >= 0 && n <= 20000),
   pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 1000,
   settingsPatch: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&

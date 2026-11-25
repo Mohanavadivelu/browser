@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src sb-media:; img-src sb-media:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src sb-media:; img-src sb-media: data:">
   <title>Simple Browser</title>
   <link rel="stylesheet" href="library.css">
 </head>
@@ -106,6 +106,7 @@
           <span>Search engine</span>
           <select id="searchEngine"></select>
         </label>
+        <label class="check"><input id="showBookmarksBar" type="checkbox"> Show the bookmarks bar (Ctrl+Shift+B)</label>
         <label class="check"><input id="restoreTabs" type="checkbox"> Reopen my tabs when the browser starts (private tabs are never restored)</label>
       </div>
 

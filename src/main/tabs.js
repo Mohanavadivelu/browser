@@ -122,6 +122,7 @@ class TabManager extends EventEmitter {
       this.fetchFavicon(contents.session, source).then((dataUrl) => {
         if (tab.faviconSource !== source || contents.isDestroyed()) return;
         tab.favicon = dataUrl;
+        if (dataUrl) this.emit('favicon', tab, contents.getURL(), dataUrl);
         changed();
       });
     });

@@ -12,7 +12,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload.
 - **Print** (Ctrl+P) and **Save page as PDF** (⋮ menu).
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
-- **Bookmarks** in folders (folders can hold folders): the bar shows its bookmarks and folders, and a folder opens as a menu with its subfolders and "Open all". The Bookmarks page (Ctrl+Shift+O) has the folder tree, search across all folders, drag to reorder or to drop into a folder, ↑ ↓, edit name and address, select several to move or delete, "Open all", and import or export as the bookmarks file Chrome, Edge and Firefox use (folders kept). The star (☆) files a new bookmark in the folder you used last.
+- **Bookmarks** in folders (folders can hold folders): the bar shows its bookmarks with their site icons and its folders, a folder opens as a menu with its subfolders and "Open all", bookmarks that do not fit go under », and "Other bookmarks" holds the rest. Right-click a bookmark to open it in a new or private tab, edit or delete it; Ctrl+Shift+B shows or hides the bar. The Bookmarks page (Ctrl+Shift+O) has the folder tree, search across all folders, drag to reorder or to drop into a folder, ↑ ↓, edit name and address, select several to move or delete, "Open all", and import or export as the bookmarks file Chrome, Edge and Firefox use (folders kept). The star (☆) files a new bookmark in the folder you used last.
 - **History** (off by default; never saved from private tabs), **Downloads** (progress, cancel, show in folder) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `bookmarks`, `downloads`, `recordings` or `settings` in the address bar.
 - **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, recording quality, keep recording across tabs, and the folder for recordings and screenshots.
 - **Full screen** (F11 or the ⛶ button): only the page is shown. Move the mouse to the top edge to bring the toolbar back. After **5 seconds without mouse or keyboard activity**, the top bar and the mouse pointer hide automatically; move the mouse or press a key to bring them back. Pages can also take the whole window for their own video full screen.
@@ -70,6 +70,7 @@ npm start
 | Ctrl+Plus, Ctrl+Minus, Ctrl+0 | Zoom in, out, reset |
 | Ctrl+H, Ctrl+J | History, Downloads |
 | Ctrl+Shift+O | Bookmarks |
+| Ctrl+Shift+B | Show or hide the bookmarks bar |
 | Ctrl+Shift+E | Start / stop recording |
 | Ctrl+Shift+P | Pause / resume recording |
 | Ctrl+Shift+M | Add a marker to the recording |

@@ -103,6 +103,15 @@ button:disabled { color: #5f6368; cursor: default; }
 .bookmarks .chip .label { overflow: hidden; text-overflow: ellipsis; }
 .bookmarks .chip .caret { font-size: 9px; color: var(--muted); }
 .folder-icon { flex: none; width: 14px; height: 14px; fill: none; stroke: #fdd663; stroke-width: 2; stroke-linejoin: round; }
+.folder-icon.muted { stroke: var(--muted); }
+.bookmarks .chip[hidden] { display: none; }
+.bookmarks .bm-icon { flex: none; width: 14px; height: 14px; object-fit: contain; }
+.bookmarks .bm-star { flex: none; font-size: 11px; }
+.bookmarks .spacer { flex: 1; }
+.bookmarks .more { flex: none; padding: 3px 10px; }
+/* Ctrl+Shift+B hides the bookmarks bar. */
+body.no-bar .bookmarks { display: none; }
+body.no-bar:not(.fs) .chrome { height: 86px; }
 .bookmarks .hint { color: #6f7378; }
 
 .loading { position: absolute; left: 0; bottom: 0; display: none; width: 30%; height: 2px; background: var(--accent); }

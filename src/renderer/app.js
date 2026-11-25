@@ -156,40 +156,105 @@ function renderShield(tab) {
   else shield.title = `${tab.blocked} ads and trackers blocked on this page. Click to allow them on ${site}.`;
 }
 
+// Site icons of the bar's bookmarks, fetched from the main process only when they change.
+let barIcons = {};
+let barIconsKey = '';
+async function refreshBarIcons() {
+  const urls = state.bookmarks.filter((item) => item.icon).map((item) => item.url);
+  const key = `${state.bookmarkIconsVersion}|${urls.join(' ')}`;
+  if (key === barIconsKey) return;
+  barIconsKey = key;
+  barIcons = urls.length ? await api.bookmarks.icons(urls) : {};
+  renderBookmarks();
+}
+
+function openFolderMenu(chip, id) {
+  const box = chip.getBoundingClientRect();
+  api.bookmarks.folderMenu(id, Math.round(box.left), Math.round(box.bottom));
+}
+
+function bookmarkChip(item) {
+  const chip = element('button', `chip${item.type === 'folder' ? ' folder' : ''}`);
+  chip.type = 'button';
+  chip.dataset.id = item.id;
+  if (item.type === 'folder') {
+    // A folder opens as a menu just under its button.
+    chip.append(folderIcon(item.id === 'other'), element('span', 'label', item.title), element('span', 'caret', '▾'));
+    chip.title = `${item.title} (folder)`;
+    chip.setAttribute('aria-haspopup', 'menu');
+    chip.addEventListener('click', () => openFolderMenu(chip, item.id));
+  } else {
+    if (barIcons[item.url]) {
+      const icon = element('img', 'bm-icon');
+      icon.src = barIcons[item.url];
+      icon.alt = '';
+      chip.append(icon);
+    } else {
+      chip.append(element('span', 'bm-star', '★'));
+    }
+    chip.append(element('span', 'label', item.title));
+    chip.title = `${item.title}\n${item.url}`;
+    chip.addEventListener('click', () => api.nav.go(item.url));
+  }
+  // Right-click: open in a new or private tab, edit, delete.
+  chip.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    api.bookmarks.contextMenu(item.id, Math.round(event.clientX), Math.round(event.clientY));
+  });
+  return chip;
+}
+
 function renderBookmarks() {
   const bar = $('bookmarks');
   bar.replaceChildren();
-  if (state.bookmarks.length === 0) {
+  if (state.bookmarks.length === 0 && !state.otherBookmarks) {
     bar.append(element('span', 'hint', 'Press ☆ in the address bar to bookmark a page.'));
     return;
   }
-  for (const item of state.bookmarks) {
-    const chip = element('button', `chip${item.type === 'folder' ? ' folder' : ''}`);
-    chip.type = 'button';
-    chip.dataset.id = item.id;
-    if (item.type === 'folder') {
-      // A folder opens as a menu just under its button.
-      chip.append(folderIcon(), element('span', 'label', item.title), element('span', 'caret', '▾'));
-      chip.title = `${item.title} (folder)`;
-      chip.setAttribute('aria-haspopup', 'menu');
-      chip.addEventListener('click', () => {
-        const box = chip.getBoundingClientRect();
-        api.bookmarks.folderMenu(item.id, Math.round(box.left), Math.round(box.bottom));
-      });
-    } else {
-      chip.append(element('span', 'label', `★ ${item.title}`));
-      chip.title = item.url;
-      chip.addEventListener('click', () => api.nav.go(item.url));
+  const chips = state.bookmarks.map(bookmarkChip);
+  const more = element('button', 'chip more', '»');
+  more.type = 'button';
+  more.title = 'More bookmarks';
+  more.setAttribute('aria-label', 'More bookmarks');
+  more.hidden = true;
+  bar.append(...chips, element('span', 'spacer'), more);
+  let other = null;
+  if (state.otherBookmarks) {
+    other = bookmarkChip({ id: 'other', type: 'folder', title: 'Other bookmarks' });
+    other.classList.add('other');
+    bar.append(other);
+  }
+  // Bookmarks that would run past the bar's visible width, less room for » and Other bookmarks,
+  // go into the » menu instead.
+  more.hidden = false;
+  const reserved = more.offsetWidth + 6 + (other ? other.offsetWidth + 6 : 0);
+  more.hidden = true;
+  const padding = parseFloat(getComputedStyle(bar).paddingRight) || 0;
+  const limit = bar.clientWidth - padding - reserved;
+  const hidden = [];
+  chips.forEach((chip, i) => {
+    if (hidden.length || chip.offsetLeft + chip.offsetWidth > limit) {
+      chip.hidden = true;
+      hidden.push(state.bookmarks[i].id);
     }
-    bar.append(chip);
+  });
+  if (hidden.length) {
+    more.hidden = false;
+    more.title = `${hidden.length} more bookmark${hidden.length === 1 ? '' : 's'}`;
+    more.addEventListener('click', () => {
+      const box = more.getBoundingClientRect();
+      api.bookmarks.itemsMenu(hidden, Math.round(box.left), Math.round(box.bottom));
+    });
   }
 }
 
+window.addEventListener('resize', () => { if (state) renderBookmarks(); });
+
 const SVG = 'http://www.w3.org/2000/svg';
-function folderIcon() {
+function folderIcon(muted) {
   const svg = document.createElementNS(SVG, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('class', 'folder-icon');
+  svg.setAttribute('class', `folder-icon${muted ? ' muted' : ''}`);
   svg.setAttribute('aria-hidden', 'true');
   const path = document.createElementNS(SVG, 'path');
   path.setAttribute('d', 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z');
@@ -227,7 +292,9 @@ function render() {
   document.body.classList.toggle('reveal', state.revealed);
   renderTabs();
   renderToolbar();
+  document.body.classList.toggle('no-bar', !state.showBookmarksBar);
   renderBookmarks();
+  refreshBarIcons();
   renderRecording();
 }
 

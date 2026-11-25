@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('browserApi', {
   bookmarks: {
     toggle: () => invoke('bookmarks:toggle'),
     folderMenu: (id, x, y) => invoke('bookmarks:folder-menu', id, x, y),
+    itemsMenu: (ids, x, y) => invoke('bookmarks:items-menu', ids, x, y),
+    contextMenu: (id, x, y) => invoke('bookmarks:context-menu', id, x, y),
+    icons: (urls) => invoke('bookmarks:icons', urls),
     list: () => invoke('bookmarks:list'),
     addFolder: (parentId, title) => invoke('bookmarks:add-folder', parentId, title),
     update: (id, patch) => invoke('bookmarks:update', id, patch),
@@ -113,4 +116,5 @@ contextBridge.exposeInMainWorld('browserApi', {
   onRecordingsChanged: (callback) => subscribe('recordings:changed', callback),
   onLibraryShow: (callback) => subscribe('library:show', callback),
   onBookmarksChanged: (callback) => subscribe('bookmarks:changed', callback),
+  onBookmarkReveal: (callback) => subscribe('bookmarks:reveal', callback),
 });

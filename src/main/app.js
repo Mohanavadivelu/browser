@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net, protocol } = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net, protocol, nativeImage } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION } = require('./sandbox/session-manager');
@@ -20,6 +20,7 @@ const { pdfFileName } = require('./recording/library');
 const { registerMediaScheme, serveRecordings } = require('./recording/media-server');
 const { ContentBlocker, hostOf } = require('./blocker');
 const bookmarkTree = require('./bookmarks');
+const { BookmarkIcons } = require('./bookmark-icons');
 const { UpdateService, updateMode, fetchLatestRelease, RELEASES } = require('./updates');
 const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
@@ -89,6 +90,11 @@ async function start(options = {}) {
   settings.load();
   const history = new History(path.join(userData, 'history.json'));
   history.load();
+  const bookmarkIcons = new BookmarkIcons(path.join(userData, 'bookmark-icons.json'));
+  bookmarkIcons.load();
+  // Icons of pages no longer bookmarked are dropped.
+  const keepBookmarkIcons = () => bookmarkIcons.keepOnly(bookmarkTree.links(settings.data.bookmarks).map((link) => link.url));
+  keepBookmarkIcons();
   const recordingsIndex = new RecordingIndex(path.join(userData, 'recordings-index.json'));
   recordingsIndex.load();
   const downloads = new DownloadManager();
@@ -141,7 +147,10 @@ async function start(options = {}) {
     recordingQuality: settings.data.recordingQuality,
     qualities: publicQualities(),
     // The bar's own items (folders without their contents) and whether this page is bookmarked.
-    bookmarks: settings.data.bookmarks.bar.children.map(({ id, type, title, url }) => ({ id, type, title, url })),
+    bookmarks: settings.data.bookmarks.bar.children.map(({ id, type, title, url }) => ({ id, type, title, url, icon: Boolean(url && bookmarkIcons.get(url)) })),
+    bookmarkIconsVersion: bookmarkIcons.version,
+    otherBookmarks: settings.data.bookmarks.other.children.length,
+    showBookmarksBar: settings.data.showBookmarksBar,
     bookmarked: Boolean(tabs.active?.kind === 'web' && bookmarkTree.findLinkByUrl(settings.data.bookmarks, tabs.active.view.webContents.getURL())),
     update: { status: updates.state.status, version: updates.state.version },
     blocker: {
@@ -401,6 +410,7 @@ async function start(options = {}) {
       const existing = bookmarkTree.findLinkByUrl(tree, url);
       if (existing) {
         settings.update({ bookmarks: bookmarkTree.remove(tree, [existing.id]) });
+        keepBookmarkIcons();
       } else {
         const added = bookmarkTree.addLink(tree, settings.data.bookmarkFolder, { url, title: tab.title || url });
         if (!added) {
@@ -408,6 +418,7 @@ async function start(options = {}) {
           return;
         }
         settings.update({ bookmarks: added.tree });
+        if (tab.favicon) bookmarkIcons.set(url, tab.favicon);
       }
       notify(existing ? 'Bookmark removed.' : 'Bookmark added.');
       broadcastToLibrary('bookmarks:changed');
@@ -420,6 +431,55 @@ async function start(options = {}) {
       if (!folder || folder.type !== 'folder') return false;
       Menu.buildFromTemplate(bookmarkMenuTemplate(folder)).popup({ window: win, x, y });
       return true;
+    },
+    // The bar's bookmarks that do not fit, under ».
+    showBookmarkItems: (ids, x, y) => {
+      const template = bookmarkItemsTemplate(ids);
+      if (template.length === 0) return false;
+      Menu.buildFromTemplate(template).popup({ window: win, x, y });
+      return true;
+    },
+    // Right-click on a bookmark or folder on the bar.
+    showBookmarkContext: (id, x, y) => {
+      const template = bookmarkContextTemplate(id);
+      if (!template) return false;
+      Menu.buildFromTemplate(template).popup({ window: win, x, y });
+      return true;
+    },
+    // Opens the Bookmarks page on this bookmark's folder, with its name and address ready to edit.
+    editBookmark: (id) => {
+      const page = tabs.openInternal('bookmarks');
+      const reveal = () => page.view.webContents.send('bookmarks:reveal', id);
+      if (page.view.webContents.isLoading()) page.view.webContents.once('did-finish-load', reveal);
+      else reveal();
+    },
+    deleteBookmark: async (id) => {
+      const found = bookmarkTree.find(settings.data.bookmarks, id);
+      if (!found || found.parent === null) return false;
+      const { node } = found;
+      const inside = node.type === 'folder' ? bookmarkUrls([id]).length : 0;
+      if (inside > 0) {
+        const { response } = await appDialog.showMessageBox(win, {
+          type: 'warning',
+          message: `Delete the folder “${node.title}” and the ${inside} bookmark${inside === 1 ? '' : 's'} in it?`,
+          buttons: ['Delete', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        });
+        if (response !== 0) return false;
+      }
+      settings.update({ bookmarks: bookmarkTree.remove(settings.data.bookmarks, [id]) });
+      keepBookmarkIcons();
+      notify(node.type === 'folder' ? `Deleted the folder “${node.title}”.` : 'Bookmark deleted.');
+      broadcastToLibrary('bookmarks:changed');
+      pushState();
+      return true;
+    },
+    toggleBookmarksBar: () => {
+      settings.update({ showBookmarksBar: !settings.data.showBookmarksBar });
+      host.setBookmarksBar(settings.data.showBookmarksBar);
+      pushState();
     },
     openBookmarks: (ids) => {
       const urls = bookmarkUrls(ids);
@@ -511,10 +571,46 @@ async function start(options = {}) {
 
   // Windows menus read "&" as an access key; "&&" shows one "&".
   const menuLabel = (text) => text.replace(/&/g, '&&');
+  // A bookmark's site icon for a menu, if it has one the system can draw.
+  function menuIcon(url) {
+    const data = bookmarkIcons.get(url);
+    if (!data) return undefined;
+    const image = nativeImage.createFromDataURL(data);
+    return image.isEmpty() ? undefined : image.resize({ width: 16, height: 16 });
+  }
+  const menuItemFor = (node) => (node.type === 'folder'
+    ? { label: menuLabel(node.title), submenu: bookmarkMenuTemplate(node) }
+    : { label: menuLabel(node.title), icon: menuIcon(node.url), click: () => tabs.navigate(node.url) });
+  function bookmarkItemsTemplate(ids) {
+    return ids.map((id) => bookmarkTree.find(settings.data.bookmarks, id)?.node).filter(Boolean).map(menuItemFor);
+  }
+  function bookmarkContextTemplate(id) {
+    const found = bookmarkTree.find(settings.data.bookmarks, id);
+    if (!found) return null;
+    const { node } = found;
+    const fixed = found.parent === null; // Bookmarks bar and Other bookmarks
+    if (node.type === 'link') {
+      return [
+        { label: 'Open', click: () => tabs.navigate(node.url) },
+        { label: 'Open in new tab', click: () => tabs.create({ url: node.url }) },
+        { label: 'Open in private tab', click: () => tabs.create({ url: node.url, isPrivate: true }) },
+        { type: 'separator' },
+        { label: 'Edit…', click: () => actions.editBookmark(id) },
+        { label: 'Delete', click: () => actions.deleteBookmark(id) },
+      ];
+    }
+    const count = bookmarkUrls([id]).length;
+    return [
+      { label: `Open all (${count}) in new tabs`, enabled: count > 0, click: () => actions.openBookmarks([id]) },
+      ...(fixed ? [] : [
+        { type: 'separator' },
+        { label: 'Rename…', click: () => actions.editBookmark(id) },
+        { label: 'Delete', click: () => actions.deleteBookmark(id) },
+      ]),
+    ];
+  }
   function bookmarkMenuTemplate(folder) {
-    const items = folder.children.map((node) => (node.type === 'folder'
-      ? { label: menuLabel(node.title), submenu: bookmarkMenuTemplate(node) }
-      : { label: menuLabel(node.title), click: () => tabs.navigate(node.url) }));
+    const items = folder.children.map(menuItemFor);
     if (items.length === 0) return [{ label: '(empty)', enabled: false }];
     const count = bookmarkUrls([folder.id]).length;
     if (count > 0) items.push({ type: 'separator' }, { label: `Open all (${count}) in new tabs`, click: () => actions.openBookmarks([folder.id]) });
@@ -540,13 +636,22 @@ async function start(options = {}) {
   const ipc = createIpc(ipcMain, senderRole);
 
   const context = {
-    app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
+    app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, bookmarkIcons, keepBookmarkIcons, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary,
     showMenu: () => showMainMenu(context),
   };
   registerIpcHandlers(ipc, context);
 
   host.on('mode-change', pushState);
+  host.setBookmarksBar(settings.data.showBookmarksBar);
+  // A bookmarked page's icon is kept for the bookmarks bar and menus (never from private tabs).
+  tabs.on('favicon', (tab, url, icon) => {
+    if (tab.isPrivate || tab.kind !== 'web' || !bookmarkTree.findLinkByUrl(settings.data.bookmarks, url)) return;
+    if (bookmarkIcons.set(url, icon)) {
+      pushState();
+      broadcastToLibrary('bookmarks:changed');
+    }
+  });
   tabs.on('change', pushState);
 
   // A running recording is stopped through the toolbar first, so its last second is kept.
@@ -554,6 +659,7 @@ async function start(options = {}) {
   win.on('close', (event) => {
     saveSession();
     history.flush();
+    bookmarkIcons.flush();
     if (!recorder.active) return;
     event.preventDefault();
     if (closing) return;
@@ -596,7 +702,9 @@ async function start(options = {}) {
 
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
-    ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates,
+    ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates, bookmarkIcons,
+    // The bookmark menus' items, for tests (the menus themselves are native popups).
+    bookmarkMenus: { folder: (id) => bookmarkMenuTemplate(bookmarkTree.find(settings.data.bookmarks, id).node), items: bookmarkItemsTemplate, context: bookmarkContextTemplate },
   };
 }
 

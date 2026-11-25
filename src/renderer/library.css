@@ -86,6 +86,7 @@ code { padding: 5px 9px; border-radius: 6px; background: var(--bg); font-size: 1
 .bm-selection[hidden] { display: none; }
 .bm-selection span { flex: 1; }
 .bm-row .handle { flex: none; color: #6f7378; cursor: grab; user-select: none; }
+.bm-row .bm-icon { flex: none; width: 16px; height: 16px; object-fit: contain; }
 .bm-row .link-dot { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--accent); }
 .bm-row .main input[type="text"] { margin: 2px 0; }
 .bm-row.dragging { opacity: .5; }

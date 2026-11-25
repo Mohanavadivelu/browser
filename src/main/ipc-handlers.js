@@ -26,17 +26,19 @@ const INDICATOR = ['indicator'];
 const BAR_AND_REC = ['toolbar', 'indicator'];
 const FIND = ['find'];
 const LIBRARY = ['library'];
+const TOOLBAR_AND_LIBRARY = ['toolbar', 'library'];
 
 // Every call from the browser's own pages comes through here. The sender, its page and the
 // arguments are checked by `ipc.handle` before any handler runs.
 function registerIpcHandlers(ipc, ctx) {
   const {
     app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, refreshBlockerLists, updates,
+    bookmarkIcons, keepBookmarkIcons,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
     none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
-    bookmarkPatch, bookmarkMove, idList, menuAt, settingsPatch, findQuery, tabOptions, chunk,
+    bookmarkPatch, bookmarkMove, idList, menuAt, idListAt, urlList, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -67,6 +69,9 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('window:menu', TOOLBAR, none, () => showMenu());
   ipc.handle('bookmarks:toggle', TOOLBAR, none, () => actions.toggleBookmark());
   ipc.handle('bookmarks:folder-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkFolder(id, x, y));
+  ipc.handle('bookmarks:items-menu', TOOLBAR, idListAt, (_e, ids, x, y) => actions.showBookmarkItems(ids, x, y));
+  ipc.handle('bookmarks:context-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkContext(id, x, y));
+  ipc.handle('bookmarks:icons', TOOLBAR_AND_LIBRARY, urlList, (_e, urls) => bookmarkIcons.pick(urls));
   ipc.handle('zoom:reset', TOOLBAR, none, () => actions.zoom(0));
 
   // Address-bar suggestions: visited pages only while history is on.
@@ -97,6 +102,7 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('settings:update', LIBRARY, settingsPatch, (_e, patch) => {
     settings.update(pickEditable(patch));
     if (patch.blockTrackers === true) refreshBlockerLists?.();
+    host.setBookmarksBar(settings.data.showBookmarksBar);
     if (!settings.data.restoreTabs) settings.update({ session: { urls: [], active: 0 } });
     pushState();
     return settingsPayload();
@@ -139,6 +145,7 @@ function registerIpcHandlers(ipc, ctx) {
   const saveBookmarks = (next) => {
     if (next) {
       settings.update({ bookmarks: next });
+      keepBookmarkIcons();
       pushState();
     }
     return settings.data.bookmarks;
@@ -186,8 +193,11 @@ function registerIpcHandlers(ipc, ctx) {
     } catch (error) {
       return { ok: false, message: error.message };
     }
-    const merged = bookmarkList.merge(settings.data.bookmarks, bookmarkList.fromHtml(html));
+    const parsed = bookmarkList.fromHtml(html);
+    const merged = bookmarkList.merge(settings.data.bookmarks, parsed);
     saveBookmarks(merged.tree);
+    // Icons that came with the file, for the bookmarks that were added.
+    for (const link of bookmarkList.links(merged.tree)) if (parsed.icons[link.url]) bookmarkIcons.set(link.url, parsed.icons[link.url]);
     return { ok: true, added: merged.added, skipped: merged.skipped };
   });
 

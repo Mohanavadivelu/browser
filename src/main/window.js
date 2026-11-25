@@ -25,6 +25,7 @@ class BrowserWindow extends EventEmitter {
     super();
     this.mode = {
       fullscreen: false, htmlFullscreen: false, revealed: false, recording: false, findOpen: false, suggestionsHeight: 0,
+      bookmarksBar: true,
     };
     this.contentViews = new Set();
     this.enteredFullscreenForHtml = false;
@@ -103,6 +104,17 @@ class BrowserWindow extends EventEmitter {
     this.layout();
   }
 
+  // Height of the tab strip, toolbar and (when shown) bookmarks bar.
+  chromeHeight() {
+    return TAB_BAR_HEIGHT + TOOLBAR_HEIGHT + (this.mode.bookmarksBar ? BOOKMARKS_HEIGHT : 0);
+  }
+
+  setBookmarksBar(shown) {
+    if (this.mode.bookmarksBar === shown) return;
+    this.mode.bookmarksBar = shown;
+    this.layout();
+  }
+
   // Extra height for the toolbar's view while the address-bar suggestions are open.
   setSuggestionsHeight(height) {
     if (this.mode.suggestionsHeight === height) return;
@@ -151,14 +163,15 @@ class BrowserWindow extends EventEmitter {
     const { fullscreen, htmlFullscreen, revealed, recording, findOpen } = this.mode;
     const immersive = fullscreen || htmlFullscreen;
 
-    let uiHeight = NORMAL_CHROME_HEIGHT;
+    const chromeHeight = this.chromeHeight();
+    let uiHeight = chromeHeight;
     if (immersive) uiHeight = revealed && !htmlFullscreen ? TOOLBAR_HEIGHT : HOTZONE_HEIGHT;
     // The suggestion list hangs below the address bar, over the page.
     if (!htmlFullscreen && (!immersive || revealed)) uiHeight += this.mode.suggestionsHeight;
     this.ui.setVisible(!htmlFullscreen);
     this.ui.setBounds({ x: 0, y: 0, width, height: uiHeight });
 
-    const top = immersive ? 0 : NORMAL_CHROME_HEIGHT;
+    const top = immersive ? 0 : chromeHeight;
     for (const view of this.contentViews) {
       view.setBounds({ x: 0, y: top, width, height: Math.max(0, height - top) });
     }
@@ -181,7 +194,7 @@ class BrowserWindow extends EventEmitter {
     // The find bar floats at the top right of the page, beside the REC indicator if it is showing.
     this.find.setVisible(findOpen);
     if (findOpen) {
-      let findTop = NORMAL_CHROME_HEIGHT + 8;
+      let findTop = chromeHeight + 8;
       if (immersive) findTop = revealed && !htmlFullscreen ? TOOLBAR_HEIGHT + 8 : 8;
       this.find.setBounds({
         x: Math.max(0, overlayRight - FIND_SIZE.width),

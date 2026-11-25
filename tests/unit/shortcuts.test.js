@@ -39,6 +39,7 @@ function setup(modeOverrides = {}) {
     screenshot: record('screenshot'),
     print: record('print'),
     addMarker: record('addMarker'),
+    toggleBookmarksBar: record('toggleBookmarksBar'),
   };
   const handler = createShortcutHandler({ tabs, host, ui, actions });
   // `from` is where the key was pressed: the active page, or (by default) the browser's own bars.
@@ -82,6 +83,12 @@ test('Ctrl+Shift+M adds a marker to the recording', () => {
   const { calls, press } = setup();
   assert.equal(press({ key: 'M', control: true, shift: true }), true);
   assert.deepEqual(calls.map((call) => call[0]), ['addMarker']);
+});
+
+test('Ctrl+Shift+B shows or hides the bookmarks bar', () => {
+  const { calls, press } = setup();
+  assert.equal(press({ key: 'B', control: true, shift: true }), true);
+  assert.deepEqual(calls.map((call) => call[0]), ['toggleBookmarksBar']);
 });
 
 test('zoom shortcuts map to in, out and reset', () => {
