@@ -57,7 +57,10 @@ async function evaluate(target, expression) {
 // The fuses package.json asks for, as the built .exe has them (0 = off, 1 = on).
 async function checkFuses() {
   const { getCurrentFuseWire, FuseV1Options } = require('@electron/fuses');
-  const wire = await getCurrentFuseWire(exe);
+  // The portable .exe is a self-extracting wrapper: its fuses are those of the app it unpacks,
+  // which electron-builder builds as win-unpacked next to it.
+  const app = /portable\.exe$/i.test(exe) ? path.join(path.dirname(exe), 'win-unpacked', 'Simple Browser.exe') : exe;
+  const wire = await getCurrentFuseWire(app);
   const state = (name) => String.fromCharCode(wire[FuseV1Options[name]]);
   const wanted = {
     RunAsNode: '0', EnableCookieEncryption: '1', EnableNodeOptionsEnvironmentVariable: '0', EnableNodeCliInspectArguments: '0',
@@ -65,7 +68,7 @@ async function checkFuses() {
   };
   const wrong = Object.entries(wanted).filter(([name, value]) => state(name) !== value).map(([name]) => name);
   check('the fuses are set (file:// extra privileges off, app only from app.asar)', wrong.length === 0, wrong.join(', '));
-  const resources = path.join(path.dirname(exe), 'resources');
+  const resources = path.join(path.dirname(app), 'resources');
   check('the app is packed in app.asar', fs.existsSync(path.join(resources, 'app.asar')) && !fs.existsSync(path.join(resources, 'app')));
 }
 
