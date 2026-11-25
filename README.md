@@ -126,6 +126,8 @@ The Release workflow then runs all tests on Windows, builds the installer and po
 
 ## Status
 
+Version 0.6.0: recordings you can work with: a player with thumbnails, trimming, joining parts, markers saved as chapters, stopping after a set time, and optional microphone narration.
+
 Version 0.5.0: address-bar suggestions, reopen/drag/mute for tabs, a bookmarks page with import and export, print and save as PDF, ad and tracker blocking, and automatic updates from GitHub Releases. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.4.0: recordings now have a length and a seek index, so players show their length and can jump around; recording survives closing the window and stops cleanly on disk errors; downloads renamed to a blocked type in the Save dialog are refused; each of the browser's own pages can call only what it needs; tab icons are fetched through the tab's own session; and the packaged app is locked down with Electron fuses. Tests run on GitHub Actions for every push.

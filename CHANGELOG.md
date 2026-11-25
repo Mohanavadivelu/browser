@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+Recordings you can work with: watch, trim, join and mark them, stop them on a timer, and add your voice.
+
+### New
+
+- **Player and thumbnails** on the Recordings page: each recording shows a frame, and plays in the page with its length and seeking. Screenshots open as images.
+- **Trim**: in the player, pick a start and an end and save a trimmed copy. There is no re-encoding, so the copy starts on the keyframe at or before your start (at most 2 seconds earlier).
+- **Join**: a recording that followed you across tabs (`…`, `…-part2`, …) can be joined back into one file from the Recordings page.
+- **Markers**: press **Ctrl+Shift+M**, or Mark on the REC controls, to mark a moment while recording. Markers are saved in the file as chapters that players such as VLC list (up to about 120 per file), and the player shows them as buttons that jump there. Trimmed and joined copies keep the markers inside them.
+- **Stop after a set time**: in Settings, stop recordings automatically after 5 minutes up to 3 hours (paused time does not count). The REC badge then shows the limit, e.g. `REC 12:04 / 30:00`.
+- **Narration** (off by default): add your microphone to recordings, mixed with the page's sound. The consent dialog says so each time. Only the browser's toolbar can open the microphone, and only during such a recording; web pages still cannot use it.
+
+Trimmed and joined recordings are new files; the originals are never changed.
+
 ## 0.5.0
 
 Everyday browsing: suggestions as you type, tab handling, a bookmarks manager, PDF, ad and tracker blocking, and automatic updates.
