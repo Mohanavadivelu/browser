@@ -479,6 +479,31 @@ async function main() {
   check('jumping to 70% of a recording works at once', Math.abs(pausedInfo.seekedTo - pausedInfo.seekTarget) < 0.1 && pausedInfo.seekMs < 2000,
     `to ${pausedInfo.seekedTo} s of ${pausedInfo.duration} s in ${pausedInfo.seekMs} ms`);
 
+  // ---------- Recordings page: thumbnails and the player ----------
+  tabs.openInternal('recordings');
+  const recPage = tabs.active;
+  await waitFor(() => recPage.title === 'Recordings', 'recordings page (player)');
+  const inRecPage = (script) => evalIn(recPage.view, script);
+  const rowOf = (name) => `document.querySelector('.row[data-name="${name}"]')`;
+  const thumbFrame = () => inRecPage(`(() => { const v = ${rowOf(pausedName)}?.querySelector('.thumb video'); return v ? v.readyState >= 2 && v.videoWidth > 0 : false; })()`);
+  await waitFor(thumbFrame, 'thumbnail frame', 10000).catch(() => {});
+  check('recordings show a thumbnail frame', await thumbFrame());
+  await inRecPage(`[...${rowOf(pausedName)}.querySelectorAll('button')].find((b) => b.textContent === 'Play').click()`);
+  const playerState = () => inRecPage(`(() => { const v = document.getElementById('playerMedia'); return v ? { time: v.currentTime, duration: v.duration, open: !document.getElementById('player').hidden } : null; })()`);
+  await waitFor(async () => (await playerState())?.time > 0.3, 'player playing', 10000).catch(() => {});
+  const playing = await playerState();
+  check('the player plays the recording with its length', playing?.open && playing.time > 0.3 && Math.abs(playing.duration - pausedInfo.duration) < 0.2, JSON.stringify(playing));
+  await inRecPage("(() => { const v = document.getElementById('playerMedia'); v.pause(); v.currentTime = v.duration * 0.8; })()");
+  await waitFor(async () => { const s = await playerState(); return Math.abs(s.time - s.duration * 0.8) < 0.3; }, 'player seek', 5000).catch(() => {});
+  const sought = await playerState();
+  check('the player jumps within the recording', Math.abs(sought.time - sought.duration * 0.8) < 0.3, JSON.stringify(sought));
+  await inRecPage("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
+  check('Esc closes the player', (await inRecPage("document.getElementById('player').hidden")) === true);
+  const someWebTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');
+  const leaked = await someWebTab.view.webContents.executeJavaScript(
+    `fetch('sb-media://recordings/${encodeURIComponent(pausedName)}').then(() => 'loaded', () => 'refused')`);
+  check('web pages cannot load recordings', leaked === 'refused', leaked);
+
   // ---------- Recording: quality ----------
   settings.update({ recordingQuality: 'low' });
   await sleep(300);

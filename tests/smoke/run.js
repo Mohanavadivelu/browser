@@ -71,6 +71,9 @@ async function main() {
   host.toggleFullscreen();
   await waitFor(() => host.mode.fullscreen, 'full screen on');
   await sleep(300);
+  // A real mouse pointer resting at the top edge of the screen rightly reveals the toolbar, so
+  // the hidden layout is checked with the toolbar explicitly not revealed.
+  host.setRevealed(false);
   check('full screen hides the browser chrome', ui.getBounds().height === 6, `ui height ${ui.getBounds().height}`);
   check('page fills the window in full screen', tabs.active.view.getBounds().y === 0);
   host.setRevealed(true);

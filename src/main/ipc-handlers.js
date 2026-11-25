@@ -7,6 +7,7 @@ const { isAllowedUrl, SEARCH_ENGINES } = require('./security/navigation');
 const { pickEditable } = require('./storage/settings');
 const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
+const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
 const { MAX_BOOKMARKS } = require('./storage/settings');
 const { hostOf } = require('./blocker');
@@ -195,7 +196,7 @@ function registerIpcHandlers(ipc, ctx) {
   const recordingPath = (name) => (isSafeName(getRecordingFolder(), name) ? path.join(getRecordingFolder(), name) : null);
   ipc.handle('recordings:list', LIBRARY, none, () => ({
     folder: getRecordingFolder(),
-    entries: listRecordings(getRecordingFolder(), recordingsIndex),
+    entries: listRecordings(getRecordingFolder(), recordingsIndex).map((entry) => ({ ...entry, url: mediaUrl(entry.name) })),
   }));
   ipc.handle('recordings:open', LIBRARY, text, async (_e, name) => {
     const target = recordingPath(name);

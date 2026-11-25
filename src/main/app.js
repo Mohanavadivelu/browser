@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net } = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net, protocol } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION } = require('./sandbox/session-manager');
@@ -17,6 +17,7 @@ const { publicQualities } = require('./recording/quality');
 const { RecordingIndex } = require('./recording/library');
 const { saveScreenshot } = require('./recording/storage');
 const { sanitizeBaseName } = require('./recording/library');
+const { registerMediaScheme, serveRecordings } = require('./recording/media-server');
 const { ContentBlocker, hostOf } = require('./blocker');
 const { UpdateService, updateMode, fetchLatestRelease, RELEASES } = require('./updates');
 const { Settings } = require('./storage/settings');
@@ -70,7 +71,10 @@ function waitUntilLoaded(contents, limitMs = 4000) {
 }
 
 async function start(options = {}) {
-  if (!app.isReady()) app.enableSandbox();
+  if (!app.isReady()) {
+    app.enableSandbox();
+    registerMediaScheme(protocol);
+  }
   if (options.userDataDir) app.setPath('userData', options.userDataDir);
   if (!options.skipSingleInstanceLock && !app.requestSingleInstanceLock()) {
     app.quit();
@@ -222,6 +226,8 @@ async function start(options = {}) {
       // The browser's own views may ask for screen capture, but the handler below only grants it
       // to the main interface, right after the consent dialog.
       applyPermissionPolicy(ses, new Set(['display-capture']));
+      // Recordings and screenshots for the Recordings page's player; web sessions never get this.
+      serveRecordings(ses, getRecordingFolder);
       ses.setDisplayMediaRequestHandler(async (request, callback) => {
         const requester = request.frame ? webContents.fromFrame(request.frame) : null;
         const allowed = requester?.id === ui.webContents.id && recorder.consumeAuthorization();

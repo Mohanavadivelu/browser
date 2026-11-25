@@ -37,6 +37,19 @@ header input[type="search"] { width: 260px; }
 .row progress { width: 100%; height: 6px; margin-top: 6px; accent-color: var(--accent); }
 .row input[type="text"] { width: 100%; }
 
+/* Recordings: thumbnails and the player */
+.thumb { flex: none; width: 112px; height: 63px; padding: 0; overflow: hidden; border-radius: 6px; background: #111; cursor: pointer; }
+.thumb video, .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.thumb:hover { outline: 2px solid var(--accent); }
+.player { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(0, 0, 0, .72); }
+.player[hidden] { display: none; }
+.player-box { display: flex; flex-direction: column; width: min(1100px, 100%); max-height: 100%; padding: 16px 18px; border-radius: 12px; background: var(--panel); }
+.player-box header { margin-bottom: 10px; }
+.player-box h2 { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.player-stage { display: flex; justify-content: center; min-height: 0; background: #000; border-radius: 8px; }
+.player-stage video, .player-stage img { display: block; max-width: 100%; max-height: 70vh; }
+.player-box .note { margin: 10px 0 0; }
+
 .group { margin-bottom: 22px; padding: 18px 20px; border-radius: 10px; background: var(--panel); }
 .group h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }

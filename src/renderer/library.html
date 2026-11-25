@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src sb-media:; img-src sb-media:">
   <title>Simple Browser</title>
   <link rel="stylesheet" href="library.css">
 </head>
@@ -53,6 +53,17 @@
       <p id="recMessage" class="note warn" hidden></p>
       <div id="recList" class="list"></div>
     </section>
+
+    <div id="player" class="player" role="dialog" aria-modal="true" aria-labelledby="playerTitle" hidden>
+      <div class="player-box">
+        <header>
+          <h2 id="playerTitle"></h2>
+          <button id="playerClose" type="button" title="Close (Esc)">Close</button>
+        </header>
+        <div id="playerStage" class="player-stage"></div>
+        <p id="playerInfo" class="note"></p>
+      </div>
+    </div>
 
     <section id="page-settings" hidden>
       <header><h2>Settings</h2></header>

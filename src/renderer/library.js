@@ -237,6 +237,75 @@ function deleteButton(entry) {
   return node;
 }
 
+// ---------- Thumbnails and the player ----------
+// A thumbnail loads its file only once it scrolls into view; a video shows a frame from about a
+// second in.
+const thumbObserver = new IntersectionObserver((seen) => {
+  for (const item of seen) {
+    if (!item.isIntersecting) continue;
+    thumbObserver.unobserve(item.target);
+    const media = item.target.firstElementChild;
+    media.src = media.dataset.src;
+  }
+});
+
+function thumbnail(entry) {
+  const node = element('button', 'thumb');
+  node.type = 'button';
+  node.title = entry.type === 'video' ? `Play ${entry.name}` : `View ${entry.name}`;
+  let media;
+  if (entry.type === 'video') {
+    media = element('video');
+    media.muted = true;
+    media.preload = 'metadata';
+    media.addEventListener('loadedmetadata', () => {
+      media.currentTime = Number.isFinite(media.duration) ? Math.min(1, media.duration / 2) : 1;
+    }, { once: true });
+  } else {
+    media = element('img');
+    media.alt = '';
+  }
+  media.dataset.src = entry.url;
+  node.append(media);
+  node.addEventListener('click', () => openPlayer(entry));
+  thumbObserver.observe(node);
+  return node;
+}
+
+let playerEntry = null;
+
+function openPlayer(entry) {
+  playerEntry = entry;
+  const stage = $('playerStage');
+  let media;
+  if (entry.type === 'video') {
+    media = element('video');
+    media.controls = true;
+    media.autoplay = true;
+    media.addEventListener('loadedmetadata', () => {
+      $('playerInfo').textContent = Number.isFinite(media.duration) ? `Length ${formatDuration(media.duration * 1000)}` : '';
+    });
+  } else {
+    media = element('img');
+    media.alt = entry.name;
+  }
+  media.id = 'playerMedia';
+  media.src = entry.url;
+  stage.replaceChildren(media);
+  $('playerTitle').textContent = entry.name;
+  $('playerInfo').textContent = '';
+  $('player').hidden = false;
+  $('playerClose').focus();
+}
+
+function closePlayer() {
+  const media = $('playerMedia');
+  if (media?.pause) media.pause();
+  $('playerStage').replaceChildren();
+  $('player').hidden = true;
+  playerEntry = null;
+}
+
 async function loadRecordings() {
   const { folder, entries } = await api.recordings.list();
   $('recFolder').textContent = folder;
@@ -248,7 +317,8 @@ async function loadRecordings() {
   }
   for (const entry of entries) {
     const row = element('div', 'row');
-    row.append(element('div', 'icon', entry.type === 'video' ? '🎬' : '🖼️'));
+    row.dataset.name = entry.name;
+    row.append(thumbnail(entry));
     const main = element('div', 'main');
     main.append(element('div', 'name', entry.name));
     const parts = [];
@@ -257,6 +327,7 @@ async function loadRecordings() {
     main.append(element('div', 'meta', parts.join('  ·  ')));
     const actions = element('div', 'actions');
     actions.append(
+      button(entry.type === 'video' ? 'Play' : 'View', () => openPlayer(entry)),
       button('Open', async () => { if (!(await api.recordings.open(entry.name))) showRecordingMessage('The file could not be opened.'); }),
       button('Show in folder', () => api.recordings.reveal(entry.name)),
       button('Rename', () => startRename(row, entry)),
@@ -369,6 +440,9 @@ $('historyClear').addEventListener('click', async () => {
   loadHistory();
 });
 $('recOpenFolder').addEventListener('click', () => api.recordings.openFolder());
+$('playerClose').addEventListener('click', closePlayer);
+$('player').addEventListener('click', (event) => { if (event.target === $('player')) closePlayer(); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !$('player').hidden) closePlayer(); });
 $('bookmarksImport').addEventListener('click', importBookmarks);
 $('bookmarksExport').addEventListener('click', exportBookmarks);
 bindSettings();
