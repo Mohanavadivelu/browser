@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0
+
+Bookmarks with folders, a new Bookmarks page, a richer bookmarks bar and a star that lets you file a bookmark as you save it.
+
+### New
+
+- **Folders**: bookmarks live in folders, and folders can hold folders. Your existing bookmarks move into "Bookmarks bar" the first time this version starts.
+- **Bookmarks page** (Ctrl+Shift+O): the folder tree, search across every folder, drag to reorder or drop into a folder, ↑ ↓, edit a bookmark's name and address, rename folders, select several to move or delete, New folder and Open all. Deleting a folder that still has bookmarks asks first.
+- **Bookmarks bar**: site icons; folders open as menus with their subfolders and "Open all"; bookmarks that do not fit go under »; "Other bookmarks" has its own button; right-click a bookmark to open it in a new or private tab, edit or delete it. **Ctrl+Shift+B** shows or hides the bar.
+- **Star popover**: ☆ or **Ctrl+D** bookmarks the page into the folder you used last and opens a small popover to change its name or folder (or make a new folder), or remove it. ★ on a bookmarked page opens it to edit.
+- **Import and export keep folders**, and imported bookmarks bring their icons. Up to 5,000 bookmarks (was 1,000).
+
+### Fixes
+
+- Joining a recording's parts no longer fails with "the parts were recorded in different formats" when Chromium numbered the parts' sound and video tracks differently.
+
 ## 0.6.0
 
 Recordings you can work with: watch, trim, join and mark them, stop them on a timer, and add your voice.
