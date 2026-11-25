@@ -61,7 +61,14 @@
       <button id="starDone" type="button" class="primary">Done</button>
     </div>
   </section>
+  <!-- The toolbar's scripts share one scope: helpers first, app.js (the wiring) last. -->
   <script src="menu.js"></script>
+  <script src="toolbar-base.js"></script>
+  <script src="toolbar-tabs.js"></script>
+  <script src="toolbar-bookmarks.js"></script>
+  <script src="toolbar-recording.js"></script>
+  <script src="toolbar-star.js"></script>
+  <script src="toolbar-suggestions.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
