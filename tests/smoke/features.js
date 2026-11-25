@@ -9,6 +9,7 @@ const path = require('node:path');
 const { app } = require('electron');
 const { start } = require('../../src/main/app');
 const { keyframeTimes } = require('../../src/main/recording/webm-edit');
+const bookmarkTree = require('../../src/main/bookmarks');
 // An independent WebM reader, to check what the app writes into files.
 const { inspect: inspectWebm } = require('../unit/webm-fixtures');
 const {
@@ -289,7 +290,7 @@ async function main() {
   await evalIn(internal.view, "(() => { const s = document.getElementById('searchEngine'); s.value = 'google'; s.dispatchEvent(new Event('change')); })()");
   await waitFor(() => settings.data.searchEngine === 'google', 'search engine restored');
   const patchResult = await evalIn(internal.view, "window.browserApi.settings.update({ bookmarks: [{ url: 'https://evil.example' }], zoom: { a: 3 } }).then((s) => Object.keys(s).includes('bookmarks'))");
-  check('settings page cannot change protected data', patchResult === false && settings.data.bookmarks.length === 0 && !settings.data.zoom.a);
+  check('settings page cannot change protected data', patchResult === false && bookmarkTree.links(settings.data.bookmarks).length === 0 && !settings.data.zoom.a);
   tabs.navigate(`${base}/`);
   await waitFor(() => tabs.active !== internal && tabs.active.kind === 'web', 'web address opens a new tab');
   check('web addresses never load inside an internal tab', internal.view.webContents.getURL().includes('library.html'));
@@ -310,44 +311,125 @@ async function main() {
   const png = shot ? fs.readFileSync(shot) : Buffer.alloc(0);
   check('screenshot saves a PNG file', shot && png.subarray(1, 4).toString() === 'PNG' && png.length > 2000, shot ? `${png.length} bytes` : notices.at(-1));
 
-  // ---------- Bookmarks page ----------
+  // ---------- Bookmarks: folders and the bookmarks page ----------
+  // The flat list of earlier versions becomes the Bookmarks bar.
   settings.update({ bookmarks: ['a', 'b', 'c'].map((key) => ({ url: `${base}/bm-${key}`, title: `Bm ${key.toUpperCase()}` })) });
+  const titlesOf = (nodes) => nodes.map((node) => node.title).join(',');
+  check('bookmarks from earlier versions move into the Bookmarks bar', titlesOf(settings.data.bookmarks.bar.children) === 'Bm A,Bm B,Bm C');
+  const linkId = (title) => bookmarkTree.links(settings.data.bookmarks).find((link) => link.title === title)?.id;
+  const workFolder = () => settings.data.bookmarks.bar.children.find((node) => node.type === 'folder' && node.title === 'Work');
+
   tabs.openInternal('bookmarks');
   const bookmarksPage = tabs.active;
   await waitFor(() => bookmarksPage.title === 'Bookmarks', 'bookmarks page');
-  const bmRows = () => evalIn(bookmarksPage.view, "[...document.querySelectorAll('#bookmarkList .row')].map((row) => row.querySelector('.title').textContent)");
-  await waitFor(async () => (await bmRows()).length === 3, 'bookmark rows');
-  const clickInRow = (url, label) => evalIn(bookmarksPage.view, `[...document.querySelector('#bookmarkList .row[data-url="${url}"]').querySelectorAll('button')].find((b) => b.textContent === '${label}').click()`);
-  await clickInRow(`${base}/bm-b`, 'Rename');
-  await evalIn(bookmarksPage.view, `(() => { const input = document.querySelector('#bookmarkList .row[data-url="${base}/bm-b"] input');
-    input.value = 'Renamed B'; input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); })()`);
-  await waitFor(() => settings.data.bookmarks[1]?.title === 'Renamed B', 'bookmark renamed', 3000).catch(() => {});
-  check('a bookmark can be renamed on the bookmarks page', settings.data.bookmarks[1]?.title === 'Renamed B');
-  await clickInRow(`${base}/bm-c`, '↑');
-  await waitFor(() => settings.data.bookmarks[1]?.url === `${base}/bm-c`, 'bookmark moved', 3000).catch(() => {});
-  await clickInRow(`${base}/bm-a`, 'Delete');
-  await waitFor(() => settings.data.bookmarks.length === 2, 'bookmark deleted', 3000).catch(() => {});
-  check('bookmarks can be moved and deleted', JSON.stringify(settings.data.bookmarks.map((b) => b.title)) === JSON.stringify(['Bm C', 'Renamed B']),
-    settings.data.bookmarks.map((b) => b.title).join(', '));
-  await waitFor(async () => (await evalIn(ui, "[...document.querySelectorAll('#bookmarks .chip')].map((c) => c.textContent).join('|')")) === '★ Bm C|★ Renamed B', 'bookmarks bar updated', 3000).catch(() => {});
-  check('the bookmarks bar follows the changes', (await evalIn(ui, "[...document.querySelectorAll('#bookmarks .chip')].map((c) => c.textContent).join('|')")) === '★ Bm C|★ Renamed B');
+  const inBookmarks = (code) => evalIn(bookmarksPage.view, code);
+  const rowTitles = () => inBookmarks("[...document.querySelectorAll('#bookmarkList .bm-row .title')].map((b) => b.textContent).join(',')");
+  const rowSelector = (id) => `#bookmarkList .bm-row[data-id="${id}"]`;
+  const clickInBookmarkRow = (id, label) => inBookmarks(`[...document.querySelector(${JSON.stringify(rowSelector(id))}).querySelectorAll('button')].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+  const dragBookmark = (fromSelector, toSelector, fraction) => inBookmarks(`(() => {
+    const from = document.querySelector(${JSON.stringify(fromSelector)});
+    const to = document.querySelector(${JSON.stringify(toSelector)});
+    const data = new DataTransfer();
+    from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }));
+    const box = to.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, dataTransfer: data, clientX: box.left + 20, clientY: box.top + box.height * ${fraction} };
+    to.dispatchEvent(new DragEvent('dragover', at));
+    to.dispatchEvent(new DragEvent('drop', at));
+    from.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }));
+  })()`);
+  await waitFor(async () => (await rowTitles()) === 'Bm A,Bm B,Bm C', 'bookmark rows');
 
+  // A new folder, named in place.
+  await inBookmarks("document.getElementById('bookmarksNewFolder').click()");
+  await waitFor(() => inBookmarks("Boolean(document.querySelector('#bookmarkList .bm-row input[type=text]'))"), 'new folder name field', 3000);
+  await inBookmarks(`(() => { const input = document.querySelector('#bookmarkList .bm-row input[type=text]');
+    input.value = 'Work'; input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); })()`);
+  await waitFor(() => Boolean(workFolder()), 'folder named', 3000).catch(() => {});
+  check('a folder can be made and named on the bookmarks page', Boolean(workFolder()));
+
+  // Tick two bookmarks and move them into the folder together.
+  for (const title of ['Bm B', 'Bm C']) await inBookmarks(`document.querySelector(${JSON.stringify(`${rowSelector(linkId(title))} input[type=checkbox]`)}).click()`);
+  await inBookmarks(`(() => { document.getElementById('bookmarksMoveTo').value = ${JSON.stringify(workFolder().id)}; document.getElementById('bookmarksMove').click(); })()`);
+  await waitFor(() => titlesOf(workFolder()?.children ?? []) === 'Bm B,Bm C', 'moved into Work', 3000).catch(() => {});
+  check('several bookmarks move into a folder together', titlesOf(workFolder().children) === 'Bm B,Bm C' && titlesOf(settings.data.bookmarks.bar.children) === 'Bm A,Work');
+
+  // Open the folder from the tree, then reorder with ↓ and by dragging.
+  await inBookmarks(`document.querySelector('#bookmarkFolders [data-id="${workFolder().id}"]').click()`);
+  await waitFor(async () => (await rowTitles()) === 'Bm B,Bm C', 'Work opened', 3000).catch(() => {});
+  await clickInBookmarkRow(linkId('Bm B'), '↓');
+  await waitFor(() => titlesOf(workFolder().children) === 'Bm C,Bm B', 'moved down', 3000).catch(() => {});
+  check('a bookmark moves down inside its folder', titlesOf(workFolder().children) === 'Bm C,Bm B');
+  await dragBookmark(rowSelector(linkId('Bm C')), rowSelector(linkId('Bm B')), 0.9);
+  await waitFor(() => titlesOf(workFolder().children) === 'Bm B,Bm C', 'dragged below', 3000).catch(() => {});
+  check('dragging a bookmark reorders it', titlesOf(workFolder().children) === 'Bm B,Bm C', titlesOf(workFolder().children));
+
+  // Drop a bookmark from the bar onto the folder in the tree.
+  await inBookmarks("document.querySelector('#bookmarkFolders [data-id=\"bar\"]').click()");
+  await waitFor(async () => (await rowTitles()) === 'Bm A,Work', 'bar opened', 3000).catch(() => {});
+  await dragBookmark(rowSelector(linkId('Bm A')), `#bookmarkFolders [data-id="${workFolder().id}"]`, 0.5);
+  await waitFor(() => titlesOf(workFolder().children) === 'Bm B,Bm C,Bm A', 'dropped on the folder', 3000).catch(() => {});
+  check('dropping a bookmark on a folder in the tree moves it there', titlesOf(workFolder().children) === 'Bm B,Bm C,Bm A' &&
+    titlesOf(settings.data.bookmarks.bar.children) === 'Work', titlesOf(workFolder().children));
+
+  // Edit a bookmark's name and address.
+  await inBookmarks(`document.querySelector('#bookmarkFolders [data-id="${workFolder().id}"]').click()`);
+  await clickInBookmarkRow(linkId('Bm B'), 'Edit');
+  await inBookmarks(`(() => { const [name, address] = document.querySelectorAll(${JSON.stringify(`${rowSelector(linkId('Bm B'))} input[type=text]`)});
+    name.value = 'Renamed B'; address.value = ${JSON.stringify(`${base}/bm-b2`)}; name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); })()`);
+  await waitFor(() => Boolean(linkId('Renamed B')), 'bookmark edited', 3000).catch(() => {});
+  check('a bookmark can be renamed and given a new address', bookmarkTree.links(settings.data.bookmarks).some((link) => link.title === 'Renamed B' && link.url === `${base}/bm-b2`));
+
+  // Search looks in every folder.
+  await inBookmarks("(() => { const box = document.getElementById('bookmarksSearch'); box.value = 'renamed'; box.dispatchEvent(new Event('input')); })()");
+  const searchMeta = await inBookmarks("[...document.querySelectorAll('#bookmarkList .bm-row .meta')].map((m) => m.textContent).join('|')");
+  check('search finds bookmarks in every folder', (await rowTitles()) === 'Renamed B' && searchMeta.includes('Bookmarks bar › Work'), searchMeta);
+  await inBookmarks("(() => { const box = document.getElementById('bookmarksSearch'); box.value = ''; box.dispatchEvent(new Event('input')); })()");
+
+  // The bar shows the folder; the star files new bookmarks where they were last put.
+  await waitFor(async () => /Work/.test(await evalIn(ui, "document.querySelector('#bookmarks .chip.folder')?.textContent ?? ''")), 'folder on the bar', 3000).catch(() => {});
+  check('the bookmarks bar shows folders', /Work/.test(await evalIn(ui, "document.querySelector('#bookmarks .chip.folder')?.textContent ?? ''")));
+  const starTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web' && !tab.isPrivate);
+  tabs.activate(starTab.id);
+  await load(`${base}/starred`, starTab);
+  actions.toggleBookmark();
+  check('the star files a new bookmark in the folder used last', workFolder().children.some((node) => node.url === `${base}/starred`));
+  await waitFor(async () => (await evalIn(ui, "document.getElementById('star').textContent")) === '★', 'star filled', 3000).catch(() => {});
+  check('the star shows the page is bookmarked', (await evalIn(ui, "document.getElementById('star').textContent")) === '★');
+
+  // Export and import keep folders.
+  tabs.openInternal('bookmarks');
   dialogTargets.save = path.join(work, 'exported-bookmarks.html');
-  await evalIn(bookmarksPage.view, "document.getElementById('bookmarksExport').click()");
+  await inBookmarks("document.getElementById('bookmarksExport').click()");
   await waitFor(() => fs.existsSync(dialogTargets.save), 'bookmarks exported', 3000).catch(() => {});
   const exported = fs.existsSync(dialogTargets.save) ? fs.readFileSync(dialogTargets.save, 'utf8') : '';
-  check('bookmarks export to a bookmarks file', /NETSCAPE-Bookmark-file-1/.test(exported) && exported.includes(`${base}/bm-c`) && exported.includes('Renamed B'));
-
+  check('export writes folders into the bookmarks file', /PERSONAL_TOOLBAR_FOLDER="true">Bookmarks bar/.test(exported) &&
+    /<H3>Work<\/H3>[\s\S]*Renamed B/.test(exported));
   dialogTargets.open = path.join(work, 'chrome-bookmarks.html');
-  fs.writeFileSync(dialogTargets.open, `<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p><DT><H3>Bar</H3><DL><p>
-    <DT><A HREF="${base}/bm-c">Duplicate</A><DT><A HREF="${base}/bm-new">New &amp; imported</A><DT><A HREF="javascript:alert(1)">Bad</A>
-    </DL><p></DL><p>`);
-  await evalIn(bookmarksPage.view, "document.getElementById('bookmarksImport').click()");
-  await waitFor(() => settings.data.bookmarks.length === 3, 'bookmarks imported', 3000).catch(() => {});
-  const importMessage = await evalIn(bookmarksPage.view, "document.getElementById('bookmarksMessage').textContent");
-  check('bookmarks import from another browser, skipping duplicates and unsafe links',
-    settings.data.bookmarks.at(-1)?.title === 'New & imported' && settings.data.bookmarks.length === 3 && /Imported 1 bookmark\. 1 skipped/.test(importMessage), importMessage);
-  settings.update({ bookmarks: [] });
+  fs.writeFileSync(dialogTargets.open, `<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>
+    <DT><H3 PERSONAL_TOOLBAR_FOLDER="true">Bookmarks bar</H3><DL><p>
+      <DT><A HREF="${base}/bm-c">Duplicate</A>
+      <DT><H3>Reading</H3><DL><p><DT><H3>Blogs</H3><DL><p><DT><A HREF="${base}/blog">Blog &amp; notes</A></DL><p></DL><p>
+    </DL><p>
+    <DT><A HREF="javascript:alert(1)">Bad</A>
+    </DL><p>`);
+  await inBookmarks("document.getElementById('bookmarksImport').click()");
+  const readingFolder = () => settings.data.bookmarks.bar.children.find((node) => node.type === 'folder' && node.title === 'Reading');
+  await waitFor(() => Boolean(readingFolder()), 'bookmarks imported', 3000).catch(() => {});
+  const importMessage = await inBookmarks("document.getElementById('bookmarksMessage').textContent");
+  check('import keeps folders, skipping duplicates and unsafe links',
+    readingFolder()?.children[0]?.title === 'Blogs' && readingFolder().children[0].children[0]?.title === 'Blog & notes' &&
+    /Imported 1 bookmark\. 1 skipped/.test(importMessage), importMessage);
+
+  // Deleting a folder with bookmarks in it asks for a second click.
+  await inBookmarks("document.querySelector('#bookmarkFolders [data-id=\"bar\"]').click()");
+  await clickInBookmarkRow(workFolder().id, 'Delete');
+  check('deleting a folder with bookmarks asks first', Boolean(workFolder()));
+  await inBookmarks(`[...document.querySelector(${JSON.stringify(rowSelector(workFolder().id))}).querySelectorAll('button')].find((b) => /^Delete with/.test(b.textContent)).click()`);
+  await waitFor(() => !workFolder(), 'folder deleted', 3000).catch(() => {});
+  check('a folder and its bookmarks can be deleted', !workFolder() && !bookmarkTree.findLinkByUrl(settings.data.bookmarks, `${base}/starred`));
+  settings.update({ bookmarks: [], bookmarkFolder: 'bar' });
+  dialogTargets.save = '';
+  dialogTargets.open = '';
 
   // ---------- Ad and tracker blocking ----------
   const adTab = tabs.create({ url: `${base}/ad-page` });

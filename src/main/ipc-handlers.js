@@ -9,7 +9,7 @@ const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
 const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
-const { MAX_BOOKMARKS, STOP_AFTER_CHOICES } = require('./storage/settings');
+const { STOP_AFTER_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
@@ -35,7 +35,8 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
+    none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
+    bookmarkPatch, bookmarkMove, idList, menuAt, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -65,13 +66,14 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('window:reveal', TOOLBAR, bool, (_e, revealed) => host.setRevealed(revealed));
   ipc.handle('window:menu', TOOLBAR, none, () => showMenu());
   ipc.handle('bookmarks:toggle', TOOLBAR, none, () => actions.toggleBookmark());
+  ipc.handle('bookmarks:folder-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkFolder(id, x, y));
   ipc.handle('zoom:reset', TOOLBAR, none, () => actions.zoom(0));
 
   // Address-bar suggestions: visited pages only while history is on.
   ipc.handle('suggest:query', TOOLBAR, text, (_e, input) => suggest({
     text: input,
     history: settings.data.historyEnabled ? history.entries : [],
-    bookmarks: settings.data.bookmarks,
+    bookmarks: bookmarkList.links(settings.data.bookmarks),
     engine: settings.data.searchEngine,
   }));
   // The suggestion list needs the toolbar's view to reach below the browser bars while open.
@@ -132,7 +134,8 @@ function registerIpcHandlers(ipc, ctx) {
     return settingsPayload();
   });
 
-  // Bookmarks page. Every change is saved, shown in the bookmarks bar and sent back.
+  // Bookmarks page. Every change is saved, shown in the bookmarks bar and sent back as the
+  // whole tree; a change that cannot be made (a folder into itself, say) sends it back unchanged.
   const saveBookmarks = (next) => {
     if (next) {
       settings.update({ bookmarks: next });
@@ -141,9 +144,19 @@ function registerIpcHandlers(ipc, ctx) {
     return settings.data.bookmarks;
   };
   ipc.handle('bookmarks:list', LIBRARY, none, () => settings.data.bookmarks);
-  ipc.handle('bookmarks:rename', LIBRARY, twoTexts, (_e, url, title) => saveBookmarks(bookmarkList.rename(settings.data.bookmarks, url, title)));
-  ipc.handle('bookmarks:remove', LIBRARY, text, (_e, url) => saveBookmarks(bookmarkList.remove(settings.data.bookmarks, url)));
-  ipc.handle('bookmarks:move', LIBRARY, textAndIndex, (_e, url, index) => saveBookmarks(bookmarkList.move(settings.data.bookmarks, url, index)));
+  ipc.handle('bookmarks:add-folder', LIBRARY, twoTexts, (_e, parentId, title) => {
+    const added = bookmarkList.addFolder(settings.data.bookmarks, parentId, title);
+    return { tree: saveBookmarks(added?.tree), id: added?.id ?? null };
+  });
+  ipc.handle('bookmarks:update', LIBRARY, bookmarkPatch, (_e, id, patch) => saveBookmarks(bookmarkList.update(settings.data.bookmarks, id, patch)));
+  ipc.handle('bookmarks:move', LIBRARY, bookmarkMove, (_e, id, parentId, index) => {
+    const moved = bookmarkList.move(settings.data.bookmarks, id, parentId, index);
+    // The star files new bookmarks where the user last put one.
+    if (moved && bookmarkList.find(moved, id)?.node.type === 'link') settings.update({ bookmarkFolder: parentId });
+    return saveBookmarks(moved);
+  });
+  ipc.handle('bookmarks:remove', LIBRARY, idList, (_e, ids) => saveBookmarks(bookmarkList.remove(settings.data.bookmarks, ids)));
+  ipc.handle('bookmarks:open', LIBRARY, idList, (_e, ids) => actions.openBookmarks(ids));
   ipc.handle('bookmarks:export', LIBRARY, none, async () => {
     const result = await dialog.showSaveDialog(host.win, {
       title: 'Export bookmarks',
@@ -156,7 +169,7 @@ function registerIpcHandlers(ipc, ctx) {
     } catch (error) {
       return { ok: false, message: error.message };
     }
-    return { ok: true, count: settings.data.bookmarks.length, path: result.filePath };
+    return { ok: true, count: bookmarkList.links(settings.data.bookmarks).length, path: result.filePath };
   });
   ipc.handle('bookmarks:import', LIBRARY, none, async () => {
     const result = await dialog.showOpenDialog(host.win, {
@@ -173,8 +186,8 @@ function registerIpcHandlers(ipc, ctx) {
     } catch (error) {
       return { ok: false, message: error.message };
     }
-    const merged = bookmarkList.merge(settings.data.bookmarks, bookmarkList.fromHtml(html), MAX_BOOKMARKS);
-    saveBookmarks(merged.list);
+    const merged = bookmarkList.merge(settings.data.bookmarks, bookmarkList.fromHtml(html));
+    saveBookmarks(merged.tree);
     return { ok: true, added: merged.added, skipped: merged.skipped };
   });
 

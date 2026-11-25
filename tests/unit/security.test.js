@@ -207,7 +207,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   const channels = [...ipcMain.handlers.keys()];
   const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
 
-  assert.equal(channels.length, 61);
+  assert.equal(channels.length, 64);
   assert.deepEqual(allowed('indicator'), ['recording:mark', 'recording:request-pause', 'recording:request-stop', 'ui:get-state']);
   assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
   // The library tab shows text from websites: no recording, navigation or tab controls.
@@ -215,7 +215,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   assert.ok(!allowed('library').includes('bookmarks:toggle'));
   // The toolbar has no access to files, settings or history.
   assert.ok(allowed('toolbar').every((channel) => !/^(history|downloads|recordings|settings):/.test(channel)), allowed('toolbar').join());
-  assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('bookmarks:')), ['bookmarks:toggle']);
+  assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('bookmarks:')), ['bookmarks:folder-menu', 'bookmarks:toggle']);
   assert.ok(allowed('toolbar').includes('recording:chunk'));
   // Every channel is open to exactly the pages listed, and to at least one of them.
   for (const channel of channels) {
@@ -244,6 +244,6 @@ test('settings drop unsafe bookmarks and relative recording folders', () => {
     bookmarks: [{ url: 'https://ok.example/', title: 'ok' }, { url: 'javascript:alert(1)', title: 'bad' }, null],
     recordingFolder: 'relative\\path',
   });
-  assert.deepEqual(settings.bookmarks, [{ url: 'https://ok.example/', title: 'ok' }]);
+  assert.deepEqual(settings.bookmarks.bar.children.map(({ url, title }) => ({ url, title })), [{ url: 'https://ok.example/', title: 'ok' }]);
   assert.equal(settings.recordingFolder, null);
 });

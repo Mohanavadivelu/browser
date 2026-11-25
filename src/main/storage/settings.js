@@ -5,7 +5,7 @@ const path = require('node:path');
 const { isAllowedUrl, SEARCH_ENGINES, DEFAULT_ENGINE } = require('../security/navigation');
 const { QUALITY, DEFAULT_QUALITY } = require('../recording/quality');
 
-const MAX_BOOKMARKS = 1000;
+const { sanitizeTree, find } = require('../bookmarks');
 const MAX_ZOOM_SITES = 500;
 const MAX_SESSION_TABS = 50;
 const ZOOM_RANGE = [0.25, 5];
@@ -49,12 +49,13 @@ function sanitizeSession(raw) {
 
 function sanitizeSettings(raw) {
   const source = raw !== null && typeof raw === 'object' ? raw : {};
-  const bookmarks = Array.isArray(source.bookmarks) ? source.bookmarks : [];
+  // A tree of folders; the flat list of earlier versions becomes the Bookmarks bar.
+  const bookmarks = sanitizeTree(source.bookmarks);
+  const lastFolder = typeof source.bookmarkFolder === 'string' ? find(bookmarks, source.bookmarkFolder) : null;
   return {
-    bookmarks: bookmarks
-      .filter((b) => b && typeof b.url === 'string' && isAllowedUrl(b.url))
-      .slice(0, MAX_BOOKMARKS)
-      .map((b) => ({ url: b.url, title: String(b.title ?? b.url).slice(0, 200) })),
+    bookmarks,
+    // Where the star puts a new bookmark: the folder used last.
+    bookmarkFolder: lastFolder?.node.type === 'folder' ? lastFolder.node.id : 'bar',
     recordingFolder: typeof source.recordingFolder === 'string' && path.isAbsolute(source.recordingFolder)
       ? source.recordingFolder
       : null,
@@ -112,4 +113,4 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, MAX_BOOKMARKS, STOP_AFTER_CHOICES };
+module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES };

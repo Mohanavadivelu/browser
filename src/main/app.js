@@ -19,6 +19,7 @@ const { saveScreenshot } = require('./recording/storage');
 const { sanitizeBaseName } = require('./recording/library');
 const { registerMediaScheme, serveRecordings } = require('./recording/media-server');
 const { ContentBlocker, hostOf } = require('./blocker');
+const bookmarkTree = require('./bookmarks');
 const { UpdateService, updateMode, fetchLatestRelease, RELEASES } = require('./updates');
 const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
@@ -36,6 +37,7 @@ const SESSION_SAVE_DELAY_MS = 1000;
 const DOWNLOAD_BROADCAST_MS = 200;
 const BLOCKER_FIRST_UPDATE_MS = 10_000;
 const AUTO_STOP_CHECK_MS = 250;
+const MAX_OPEN_AT_ONCE = 50;
 const BLOCKER_CHECK_MS = 6 * 60 * 60 * 1000;
 // How long the toolbar gets to stop its capture and send the last chunks before the recording
 // is closed without them.
@@ -144,7 +146,9 @@ async function start(options = {}) {
     recording: { ...recorder.info, limitMs: recordingLimitMs() },
     recordingQuality: settings.data.recordingQuality,
     qualities: publicQualities(),
-    bookmarks: settings.data.bookmarks,
+    // The bar's own items (folders without their contents) and whether this page is bookmarked.
+    bookmarks: settings.data.bookmarks.bar.children.map(({ id, type, title, url }) => ({ id, type, title, url })),
+    bookmarked: Boolean(tabs.active?.kind === 'web' && bookmarkTree.findLinkByUrl(settings.data.bookmarks, tabs.active.view.webContents.getURL())),
     update: { status: updates.state.status, version: updates.state.version },
     blocker: {
       enabled: settings.data.blockTrackers,
@@ -399,16 +403,35 @@ async function start(options = {}) {
         return;
       }
       const url = tab.view.webContents.getURL();
-      const current = settings.data.bookmarks;
-      const exists = current.some((bookmark) => bookmark.url === url);
-      settings.update({
-        bookmarks: exists
-          ? current.filter((bookmark) => bookmark.url !== url)
-          : [...current, { url, title: tab.title || url }],
-      });
-      notify(exists ? 'Bookmark removed.' : 'Bookmark added.');
+      const tree = settings.data.bookmarks;
+      const existing = bookmarkTree.findLinkByUrl(tree, url);
+      if (existing) {
+        settings.update({ bookmarks: bookmarkTree.remove(tree, [existing.id]) });
+      } else {
+        const added = bookmarkTree.addLink(tree, settings.data.bookmarkFolder, { url, title: tab.title || url });
+        if (!added) {
+          notify('This page could not be bookmarked.', 'warning');
+          return;
+        }
+        settings.update({ bookmarks: added.tree });
+      }
+      notify(existing ? 'Bookmark removed.' : 'Bookmark added.');
       broadcastToLibrary('bookmarks:changed');
       pushState();
+    },
+    // A bookmarks folder on the bar, as a menu at (x, y) in the window: its bookmarks open in the
+    // current tab, its folders are submenus, and "Open all" opens its links in new tabs.
+    showBookmarkFolder: (folderId, x, y) => {
+      const folder = bookmarkTree.find(settings.data.bookmarks, folderId)?.node;
+      if (!folder || folder.type !== 'folder') return false;
+      Menu.buildFromTemplate(bookmarkMenuTemplate(folder)).popup({ window: win, x, y });
+      return true;
+    },
+    openBookmarks: (ids) => {
+      const urls = bookmarkUrls(ids);
+      urls.slice(0, MAX_OPEN_AT_ONCE).forEach((url, i) => tabs.create({ url, activate: i === 0 }));
+      if (urls.length > MAX_OPEN_AT_ONCE) notify(`Opened the first ${MAX_OPEN_AT_ONCE} of ${urls.length} bookmarks.`, 'warning');
+      return Math.min(urls.length, MAX_OPEN_AT_ONCE);
     },
     zoom: (direction) => {
       const tab = tabs.active;
@@ -477,6 +500,32 @@ async function start(options = {}) {
       }
     },
   };
+
+  // Every link under the given bookmarks and folders, in order.
+  function bookmarkUrls(ids) {
+    const urls = [];
+    const collect = (node) => {
+      if (node.type === 'link') urls.push(node.url);
+      else node.children.forEach(collect);
+    };
+    for (const id of ids) {
+      const node = bookmarkTree.find(settings.data.bookmarks, id)?.node;
+      if (node) collect(node);
+    }
+    return urls;
+  }
+
+  // Windows menus read "&" as an access key; "&&" shows one "&".
+  const menuLabel = (text) => text.replace(/&/g, '&&');
+  function bookmarkMenuTemplate(folder) {
+    const items = folder.children.map((node) => (node.type === 'folder'
+      ? { label: menuLabel(node.title), submenu: bookmarkMenuTemplate(node) }
+      : { label: menuLabel(node.title), click: () => tabs.navigate(node.url) }));
+    if (items.length === 0) return [{ label: '(empty)', enabled: false }];
+    const count = bookmarkUrls([folder.id]).length;
+    if (count > 0) items.push({ type: 'separator' }, { label: `Open all (${count}) in new tabs`, click: () => actions.openBookmarks([folder.id]) });
+    return items;
+  }
 
   shortcutHandler = createShortcutHandler({ tabs, host, ui, actions });
   for (const view of [ui, indicator, find]) trackInput(view.webContents);

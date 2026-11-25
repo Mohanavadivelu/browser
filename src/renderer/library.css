@@ -68,3 +68,29 @@ button.primary:hover { background: #3b78e7; }
 .check { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 14px; }
 .inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 code { padding: 5px 9px; border-radius: 6px; background: var(--bg); font-size: 12px; word-break: break-all; }
+
+/* Bookmarks: folder tree, open folder, dragging */
+.bm-layout { display: flex; gap: 20px; align-items: flex-start; }
+.bm-tree { width: 250px; flex: none; padding: 8px; border-radius: 10px; background: var(--panel); display: flex; flex-direction: column; gap: 2px; }
+.tree-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border-radius: 6px; background: none; text-align: left; font-size: 13px; }
+.tree-item:hover { background: var(--hover); }
+.tree-item.active { background: #24406e; color: #fff; }
+.tree-item .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-item .count { color: var(--muted); font-size: 11px; }
+.tree-item.active .count { color: #cfe0ff; }
+.bm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.bm-path { display: flex; align-items: center; gap: 8px; min-height: 30px; color: var(--muted); font-size: 13px; }
+.bm-path .spacer { flex: 1; }
+.link-button { background: none; color: #8ab4f8; }
+.bm-selection { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 12px; border-radius: 8px; background: #24406e; color: #fff; font-size: 13px; }
+.bm-selection[hidden] { display: none; }
+.bm-selection span { flex: 1; }
+.bm-row .handle { flex: none; color: #6f7378; cursor: grab; user-select: none; }
+.bm-row .link-dot { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--accent); }
+.bm-row .main input[type="text"] { margin: 2px 0; }
+.bm-row.dragging { opacity: .5; }
+.bm-row.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+.bm-row.drop-after { box-shadow: inset 0 -3px 0 var(--accent); }
+.drop-into { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.folder-icon { flex: none; width: 16px; height: 16px; fill: none; stroke: #fdd663; stroke-width: 2; stroke-linejoin: round; }
+.folder-icon.muted { stroke: var(--muted); }

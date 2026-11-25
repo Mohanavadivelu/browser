@@ -30,12 +30,31 @@
     <section id="page-bookmarks" hidden>
       <header>
         <h2>Bookmarks</h2>
+        <input id="bookmarksSearch" type="search" placeholder="Search all bookmarks" aria-label="Search all bookmarks" autocomplete="off">
+        <button id="bookmarksNewFolder" type="button">New folder</button>
         <button id="bookmarksImport" type="button">Import…</button>
         <button id="bookmarksExport" type="button">Export…</button>
       </header>
-      <p class="note">Import and export use the bookmarks file that Chrome, Edge and Firefox read and write. Folders are flattened when importing.</p>
+      <p class="note">Drag ⋮⋮ to reorder, or drop on a folder to move. Import and export use the bookmarks file Chrome, Edge and Firefox read and write, folders included.</p>
       <p id="bookmarksMessage" class="note" hidden></p>
-      <div id="bookmarkList" class="list"></div>
+      <div class="bm-layout">
+        <nav id="bookmarkFolders" class="bm-tree" aria-label="Bookmark folders"></nav>
+        <div class="bm-main">
+          <div class="bm-path">
+            <span id="bookmarksPath"></span>
+            <span class="spacer"></span>
+            <button id="bookmarksOpenAll" type="button" class="link-button" hidden>Open all</button>
+          </div>
+          <div id="bookmarksSelection" class="bm-selection" hidden>
+            <span id="bookmarksSelected"></span>
+            <label>Move to <select id="bookmarksMoveTo"></select></label>
+            <button id="bookmarksMove" type="button">Move</button>
+            <button id="bookmarksDelete" type="button" class="danger">Delete</button>
+            <button id="bookmarksClear" type="button">Clear</button>
+          </div>
+          <div id="bookmarkList" class="list"></div>
+        </div>
+      </div>
     </section>
 
     <section id="page-downloads" hidden>

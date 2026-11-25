@@ -2,6 +2,8 @@
 
 const MAX_CHUNK_BYTES = 32 * 1024 * 1024;
 
+const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
+
 const validators = {
   none: (...args) => args.length === 0,
   tabId: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] > 0,
@@ -16,6 +18,14 @@ const validators = {
   // A recording's name and a time range in milliseconds (at most a day).
   trimRange: (...args) => args.length === 3 && typeof args[0] === 'string' && args[0].length <= 2048 &&
     Number.isInteger(args[1]) && Number.isInteger(args[2]) && args[1] >= 0 && args[2] > args[1] && args[2] <= 86_400_000,
+  // Bookmarks are addressed by id; a patch changes a title and/or a link's address.
+  bookmarkPatch: (...args) => args.length === 2 && isId(args[0]) && args[1] !== null && typeof args[1] === 'object' &&
+    !Array.isArray(args[1]) && Object.keys(args[1]).every((key) => key === 'title' || key === 'url') &&
+    Object.values(args[1]).every((value) => typeof value === 'string' && value.length <= 2048),
+  bookmarkMove: (...args) => args.length === 3 && isId(args[0]) && isId(args[1]) &&
+    Number.isInteger(args[2]) && args[2] >= 0 && args[2] <= 10000,
+  idList: (...args) => args.length === 1 && Array.isArray(args[0]) && args[0].length > 0 && args[0].length <= 5000 && args[0].every(isId),
+  menuAt: (...args) => args.length === 3 && isId(args[0]) && [args[1], args[2]].every((n) => Number.isInteger(n) && n >= 0 && n <= 20000),
   pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 1000,
   settingsPatch: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
     !Array.isArray(args[0]) && Object.keys(args[0]).length <= 20,

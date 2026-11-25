@@ -119,7 +119,7 @@ function renderToolbar() {
   security.textContent = secure ? '🔒' : insecure ? 'Not secure' : '';
   security.classList.toggle('warn', Boolean(insecure));
 
-  const bookmarked = Boolean(tab && state.bookmarks.some((bookmark) => bookmark.url === tab.url));
+  const bookmarked = Boolean(tab && state.bookmarked);
   $('star').textContent = bookmarked ? '★' : '☆';
   $('star').classList.toggle('on', bookmarked);
 
@@ -163,12 +163,38 @@ function renderBookmarks() {
     bar.append(element('span', 'hint', 'Press ☆ in the address bar to bookmark a page.'));
     return;
   }
-  for (const bookmark of state.bookmarks) {
-    const chip = element('button', 'chip', `★ ${bookmark.title}`);
-    chip.title = bookmark.url;
-    chip.addEventListener('click', () => api.nav.go(bookmark.url));
+  for (const item of state.bookmarks) {
+    const chip = element('button', `chip${item.type === 'folder' ? ' folder' : ''}`);
+    chip.type = 'button';
+    chip.dataset.id = item.id;
+    if (item.type === 'folder') {
+      // A folder opens as a menu just under its button.
+      chip.append(folderIcon(), element('span', 'label', item.title), element('span', 'caret', '▾'));
+      chip.title = `${item.title} (folder)`;
+      chip.setAttribute('aria-haspopup', 'menu');
+      chip.addEventListener('click', () => {
+        const box = chip.getBoundingClientRect();
+        api.bookmarks.folderMenu(item.id, Math.round(box.left), Math.round(box.bottom));
+      });
+    } else {
+      chip.append(element('span', 'label', `★ ${item.title}`));
+      chip.title = item.url;
+      chip.addEventListener('click', () => api.nav.go(item.url));
+    }
     bar.append(chip);
   }
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+function folderIcon() {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'folder-icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG, 'path');
+  path.setAttribute('d', 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z');
+  svg.append(path);
+  return svg;
 }
 
 function elapsedMs(recording) {
