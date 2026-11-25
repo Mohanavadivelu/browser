@@ -437,4 +437,6 @@ function applyIndex(filePath, plan, fs = require('node:fs')) {
   }
 }
 
-module.exports = { WebmIndexer, applyIndex };
+module.exports = {
+  WebmIndexer, applyIndex, ID, readElementHeader, readVint, readUint, children, element, encodeId, encodeSize,
+};

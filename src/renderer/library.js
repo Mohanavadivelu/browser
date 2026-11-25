@@ -273,6 +273,40 @@ function thumbnail(entry) {
 }
 
 let playerEntry = null;
+let trim = { start: 0, end: 0 };
+
+// "1:05.3": the times shown while trimming, to a tenth of a second.
+function formatTrimTime(ms) {
+  const tenths = Math.round(ms / 100);
+  const minutes = Math.floor(tenths / 600);
+  const seconds = (tenths % 600) / 10;
+  return `${minutes}:${seconds < 10 ? '0' : ''}${seconds.toFixed(1)}`;
+}
+
+function showTrim() {
+  $('trimStart').textContent = formatTrimTime(trim.start);
+  $('trimEnd').textContent = formatTrimTime(trim.end);
+  $('trimSave').disabled = trim.end <= trim.start;
+}
+
+const TRIM_ERRORS = {
+  recording: 'This recording is still being recorded.',
+  'invalid-range': 'The end must come after the start.',
+};
+
+async function saveTrim() {
+  const entry = playerEntry;
+  $('trimSave').disabled = true;
+  $('playerInfo').textContent = 'Saving the trimmed copy…';
+  const result = await api.recordings.trim(entry.name, Math.round(trim.start), Math.round(trim.end));
+  if (result.ok) {
+    $('playerInfo').textContent = `Saved ${result.name} (${formatDuration(result.durationMs)}). It starts at ${formatTrimTime(result.startMs)}, the keyframe at or before your start.`;
+    loadRecordings();
+  } else {
+    $('playerInfo').textContent = TRIM_ERRORS[result.reason] ?? `Could not save the trimmed copy${result.message ? `: ${result.message}` : '.'}`;
+  }
+  showTrim();
+}
 
 function openPlayer(entry) {
   playerEntry = entry;
@@ -284,6 +318,9 @@ function openPlayer(entry) {
     media.autoplay = true;
     media.addEventListener('loadedmetadata', () => {
       $('playerInfo').textContent = Number.isFinite(media.duration) ? `Length ${formatDuration(media.duration * 1000)}` : '';
+      trim = { start: 0, end: Number.isFinite(media.duration) ? media.duration * 1000 : 0 };
+      showTrim();
+      $('trimBar').hidden = false;
     });
   } else {
     media = element('img');
@@ -294,6 +331,7 @@ function openPlayer(entry) {
   stage.replaceChildren(media);
   $('playerTitle').textContent = entry.name;
   $('playerInfo').textContent = '';
+  $('trimBar').hidden = true;
   $('player').hidden = false;
   $('playerClose').focus();
 }
@@ -315,6 +353,12 @@ async function loadRecordings() {
     list.append(element('p', 'empty', 'No recordings or screenshots yet. Use ● to record or 📷 for a screenshot.'));
     return;
   }
+  // Recordings that followed you across tabs: "x.webm", "x-part2.webm", ... can be joined.
+  const partCount = new Map();
+  for (const entry of entries) {
+    const match = /^(.+?)(?:-part(\d+))?\.webm$/i.exec(entry.name);
+    if (match) partCount.set(match[1], (partCount.get(match[1]) ?? 0) + 1);
+  }
   for (const entry of entries) {
     const row = element('div', 'row');
     row.dataset.name = entry.name;
@@ -333,6 +377,19 @@ async function loadRecordings() {
       button('Rename', () => startRename(row, entry)),
       deleteButton(entry),
     );
+    const base = /^(.+?)\.webm$/i.exec(entry.name)?.[1];
+    if (base && !/-part\d+$/i.test(base) && (partCount.get(base) ?? 0) > 1) {
+      const join = button(`Join ${partCount.get(base)} parts`, async () => {
+        join.disabled = true;
+        join.textContent = 'Joining…';
+        const result = await api.recordings.join(entry.name);
+        showRecordingMessage(result.ok
+          ? `Joined ${result.parts} parts into ${result.name} (${formatDuration(result.durationMs)}).`
+          : TRIM_ERRORS[result.reason] ?? `Could not join the parts${result.message ? `: ${result.message}` : '.'}`);
+        loadRecordings();
+      }, 'primary');
+      actions.prepend(join);
+    }
     row.append(main, actions);
     list.append(row);
   }
@@ -441,6 +498,9 @@ $('historyClear').addEventListener('click', async () => {
 });
 $('recOpenFolder').addEventListener('click', () => api.recordings.openFolder());
 $('playerClose').addEventListener('click', closePlayer);
+$('trimStartSet').addEventListener('click', () => { trim.start = $('playerMedia').currentTime * 1000; if (trim.end <= trim.start) trim.end = $('playerMedia').duration * 1000; showTrim(); });
+$('trimEndSet').addEventListener('click', () => { trim.end = $('playerMedia').currentTime * 1000; showTrim(); });
+$('trimSave').addEventListener('click', saveTrim);
 $('player').addEventListener('click', (event) => { if (event.target === $('player')) closePlayer(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !$('player').hidden) closePlayer(); });
 $('bookmarksImport').addEventListener('click', importBookmarks);

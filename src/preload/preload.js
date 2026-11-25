@@ -82,6 +82,8 @@ contextBridge.exposeInMainWorld('browserApi', {
     rename: (name, newName) => invoke('recordings:rename', name, newName),
     delete: (name) => invoke('recordings:delete', name),
     openFolder: () => invoke('recordings:open-folder'),
+    trim: (name, startMs, endMs) => invoke('recordings:trim', name, startMs, endMs),
+    join: (name) => invoke('recordings:join', name),
   },
   screenshot: () => invoke('screenshot:take'),
   recording: {

@@ -14,8 +14,9 @@ const { hostOf } = require('./blocker');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const {
-  isSafeName, listRecordings, renameRecording, deleteRecording,
+  isSafeName, listRecordings, renameRecording, deleteRecording, trimRecording, joinRecording, partsOf,
 } = require('./recording/library');
+const { writeRecording } = require('./recording/webm-edit');
 
 // Which of the browser's own pages may call each channel (see ROLES in security/ipc-validate.js).
 // The library tab shows titles and addresses that come from websites, so it gets no recording,
@@ -34,7 +35,7 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
+    none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -214,6 +215,20 @@ function registerIpcHandlers(ipc, ctx) {
   });
   ipc.handle('recordings:delete', LIBRARY, text, async (_e, name) => {
     const result = await deleteRecording(getRecordingFolder(), name, (target) => shell.trashItem(target), recordingsIndex);
+    if (result.ok) broadcastToLibrary('recordings:changed');
+    return result;
+  });
+  // Trimmed and joined copies are new files; a part still being recorded is left alone.
+  const beingRecorded = (names) => Boolean(recorder.file) && names.includes(path.basename(recorder.file.filePath));
+  ipc.handle('recordings:trim', LIBRARY, trimRange, async (_e, name, startMs, endMs) => {
+    if (beingRecorded([name])) return { ok: false, reason: 'recording' };
+    const result = await trimRecording(getRecordingFolder(), name, startMs, endMs, recordingsIndex, writeRecording);
+    if (result.ok) broadcastToLibrary('recordings:changed');
+    return result;
+  });
+  ipc.handle('recordings:join', LIBRARY, text, async (_e, name) => {
+    if (beingRecorded(partsOf(getRecordingFolder(), name))) return { ok: false, reason: 'recording' };
+    const result = await joinRecording(getRecordingFolder(), name, recordingsIndex, writeRecording);
     if (result.ok) broadcastToLibrary('recordings:changed');
     return result;
   });

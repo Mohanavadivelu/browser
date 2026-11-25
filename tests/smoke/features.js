@@ -504,9 +504,33 @@ async function main() {
     `fetch('sb-media://recordings/${encodeURIComponent(pausedName)}').then(() => 'loaded', () => 'refused')`);
   check('web pages cannot load recordings', leaked === 'refused', leaked);
 
+  // Trim from 2.5 s to 5 s with the player's own buttons.
+  const pausedSize = fs.statSync(path.join(recordingsFolder, pausedName)).size;
+  await inRecPage(`[...${rowOf(pausedName)}.querySelectorAll('button')].find((b) => b.textContent === 'Play').click()`);
+  await waitFor(async () => (await inRecPage("document.getElementById('trimBar').hidden")) === false, 'trim bar', 5000);
+  const seekPlayer = async (seconds) => {
+    await inRecPage(`(() => { const v = document.getElementById('playerMedia'); v.pause(); v.currentTime = ${seconds}; })()`);
+    await waitFor(async () => Math.abs((await playerState()).time - seconds) < 0.2, `player at ${seconds} s`, 5000);
+  };
+  await seekPlayer(2.5);
+  await inRecPage("document.getElementById('trimStartSet').click()");
+  await seekPlayer(5);
+  await inRecPage("document.getElementById('trimEndSet').click()");
+  await inRecPage("document.getElementById('trimSave').click()");
+  const trimmedName = pausedName.replace(/\.webm$/, '-trimmed.webm');
+  await waitFor(async () => /^Saved /.test(await inRecPage("document.getElementById('playerInfo').textContent")), 'trimmed copy saved', 20000).catch(() => {});
+  const trimNote = await inRecPage("document.getElementById('playerInfo').textContent");
+  const trimmedInfo = fs.existsSync(path.join(recordingsFolder, trimmedName)) ? await inspectRecording(path.join(recordingsFolder, trimmedName)) : {};
+  check('a recording can be trimmed from the player', trimmedInfo.duration >= 2.4 && trimmedInfo.duration <= 5.1 && trimmedInfo.width > 0 && trimmedInfo.cuePoints >= 1,
+    `${trimNote} | ${JSON.stringify(trimmedInfo)}`);
+  check('the trimmed copy is listed with its length, and the original is kept',
+    Math.abs((recordingsIndex.get(trimmedName) ?? 0) - trimmedInfo.duration * 1000) < 100 && fs.statSync(path.join(recordingsFolder, pausedName)).size === pausedSize);
+  await inRecPage("document.getElementById('playerClose').click()");
+
   // ---------- Recording: quality ----------
   settings.update({ recordingQuality: 'low' });
   await sleep(300);
+  const beforeLow = new Set(fs.readdirSync(recordingsFolder));
   await startRecording();
   await waitFor(() => recorder.active, 'low-quality recording started');
   await bytes.waitForMore('first low-quality data');
@@ -514,7 +538,7 @@ async function main() {
   ui.webContents.send('recording:command', 'stop');
   await waitFor(() => !recorder.active, 'low-quality recording stopped');
   await sleep(500);
-  const lowName = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && f !== pausedName)[0];
+  const lowName = fs.readdirSync(recordingsFolder).find((f) => f.endsWith('.webm') && !beforeLow.has(f));
   const lowInfo = await inspectRecording(path.join(recordingsFolder, lowName));
   check('low quality limits the video to 720p width', lowInfo.width > 0 && lowInfo.width <= 1280, JSON.stringify(lowInfo));
   settings.update({ recordingQuality: 'medium' });
@@ -546,6 +570,21 @@ async function main() {
   const partOne = await inspectRecording(path.join(recordingsFolder, newFiles.find((f) => f !== partTwoName) ?? newFiles[0]));
   check('both parts report their length to players', partOne.duration > 0.5 && partTwo.duration > 0.5,
     `${partOne.duration} s and ${partTwo.duration} s`);
+
+  // Join the two parts from the Recordings page.
+  const partOneName = newFiles.find((f) => f !== partTwoName);
+  tabs.openInternal('recordings');
+  const joinPage = tabs.active;
+  const joinButton = `[...document.querySelector('.row[data-name="${partOneName}"]')?.querySelectorAll('button') ?? []].find((b) => /^Join 2 parts$/.test(b.textContent))`;
+  await waitFor(async () => (await evalIn(joinPage.view, `Boolean(${joinButton})`)) === true, 'join button', 8000).catch(() => {});
+  check('a recording in two parts offers to join them', (await evalIn(joinPage.view, `Boolean(${joinButton})`)) === true);
+  await evalIn(joinPage.view, `${joinButton}?.click()`);
+  const joinedName = partOneName.replace(/\.webm$/, '-joined.webm');
+  await waitFor(() => fs.existsSync(path.join(recordingsFolder, joinedName)) && recordingsIndex.get(joinedName) !== null, 'joined recording', 20000).catch(() => {});
+  const joinedInfo = fs.existsSync(path.join(recordingsFolder, joinedName)) ? await inspectRecording(path.join(recordingsFolder, joinedName)) : {};
+  check('the parts are joined into one recording as long as both',
+    Math.abs(joinedInfo.duration - (partOne.duration + partTwo.duration)) < 0.3 && joinedInfo.width > 0 && joinedInfo.cuePoints >= 2,
+    JSON.stringify(joinedInfo));
 
   // ---------- Follow-tab switched off ----------
   settings.update({ recordingFollowTab: false });

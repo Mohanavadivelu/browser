@@ -13,6 +13,9 @@ const validators = {
     Number.isInteger(args[1]) && args[1] >= 0 && args[1] < 1000,
   textAndIndex: (...args) => args.length === 2 && typeof args[0] === 'string' && args[0].length <= 2048 &&
     Number.isInteger(args[1]) && args[1] >= 0 && args[1] < 10000,
+  // A recording's name and a time range in milliseconds (at most a day).
+  trimRange: (...args) => args.length === 3 && typeof args[0] === 'string' && args[0].length <= 2048 &&
+    Number.isInteger(args[1]) && Number.isInteger(args[2]) && args[1] >= 0 && args[2] > args[1] && args[2] <= 86_400_000,
   pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 1000,
   settingsPatch: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
     !Array.isArray(args[0]) && Object.keys(args[0]).length <= 20,
