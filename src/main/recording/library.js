@@ -114,6 +114,22 @@ class RecordingIndex {
     delete this.markers[name];
     this.save();
   }
+
+  // Forgets recordings that are no longer in the folder (deleted or moved outside the browser).
+  keepOnly(names) {
+    const present = new Set(names);
+    let changed = false;
+    for (const map of [this.durations, this.markers]) {
+      for (const name of Object.keys(map)) {
+        if (!present.has(name)) {
+          delete map[name];
+          changed = true;
+        }
+      }
+    }
+    if (changed) this.save();
+    return changed;
+  }
 }
 
 function listRecordings(folder, index) {
@@ -123,6 +139,7 @@ function listRecordings(folder, index) {
   } catch {
     return [];
   }
+  index?.keepOnly(names);
   const entries = [];
   for (const name of names) {
     if (!isSafeName(folder, name)) continue;

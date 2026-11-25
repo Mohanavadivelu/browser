@@ -29,7 +29,7 @@ const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
 const { attachContextMenu } = require('./context-menu');
-const { registerIpcHandlers } = require('./ipc-handlers');
+const { registerIpcHandlers, indicatorState } = require('./ipc-handlers');
 const { showMainMenu } = require('./menus');
 
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
@@ -168,13 +168,19 @@ async function start(options = {}) {
       pushScheduled = false;
       if (win.isDestroyed()) return;
       const state = buildState();
-      for (const view of [ui, indicator]) {
-        if (!view.webContents.isDestroyed()) view.webContents.send('ui:state', state);
-      }
+      if (!ui.webContents.isDestroyed()) ui.webContents.send('ui:state', state);
+      if (!indicator.webContents.isDestroyed()) indicator.webContents.send('ui:state', indicatorState(state));
     });
   };
   const notify = (text, kind = 'info') => {
     if (!ui.webContents.isDestroyed()) ui.webContents.send('ui:notice', { text, kind });
+  };
+  // A failed settings save is shown once a minute at most, not on every change.
+  let settingsErrorShownAt = 0;
+  settings.onSaveError = (error) => {
+    if (Date.now() - settingsErrorShownAt < 60_000) return;
+    settingsErrorShownAt = Date.now();
+    notify(`Your settings could not be saved (${error.code ?? error.message}). Changes last until the browser closes.`, 'error');
   };
   // The Downloads / Recordings / History / Settings pages live in internal tabs.
   const broadcastToLibrary = (channel, payload) => {
@@ -752,6 +758,12 @@ async function start(options = {}) {
   if (!options.skipSingleInstanceLock) app.on('second-instance', onSecondInstance);
 
   win.on('closed', () => {
+    // A closed window leaves the pages of its views running; close them, so a toolbar or tab of a
+    // closed window cannot keep calling in (the tests open several windows in one process).
+    const pages = [ui, indicator, find, ...[...tabs.tabs.values()].map((tab) => tab.view)].map((view) => view.webContents);
+    for (const contents of pages) {
+      if (!contents.isDestroyed()) contents.close();
+    }
     if (options.quitOnClose !== false) app.quit();
   });
 

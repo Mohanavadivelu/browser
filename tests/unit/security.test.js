@@ -247,3 +247,24 @@ test('settings drop unsafe bookmarks and relative recording folders', () => {
   assert.deepEqual(settings.bookmarks.bar.children.map(({ url, title }) => ({ url, title })), [{ url: 'https://ok.example/', title: 'ok' }]);
   assert.equal(settings.recordingFolder, null);
 });
+
+test('the recording indicator gets only the recording state, the toolbar gets it all', () => {
+  const { indicatorState } = require('../../src/main/ipc-handlers');
+  const ipcMain = fakeIpcMain();
+  const toolbar = { id: 1 };
+  const full = { tabs: [{ url: 'https://example.com/private' }], bookmarks: [{ title: 'Bank' }], recording: { active: true, paused: false } };
+  registerIpcHandlers(createIpc(ipcMain, (event) => event.role), { ui: { webContents: toolbar }, buildState: () => full });
+  const getState = ipcMain.handlers.get('ui:get-state');
+  assert.deepEqual(getState({ role: 'indicator', sender: { id: 2 } }), { recording: full.recording });
+  assert.equal(getState({ role: 'toolbar', sender: toolbar }), full);
+  assert.deepEqual(indicatorState(full), { recording: full.recording });
+});
+
+test('history entries and downloads are addressed by a positive whole number', () => {
+  assert.equal(validators.entryId(12), true);
+  assert.equal(validators.entryId(0), false);
+  assert.equal(validators.entryId(1.5), false);
+  assert.equal(validators.entryId('12'), false);
+  assert.equal(validators.entryId(2 ** 60), false);
+  assert.equal(validators.entryId(1, 2), false);
+});

@@ -90,10 +90,20 @@ async function main() {
   await waitFor(() => host.mode.fullscreen, 'full screen on (idle test)');
   host.setRevealed(true);
   check('toolbar is shown before the idle period', ui.getBounds().height === 46);
-  await waitFor(() => ui.getBounds().height === 6, 'toolbar hides after idling', 4000);
-  check('toolbar hides itself after idling in full screen', ui.getBounds().height === 6);
-  await waitFor(async () => (await cursorOf()) === 'none', 'cursor hidden', 4000);
-  check('mouse pointer is hidden after idling', (await cursorOf()) === 'none');
+  // The real mouse pointer may be over the window while the tests run: its movements would count
+  // as activity and, resting at the top edge, it would reveal the toolbar again. Until the idle
+  // period is over, only the test's own input counts.
+  ctx.idle.activity = () => {};
+  host.setRevealed = (revealed) => { if (!revealed) Object.getPrototypeOf(host).setRevealed.call(host, false); };
+  try {
+    await waitFor(() => ui.getBounds().height === 6, 'toolbar hides after idling', 4000);
+    check('toolbar hides itself after idling in full screen', ui.getBounds().height === 6);
+    await waitFor(async () => (await cursorOf()) === 'none', 'cursor hidden', 4000);
+    check('mouse pointer is hidden after idling', (await cursorOf()) === 'none');
+  } finally {
+    delete ctx.idle.activity;
+    delete host.setRevealed;
+  }
   tabs.active.view.webContents.sendInputEvent({ type: 'mouseMove', x: 60, y: 60 });
   await sleep(250);
   check('moving the mouse brings the pointer back', (await cursorOf()) !== 'none');

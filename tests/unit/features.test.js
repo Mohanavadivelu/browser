@@ -383,3 +383,42 @@ test('a recording can stop by itself after a chosen number of minutes, or never'
   for (const bad of [7, -5, '30', 100000, null]) assert.equal(sanitizeSettings({ recordingStopAfter: bad }).recordingStopAfter, 0, String(bad));
   assert.deepEqual(STOP_AFTER_CHOICES.slice(0, 3), [0, 5, 10]);
 });
+
+test('a settings save that fails keeps the change for the session and reports the error once per call', () => {
+  const folder = temp();
+  // A folder where the file should be makes every write fail.
+  const filePath = path.join(folder, 'settings.json');
+  fs.mkdirSync(filePath);
+  const errors = [];
+  const settings = new Settings(filePath, { onSaveError: (error) => errors.push(error) });
+  assert.doesNotThrow(() => settings.update({ searchEngine: 'bing' }));
+  assert.equal(settings.data.searchEngine, 'bing');
+  assert.equal(errors.length, 1);
+  assert.ok(settings.saveError);
+  assert.equal(fs.existsSync(`${filePath}.tmp`), false, 'no temporary file is left behind');
+
+  fs.rmdirSync(filePath);
+  settings.update({ historyEnabled: true });
+  assert.equal(settings.saveError, null);
+  assert.equal(JSON.parse(fs.readFileSync(filePath, 'utf8')).searchEngine, 'bing', 'the earlier change is saved too');
+});
+
+test('the recordings index forgets files deleted outside the browser when the folder is listed', () => {
+  const folder = temp();
+  const index = new RecordingIndex(path.join(temp(), 'recordings-index.json'));
+  fs.writeFileSync(path.join(folder, 'kept.webm'), 'x');
+  index.set('kept.webm', 1000);
+  index.setMarkers('kept.webm', [10]);
+  index.set('gone.webm', 2000);
+  index.setMarkers('gone.webm', [20]);
+  const listed = listRecordings(folder, index);
+  assert.deepEqual(listed.map((entry) => entry.name), ['kept.webm']);
+  assert.equal(index.get('gone.webm'), null);
+  assert.deepEqual(index.markersOf('gone.webm'), []);
+  assert.equal(index.get('kept.webm'), 1000);
+
+  const reloaded = new RecordingIndex(index.filePath);
+  reloaded.load();
+  assert.deepEqual(Object.keys(reloaded.durations), ['kept.webm'], 'the pruned index is saved');
+  assert.equal(reloaded.keepOnly(['kept.webm']), false, 'nothing to prune means no save');
+});

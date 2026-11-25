@@ -28,6 +28,9 @@ const FIND = ['find'];
 const LIBRARY = ['library'];
 const TOOLBAR_AND_LIBRARY = ['toolbar', 'library'];
 
+// The recording indicator only needs the recording's state, not the tabs, addresses and bookmarks.
+const indicatorState = (state) => ({ recording: state.recording });
+
 // Every call from the browser's own pages comes through here. The sender, its page and the
 // arguments are checked by `ipc.handle` before any handler runs.
 function registerIpcHandlers(ipc, ctx) {
@@ -37,7 +40,7 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
+    none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
     bookmarkPatch, bookmarkMove, idList, menuAt, idListAt, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
@@ -51,7 +54,7 @@ function registerIpcHandlers(ipc, ctx) {
   });
 
   // Tabs and navigation
-  ipc.handle('ui:get-state', BAR_AND_REC, none, () => buildState());
+  ipc.handle('ui:get-state', BAR_AND_REC, none, (event) => (event.sender === ui.webContents ? buildState() : indicatorState(buildState())));
   ipc.handle('tabs:create', TOOLBAR, tabOptions, (_e, opts = {}) => { tabs.create({ isPrivate: opts.private === true }); });
   ipc.handle('tabs:close', TOOLBAR, tabId, (_e, id) => tabs.close(id));
   ipc.handle('tabs:activate', TOOLBAR, tabId, (_e, id) => tabs.activate(id));
@@ -208,13 +211,13 @@ function registerIpcHandlers(ipc, ctx) {
     enabled: settings.data.historyEnabled,
     entries: history.list(query),
   }));
-  ipc.handle('history:remove', LIBRARY, tabId, (_e, id) => history.remove(id));
+  ipc.handle('history:remove', LIBRARY, entryId, (_e, id) => history.remove(id));
   ipc.handle('history:clear', LIBRARY, none, () => { history.clear(); });
 
   // Downloads
   ipc.handle('downloads:list', LIBRARY, none, () => downloads.list());
-  ipc.handle('downloads:cancel', LIBRARY, tabId, (_e, id) => downloads.cancel(id));
-  ipc.handle('downloads:show', LIBRARY, tabId, (_e, id) => {
+  ipc.handle('downloads:cancel', LIBRARY, entryId, (_e, id) => downloads.cancel(id));
+  ipc.handle('downloads:show', LIBRARY, entryId, (_e, id) => {
     const filePath = downloads.pathOf(id);
     if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
   });
@@ -291,4 +294,4 @@ function registerIpcHandlers(ipc, ctx) {
   });
 }
 
-module.exports = { registerIpcHandlers };
+module.exports = { registerIpcHandlers, indicatorState };

@@ -7,6 +7,8 @@ const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.tes
 const validators = {
   none: (...args) => args.length === 0,
   tabId: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] > 0,
+  // A history entry or a download, by its number.
+  entryId: (...args) => args.length === 1 && Number.isSafeInteger(args[0]) && args[0] > 0,
   text: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048,
   optionalText: (...args) => args.length === 0 || (args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048),
   twoTexts: (...args) => args.length === 2 && args.every((value) => typeof value === 'string' && value.length <= 2048),

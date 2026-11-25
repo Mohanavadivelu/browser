@@ -90,9 +90,13 @@ function pickEditable(partial) {
 
 // Settings live in the user's profile folder as JSON.
 class Settings {
-  constructor(filePath) {
+  // `onSaveError(error)` hears about a save that failed (a full or read-only disk); the change
+  // still applies for this session.
+  constructor(filePath, { onSaveError } = {}) {
     this.filePath = filePath;
     this.data = sanitizeSettings(null);
+    this.onSaveError = onSaveError ?? null;
+    this.saveError = null;
   }
 
   load() {
@@ -106,10 +110,22 @@ class Settings {
 
   update(partial) {
     this.data = sanitizeSettings({ ...this.data, ...partial });
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify(this.data, null, 2));
-    fs.renameSync(temporary, this.filePath);
+    try {
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+      fs.writeFileSync(temporary, JSON.stringify(this.data, null, 2));
+      fs.renameSync(temporary, this.filePath);
+      this.saveError = null;
+    } catch (error) {
+      this.saveError = error;
+      console.error(`Could not save settings: ${error.message}`);
+      try {
+        fs.rmSync(temporary, { force: true });
+      } catch {
+        // Nothing more to do.
+      }
+      this.onSaveError?.(error);
+    }
     return this.data;
   }
 }
