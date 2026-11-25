@@ -10,7 +10,7 @@ const TOOLBAR_HEIGHT = 46;
 const BOOKMARKS_HEIGHT = 30;
 const NORMAL_CHROME_HEIGHT = TAB_BAR_HEIGHT + TOOLBAR_HEIGHT + BOOKMARKS_HEIGHT;
 const HOTZONE_HEIGHT = 6;
-const INDICATOR_SIZE = { width: 260, height: 34, margin: 8 };
+const INDICATOR_SIZE = { width: 320, height: 34, margin: 8 };
 const FIND_SIZE = { width: 380, height: 46 };
 const BACKGROUND = '#1a1b1e';
 

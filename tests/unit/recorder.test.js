@@ -117,7 +117,7 @@ test('a write error stops the recording once and drops later chunks', async () =
 
   const filePath = await recorder.finish();
   assert.equal(recorder.active, false);
-  assert.deepEqual(segments, [{ filePath, final: true, failed: true }]);
+  assert.deepEqual(segments, [{ filePath, final: true, failed: true, markers: [] }]);
   assert.deepEqual(failures, ['failed']);
 });
 
@@ -148,4 +148,24 @@ test('whenIdle resolves when the recording ends, or reports a timeout', async ()
   await recorder.finish();
   assert.equal(await waiting, true);
   assert.equal(recorder.idleWaiters.size, 0);
+});
+
+test('markers are timed from when the capture really started, without paused time', async () => {
+  let now = 10_000;
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-rec-'));
+  const recorder = new Recorder({
+    getFolder: () => folder, requestConsent: async () => ({ granted: true }), onChange: () => {}, notify: () => {}, now: () => now,
+  });
+  assert.equal(recorder.addMarker(), null, 'no marker without a recording');
+  await recorder.requestStart();
+  now += 800; // the capture starts a moment after the consent dialog
+  assert.equal(recorder.captureStarted(), true);
+  now += 1200;
+  assert.deepEqual(recorder.addMarker(), { number: 1, timeMs: 1200, part: 1 });
+  recorder.setPaused(true);
+  now += 5000;
+  recorder.setPaused(false);
+  now += 300;
+  assert.deepEqual(recorder.addMarker(), { number: 2, timeMs: 1500, part: 1 });
+  await recorder.finish();
 });

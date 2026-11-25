@@ -45,7 +45,7 @@ test('a trim starts on the keyframe at or before the start, and times start at z
   const source = saveIndexed(folder, 'a.webm', recording());
   const out = path.join(folder, 'cut.webm');
   const result = await writeRecording(out, [{ path: source, from: 2100, to: 3020 }]);
-  assert.deepEqual(result, { durationMs: 1015, startMs: 2005 });
+  assert.deepEqual(result, { durationMs: 1015, startMs: 2005, markers: [] });
   const file = inspect(fs.readFileSync(out));
   assert.deepEqual(file.blocks.map((b) => [b.marker, b.time, b.key]), [[8, 0, true], [9, 33, false], [10, 995, true], [11, 1015, true]]);
   assert.equal(file.duration, 1015);
@@ -125,4 +125,50 @@ test('trimmed and joined copies get free names next to the originals and their l
   assert.equal((await trimRecording(folder, '../recording-1.webm', 0, 10, index, writeRecording)).reason, 'invalid-name');
   assert.equal((await trimRecording(folder, 'recording-1.webm', 500, 100, index, writeRecording)).reason, 'invalid-range');
   assert.equal((await joinRecording(folder, 'recording-1-trimmed.webm', index, writeRecording)).reason, 'no-parts');
+});
+
+test('markers are written as chapters that players list, and dropped past the end', () => {
+  const indexer = new WebmIndexer();
+  const written = indexer.push(recording());
+  const plan = indexer.finalize({ chapters: [2010.4, 500, 99999] });
+  const bytes = Buffer.concat([written, plan.append]);
+  for (const patch of plan.patches) patch.bytes.copy(bytes, patch.position);
+  const file = inspect(bytes);
+  assert.deepEqual(plan.markers, [500, 2010]);
+  assert.deepEqual(file.chapters, [{ ms: 500, name: 'Marker 1' }, { ms: 2010, name: 'Marker 2' }]);
+  assert.equal(readHeader(bytes, file.segmentData + file.seek['1043a770']).id, 0x1043A770);
+  // Chromium cannot decode a file whose chapters come after its clusters.
+  assert.ok(file.seek['1043a770'] < file.clusters[0], 'chapters come before the first cluster');
+  assert.equal(readHeader(bytes, file.segmentData + file.seek['1c53bb6b']).id, 0x1C53BB6B);
+  assert.equal(file.segmentSize, bytes.length - file.segmentData);
+});
+
+test('trimmed and joined copies keep the markers inside them, moved with their part', async () => {
+  const folder = temp();
+  const one = saveIndexed(folder, 'x.webm', recording());
+  const two = saveIndexed(folder, 'x-part2.webm', recording());
+  const trimmed = await writeRecording(path.join(folder, 't.webm'), [{ path: one, from: 2100, to: 3020, markers: [100, 2100, 3010, 3050] }]);
+  assert.deepEqual(trimmed.markers, [95, 1005]);
+  assert.deepEqual(inspect(fs.readFileSync(path.join(folder, 't.webm'))).chapters.map((c) => c.ms), [95, 1005]);
+  const joined = await writeRecording(path.join(folder, 'j.webm'), [{ path: one, markers: [100] }, { path: two, markers: [200] }]);
+  assert.deepEqual(joined.markers, [100, 3093 + 200]);
+});
+
+test('the recordings index keeps markers with the file, and still reads the older index', () => {
+  const folder = temp();
+  const file = path.join(folder, 'index.json');
+  fs.writeFileSync(file, JSON.stringify({ 'old.webm': 4200 }));
+  const index = new RecordingIndex(file);
+  index.load();
+  assert.equal(index.get('old.webm'), 4200);
+  assert.deepEqual(index.markersOf('old.webm'), []);
+  index.setMarkers('new.webm', [3000.6, 1000, -5, 'x']);
+  index.set('new.webm', 5000);
+  const again = new RecordingIndex(file);
+  again.load();
+  assert.deepEqual(again.markersOf('new.webm'), [1000, 3001]);
+  again.rename('new.webm', 'renamed.webm');
+  assert.deepEqual([again.markersOf('renamed.webm'), again.get('renamed.webm'), again.markersOf('new.webm')], [[1000, 3001], 5000, []]);
+  again.remove('renamed.webm');
+  assert.deepEqual([again.markersOf('renamed.webm'), again.get('renamed.webm')], [[], null]);
 });

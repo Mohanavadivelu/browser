@@ -25,25 +25,47 @@ function sanitizeBaseName(text) {
 }
 
 // Remembers recording lengths, because the video files themselves do not store a duration.
+// Also remembers the markers set while recording (milliseconds from the start of each file).
+// Saved as { durations: { name: ms }, markers: { name: [ms] } }; the older file, a plain map of
+// durations, is still read.
+const MAX_MARKERS = 500;
+
+function plainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function cleanMarkers(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((ms) => Number.isFinite(ms) && ms >= 0).map((ms) => Math.round(ms)).sort((a, b) => a - b).slice(0, MAX_MARKERS);
+}
+
 class RecordingIndex {
   constructor(filePath) {
     this.filePath = filePath;
     this.durations = {};
+    this.markers = {};
   }
 
   load() {
     try {
-      const raw = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-      this.durations = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+      const raw = plainObject(JSON.parse(fs.readFileSync(this.filePath, 'utf8')));
+      const current = 'durations' in raw && typeof raw.durations === 'object';
+      this.durations = plainObject(current ? raw.durations : raw);
+      this.markers = {};
+      for (const [name, list] of Object.entries(current ? plainObject(raw.markers) : {})) {
+        const markers = cleanMarkers(list);
+        if (markers.length) this.markers[name] = markers;
+      }
     } catch {
       this.durations = {};
+      this.markers = {};
     }
   }
 
   save() {
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-      fs.writeFileSync(this.filePath, JSON.stringify(this.durations));
+      fs.writeFileSync(this.filePath, JSON.stringify({ durations: this.durations, markers: this.markers }));
     } catch (error) {
       console.error(`Could not save the recordings index: ${error.message}`);
     }
@@ -58,16 +80,32 @@ class RecordingIndex {
     return this.durations[name] ?? null;
   }
 
+  setMarkers(name, list) {
+    const markers = cleanMarkers(list);
+    if (markers.length) this.markers[name] = markers;
+    else delete this.markers[name];
+    this.save();
+  }
+
+  markersOf(name) {
+    return [...(this.markers[name] ?? [])];
+  }
+
   rename(from, to) {
-    if (!(from in this.durations)) return;
-    this.durations[to] = this.durations[from];
-    delete this.durations[from];
+    if (!(from in this.durations) && !(from in this.markers)) return;
+    for (const map of [this.durations, this.markers]) {
+      if (from in map) {
+        map[to] = map[from];
+        delete map[from];
+      }
+    }
     this.save();
   }
 
   remove(name) {
-    if (!(name in this.durations)) return;
+    if (!(name in this.durations) && !(name in this.markers)) return;
     delete this.durations[name];
+    delete this.markers[name];
     this.save();
   }
 }
@@ -91,6 +129,7 @@ function listRecordings(folder, index) {
         size: stats.size,
         modified: stats.mtimeMs,
         durationMs: index?.get(name) ?? null,
+        markers: index?.markersOf(name) ?? [],
       });
     } catch {
       // The file disappeared while listing; skip it.
@@ -173,8 +212,9 @@ async function trimRecording(folder, name, startMs, endMs, index, write) {
   const newName = freeName(folder, path.basename(name, path.extname(name)), 'trimmed');
   if (!newName) return { ok: false, reason: 'failed', message: 'no free file name' };
   try {
-    const result = await write(path.join(folder, newName), [{ path: path.join(folder, name), from: startMs, to: endMs }]);
+    const result = await write(path.join(folder, newName), [{ path: path.join(folder, name), from: startMs, to: endMs, markers: index?.markersOf(name) }]);
     index?.set(newName, result.durationMs);
+    index?.setMarkers(newName, result.markers);
     return { ok: true, name: newName, startMs: result.startMs, durationMs: result.durationMs };
   } catch (error) {
     return { ok: false, reason: 'failed', message: error.message };
@@ -189,8 +229,9 @@ async function joinRecording(folder, name, index, write) {
   const newName = freeName(folder, base, 'joined');
   if (!newName) return { ok: false, reason: 'failed', message: 'no free file name' };
   try {
-    const result = await write(path.join(folder, newName), parts.map((part) => ({ path: path.join(folder, part) })));
+    const result = await write(path.join(folder, newName), parts.map((part) => ({ path: path.join(folder, part), markers: index?.markersOf(part) })));
     index?.set(newName, result.durationMs);
+    index?.setMarkers(newName, result.markers);
     return { ok: true, name: newName, parts: parts.length, durationMs: result.durationMs };
   } catch (error) {
     return { ok: false, reason: 'failed', message: error.message };

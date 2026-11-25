@@ -49,6 +49,10 @@ header input[type="search"] { width: 260px; }
 .player-stage { display: flex; justify-content: center; min-height: 0; background: #000; border-radius: 8px; }
 .player-stage video, .player-stage img { display: block; max-width: 100%; max-height: 70vh; }
 .player-box .note { margin: 10px 0 0; }
+.markers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.markers[hidden] { display: none; }
+.markers button { padding: 3px 10px; border-radius: 12px; background: #24406e; color: #cfe0ff; font-size: 12px; }
+.markers button:hover { background: #2f5390; }
 .trim { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--muted); }
 .trim[hidden] { display: none; }
 .trim strong { color: var(--text); font-variant-numeric: tabular-nums; }

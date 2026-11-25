@@ -243,7 +243,7 @@ test('a stream cut off before it is finalized is still a valid file with no fals
     const [seekHead, info] = top;
     assert.equal(seekHead.id, 0x114D9B74);
     const entries = readChildren(written, seekHead.data, seekHead.data + seekHead.size);
-    assert.deepEqual(entries.map((entry) => entry.id), [0x4DBB, 0x4DBB, 0xEC]);
+    assert.deepEqual(entries.map((entry) => entry.id), [0x4DBB, 0x4DBB, 0xEC, 0xEC]);
     const infoChildren = readChildren(written, info.data, info.data + info.size);
     assert.equal(infoChildren.some((child) => child.id === 0x4489), false);
     assert.equal(infoChildren.at(-1).id, 0xEC);

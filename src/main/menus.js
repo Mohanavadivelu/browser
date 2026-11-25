@@ -41,7 +41,10 @@ function showMainMenu(ctx) {
       click: () => actions.toggleRecording(),
     },
     ...(recording
-      ? [{ label: recorder.paused ? 'Resume recording' : 'Pause recording', accelerator: 'Ctrl+Shift+P', click: () => actions.togglePause() }]
+      ? [
+        { label: recorder.paused ? 'Resume recording' : 'Pause recording', accelerator: 'Ctrl+Shift+P', click: () => actions.togglePause() },
+        { label: 'Add marker', accelerator: 'Ctrl+Shift+M', click: () => actions.addMarker() },
+      ]
       : []),
     { label: 'Screenshot of this page', accelerator: 'Ctrl+Shift+S', click: () => actions.screenshot() },
     {

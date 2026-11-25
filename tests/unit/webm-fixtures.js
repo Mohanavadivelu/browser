@@ -95,6 +95,18 @@ function inspect(file) {
         const [, clusterPos] = readChildren(file, positions.data, positions.data + positions.size);
         return { time: uintAt(file, time), position: uintAt(file, clusterPos) };
       });
+    } else if (h.id === 0x1043A770) {
+      // Chapters > EditionEntry > ChapterAtom (start in nanoseconds, and a display name).
+      const [edition] = readChildren(file, h.data, h.data + h.size);
+      result.chapters = readChildren(file, edition.data, edition.data + edition.size)
+        .filter((atom) => atom.id === 0xB6)
+        .map((atom) => {
+          const fields = readChildren(file, atom.data, atom.data + atom.size);
+          const start = fields.find((f) => f.id === 0x91);
+          const display = fields.find((f) => f.id === 0x80);
+          const name = readChildren(file, display.data, display.data + display.size).find((f) => f.id === 0x85);
+          return { ms: uintAt(file, start) / 1e6, name: file.toString('utf8', name.data, name.data + name.size) };
+        });
     } else if (h.id === 0x1F43B675) {
       let clusterTime = 0;
       result.clusters.push(pos - segment.data);

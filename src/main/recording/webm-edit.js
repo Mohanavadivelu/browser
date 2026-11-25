@@ -233,8 +233,9 @@ function sameFormat(a, b) {
 }
 
 // Writes `pieces` one after another into a new file at `outPath` (which must not exist):
-// [{ path, from = 0, to = Infinity }], times in milliseconds of each source. Returns
-// { durationMs, startMs } (startMs: where the first piece really starts, on a keyframe).
+// [{ path, from = 0, to = Infinity, markers = [] }], times in milliseconds of each source.
+// Markers inside the range are kept, moved with their piece. Returns { durationMs, startMs,
+// markers } (startMs: where the first piece really starts, on a keyframe).
 async function writeRecording(outPath, pieces) {
   const indexer = new WebmIndexer();
   const out = await fs.promises.open(outPath, 'wx');
@@ -250,6 +251,7 @@ async function writeRecording(outPath, pieces) {
     let format = null;
     let offset = 0;
     let firstStart = null;
+    const markers = [];
     for (const piece of pieces) {
       const keyframes = await keyframeTimes(piece.path);
       if (keyframes.length === 0) throw new Error('the recording has no keyframe to start from');
@@ -257,6 +259,9 @@ async function writeRecording(outPath, pieces) {
       const to = piece.to ?? Infinity;
       const start = [...keyframes].reverse().find((time) => time <= from) ?? keyframes[0];
       firstStart ??= start;
+      for (const marker of piece.markers ?? []) {
+        if (marker >= start && marker <= to) markers.push(marker - start + offset);
+      }
       const recording = await openRecording(piece.path);
       try {
         if (!format) {
@@ -301,10 +306,10 @@ async function writeRecording(outPath, pieces) {
       await out.write(rest, 0, rest.length, written);
       written += rest.length;
     }
-    const plan = indexer.finalize();
+    const plan = indexer.finalize({ chapters: markers });
     await out.close();
     if (!plan || !applyIndex(outPath, plan)) throw new Error('nothing was left to save');
-    return { durationMs: plan.duration, startMs: firstStart };
+    return { durationMs: plan.duration, startMs: firstStart, markers: plan.markers };
   } catch (error) {
     await out.close().catch(() => {});
     fs.rmSync(outPath, { force: true });

@@ -332,6 +332,14 @@ function openPlayer(entry) {
   $('playerTitle').textContent = entry.name;
   $('playerInfo').textContent = '';
   $('trimBar').hidden = true;
+  // Markers set while recording: each jumps to its moment.
+  const markers = entry.type === 'video' ? entry.markers ?? [] : [];
+  $('playerMarkers').replaceChildren(...markers.map((ms, i) => {
+    const chip = button(`Marker ${i + 1} · ${formatTrimTime(ms)}`, () => { media.currentTime = ms / 1000; });
+    chip.title = `Jump to marker ${i + 1}`;
+    return chip;
+  }));
+  $('playerMarkers').hidden = markers.length === 0;
   $('player').hidden = false;
   $('playerClose').focus();
 }
@@ -367,6 +375,7 @@ async function loadRecordings() {
     main.append(element('div', 'name', entry.name));
     const parts = [];
     if (entry.type === 'video' && entry.durationMs !== null) parts.push(formatDuration(entry.durationMs));
+    if (entry.markers?.length) parts.push(`${entry.markers.length} marker${entry.markers.length === 1 ? '' : 's'}`);
     parts.push(formatBytes(entry.size), formatDate(entry.modified));
     main.append(element('div', 'meta', parts.join('  ·  ')));
     const actions = element('div', 'actions');

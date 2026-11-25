@@ -17,6 +17,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, recording quality, keep recording across tabs, and the folder for recordings and screenshots.
 - **Full screen** (F11 or the ⛶ button): only the page is shown. Move the mouse to the top edge to bring the toolbar back. After **5 seconds without mouse or keyboard activity**, the top bar and the mouse pointer hide automatically; move the mouse or press a key to bring them back. Pages can also take the whole window for their own video full screen.
 - **Record** (● button, Ctrl+Shift+E or menu): captures the current tab's page **and its sound** (not the browser bars, other windows or other apps) to a `.webm` file in `Videos\Simple Browser`. A native consent dialog comes first, and a REC indicator with **Pause/Resume** and **Stop** stays visible while recording, including in full screen. Paused time is not counted. Quality is Low (720p, 15 fps), Medium (1080p, 30 fps) or High (1440p, 60 fps).
+- **Markers**: while recording, press Ctrl+Shift+M (or Mark on the REC controls) to mark a moment. Markers are saved in the file as chapters that players such as VLC list (up to about 120 per file), and the built-in player shows them as buttons that jump there. Trimmed and joined copies keep the markers inside them.
 - **Recording follows you across tabs**: when you switch tabs, the recording carries on with the new tab and saves it as the next part (`…-part2.webm`). Turn this off in Settings to stay on the original tab.
 - **Screenshot** (📷 button or Ctrl+Shift+S): saves the current page as a PNG in the same folder.
 - **Recordings page**: lists recordings and screenshots with a thumbnail, length and size. Play a recording or view a screenshot in the built-in player, or open, show in folder, rename and delete it (to the Recycle Bin). In the player, **trim** a recording: pick a start and an end and save a trimmed copy (no re-encoding, so it starts on the keyframe at or before your start, at most 2 s earlier). A recording that followed you across tabs can be **joined** back into one file. Trimmed and joined copies are new files; the originals are kept.
@@ -69,6 +70,7 @@ npm start
 | Ctrl+Shift+O | Bookmarks |
 | Ctrl+Shift+E | Start / stop recording |
 | Ctrl+Shift+P | Pause / resume recording |
+| Ctrl+Shift+M | Add a marker to the recording |
 | Ctrl+Shift+S | Screenshot of the page |
 
 ## Project layout

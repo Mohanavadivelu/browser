@@ -8,12 +8,13 @@
 // the whole file, so instead WebmIndexer sits between the recorder and the file:
 //
 // 1. It rewrites the small header once, adding a SeekHead and reserving room (as Void elements,
-//    which players skip) for a Duration and a Cues entry. Unfinished files stay valid this way.
+//    which players skip) for a Duration and for Cues and Chapters entries. Unfinished files stay
+//    valid this way.
 // 2. It passes every later byte through unchanged, noting where clusters with a video keyframe
 //    start and the latest block time.
-// 3. finalize() returns a Cues index to append at the end of the file and a few patches of the
-//    same size as the bytes they replace (Duration, the Cues entry, the Segment size), written in
-//    place. Nothing is moved.
+// 3. finalize() returns a Cues index (and Chapters, for markers set while recording) to append
+//    at the end of the file, and a few patches of the same size as the bytes they replace
+//    (Duration, the Cues and Chapters entries, the Segment size), written in place. Nothing moves.
 //
 // Anything it does not expect (an existing index, an unknown-size element other than a Cluster,
 // a truncated header) makes it step aside: the bytes pass through untouched and finalize()
@@ -44,6 +45,15 @@ const ID = Object.freeze({
   CueTrack: 0xF7,
   CueClusterPosition: 0xF1,
   Void: 0xEC,
+  Chapters: 0x1043A770,
+  EditionEntry: 0x45B9,
+  EditionUID: 0x45BC,
+  ChapterAtom: 0xB6,
+  ChapterUID: 0x73C4,
+  ChapterTimeStart: 0x91,
+  ChapterDisplay: 0x80,
+  ChapString: 0x85,
+  ChapLanguage: 0x437C,
 });
 const VIDEO_TRACK_TYPE = 1;
 const KEYFRAME_FLAG = 0x80;
@@ -159,14 +169,34 @@ function seekEntry(id, position) {
   return element(ID.Seek, Buffer.concat([element(ID.SeekID, encodeId(id)), uintElement(ID.SeekPosition, position, 8)]));
 }
 
-// A Void element of exactly `length` bytes (at most 128), filled with zeros.
-function voidOfLength(length) {
-  return Buffer.concat([encodeId(ID.Void), encodeSize(length - 2, 1), Buffer.alloc(length - 2)]);
+// Markers as WebM chapters ("Marker 1", "Marker 2", ...), which players such as VLC list.
+function chaptersElement(markers) {
+  return element(ID.Chapters, element(ID.EditionEntry, Buffer.concat([
+    uintElement(ID.EditionUID, 1),
+    ...markers.map((ms, i) => element(ID.ChapterAtom, Buffer.concat([
+      uintElement(ID.ChapterUID, i + 1),
+      uintElement(ID.ChapterTimeStart, ms * 1_000_000), // nanoseconds
+      element(ID.ChapterDisplay, Buffer.concat([
+        element(ID.ChapString, Buffer.from(`Marker ${i + 1}`)),
+        element(ID.ChapLanguage, Buffer.from('eng')),
+      ])),
+    ]))),
+  ])));
 }
 
-// Room reserved for a Duration (ID 2 + size 1 + float 8) and a Cues Seek entry (fixed 21 bytes).
+// A Void element of exactly `length` bytes (at least 2), filled with zeros. Small ones use a
+// one-byte size; larger ones an 8-byte size.
+function voidOfLength(length) {
+  const sizeBytes = length <= 128 ? 1 : Math.min(8, length - 1);
+  return Buffer.concat([encodeId(ID.Void), encodeSize(length - 1 - sizeBytes, sizeBytes), Buffer.alloc(length - 1 - sizeBytes)]);
+}
+
+// Room reserved for a Duration (ID 2 + size 1 + float 8) and a Seek entry (fixed 21 bytes).
 const DURATION_LENGTH = 11;
 const SEEK_ENTRY_LENGTH = 21;
+// Room reserved before the first cluster for chapters (about 120 markers). Chapters have to come
+// before the clusters: written after them (as Cues are), Chromium fails to decode the file.
+const CHAPTERS_SPACE = 4096;
 
 // ---------- The indexer ----------
 
@@ -180,6 +210,7 @@ class WebmIndexer {
     this.segmentSizeAt = -1; // file offset of an 8-byte Segment size, or -1 if it cannot be patched
     this.durationAt = 0; // file offset of the Void reserved for the Duration
     this.cuesSeekAt = 0; // file offset of the Void reserved for the Cues entry in our SeekHead
+    this.chaptersSeekAt = 0; // and the one after it, for a Chapters entry
     this.cueTrack = 0;
     this.cluster = null;
     this.cues = [];
@@ -268,7 +299,7 @@ class WebmIndexer {
     ]));
     // Every Seek entry has a fixed length, so the SeekHead's length is known before its contents.
     const seekHeadLength = element(ID.SeekHead, Buffer.concat([
-      seekEntry(ID.Info, 0), seekEntry(ID.Tracks, 0), voidOfLength(SEEK_ENTRY_LENGTH),
+      seekEntry(ID.Info, 0), seekEntry(ID.Tracks, 0), voidOfLength(SEEK_ENTRY_LENGTH), voidOfLength(SEEK_ENTRY_LENGTH),
     ])).length;
     const offsets = new Map();
     let relative = seekHeadLength;
@@ -279,12 +310,16 @@ class WebmIndexer {
       relative += bytes.length;
       return bytes;
     });
+    this.chaptersAt = segmentDataStart + relative;
+    body.push(voidOfLength(CHAPTERS_SPACE));
     const seekHead = element(ID.SeekHead, Buffer.concat([
       seekEntry(ID.Info, offsets.get(ID.Info)),
       seekEntry(ID.Tracks, offsets.get(ID.Tracks)),
       voidOfLength(SEEK_ENTRY_LENGTH),
+      voidOfLength(SEEK_ENTRY_LENGTH),
     ]));
-    this.cuesSeekAt = segmentDataStart + seekHead.length - SEEK_ENTRY_LENGTH;
+    this.cuesSeekAt = segmentDataStart + seekHead.length - 2 * SEEK_ENTRY_LENGTH;
+    this.chaptersSeekAt = segmentDataStart + seekHead.length - SEEK_ENTRY_LENGTH;
     this.segmentDataStart = segmentDataStart;
     // An 8-byte unknown size can be overwritten with the real size; a shorter one stays unknown.
     if (segment.sizeLength === 8) this.segmentSizeAt = segment.dataStart - 8;
@@ -392,7 +427,8 @@ class WebmIndexer {
 
   // What to add once the last byte is written: `append` goes at the end of the file (offset
   // `appendAt`), each patch overwrites bytes in place. Null when the file should be left as it is.
-  finalize() {
+  // `chapters` are marker times in milliseconds; those after the last frame are dropped.
+  finalize({ chapters = [] } = {}) {
     if (this.state !== 'body' || this.pending.length || this.skip > 0 || this.lastTime < 0) return null;
     const appendAt = this.written;
     const duration = Buffer.alloc(8);
@@ -411,6 +447,21 @@ class WebmIndexer {
       patches.push({ position: this.cuesSeekAt, bytes: seekEntry(ID.Cues, appendAt - this.segmentDataStart) });
     }
     // With no keyframe there is no index; the reserved entry stays a Void.
+    // Markers go into the room reserved before the clusters, as many as fit; the rest of the room
+    // stays a Void. (Leaving exactly one byte cannot be filled, so one marker less is kept then.)
+    const markers = [...new Set(chapters.map((ms) => Math.round(ms)))]
+      .filter((ms) => ms >= 0 && ms <= this.lastTime)
+      .sort((a, b) => a - b);
+    while (markers.length) {
+      const chaptersBytes = chaptersElement(markers);
+      const left = CHAPTERS_SPACE - chaptersBytes.length;
+      if (left >= 0 && left !== 1) {
+        patches.push({ position: this.chaptersAt, bytes: left ? Buffer.concat([chaptersBytes, voidOfLength(left)]) : chaptersBytes });
+        patches.push({ position: this.chaptersSeekAt, bytes: seekEntry(ID.Chapters, this.chaptersAt - this.segmentDataStart) });
+        break;
+      }
+      markers.pop();
+    }
     if (this.segmentSizeAt >= 0) {
       patches.push({
         position: this.segmentSizeAt,
@@ -418,7 +469,7 @@ class WebmIndexer {
       });
     }
     // `duration` is in the file's timecode units: milliseconds for MediaRecorder files.
-    return { appendAt, append, patches, duration: this.lastTime, cues: this.cues.length };
+    return { appendAt, append, patches, duration: this.lastTime, cues: this.cues.length, markers };
   }
 }
 

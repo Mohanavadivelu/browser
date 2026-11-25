@@ -182,12 +182,13 @@ async function start(options = {}) {
     },
     notify,
     onFailure: () => { stopCapture(); },
-    onSegment: (filePath, durationMs, final, { failed = false } = {}) => {
+    onSegment: (filePath, durationMs, final, { failed = false, markers = [] } = {}) => {
       if (recorder.removeIfEmpty(filePath)) {
         if (final && !failed) notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
         return;
       }
       recordingsIndex.set(path.basename(filePath), durationMs);
+      recordingsIndex.setMarkers(path.basename(filePath), markers);
       // After a write error the error notice stays up instead of a "saved" message.
       if (final && !failed) notify(`Recording saved: ${filePath}`);
       broadcastToLibrary('recordings:changed');
@@ -397,6 +398,15 @@ async function start(options = {}) {
     find: () => host.openFind(),
     openLibrary: (page) => tabs.openInternal(page),
     toggleRecording: () => ui.webContents.send('recording:command', recorder.active ? 'stop' : 'start'),
+    // A marker at the current moment of the recording (Ctrl+Shift+M, or Mark on the REC controls).
+    addMarker: () => {
+      const marker = recorder.addMarker();
+      if (!marker) return null;
+      const seconds = Math.floor(marker.timeMs / 1000);
+      const at = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+      notify(`Marker ${marker.number} at ${at}${marker.part > 1 ? ` in part ${marker.part}` : ''}`);
+      return marker;
+    },
     togglePause: () => {
       if (recorder.active) ui.webContents.send('recording:command', 'toggle-pause');
     },

@@ -129,12 +129,14 @@ class Recorder {
   openPart(date, part) {
     const file = openRecordingFile(this.getFolder(), date, part);
     file.indexer = new WebmIndexer();
+    file.markers = [];
     this.watch(file);
     return file;
   }
 
-  // Closes a part's file and adds its index. Returns the part's length in milliseconds as stored
-  // in the file, or null if the file has no index (a write error, or an unexpected format).
+  // Closes a part's file and adds its index, with its markers as chapters. Returns the part's
+  // { durationMs, markers } as stored in the file, or null if the file has no index (a write
+  // error, or an unexpected format).
   async closePart(file) {
     if (!file.failed && !file.stream.destroyed) {
       const rest = file.indexer.flush();
@@ -143,8 +145,8 @@ class Recorder {
     await closeStream(file.stream);
     if (file.failed) return null;
     try {
-      const plan = file.indexer.finalize();
-      return applyIndex(file.filePath, plan) ? plan.duration : null;
+      const plan = file.indexer.finalize({ chapters: file.markers });
+      return applyIndex(file.filePath, plan) ? { durationMs: plan.duration, markers: plan.markers } : null;
     } catch (error) {
       console.error(`Could not index ${path.basename(file.filePath)}: ${error.message}`);
       return null;
@@ -208,6 +210,22 @@ class Recorder {
     return true;
   }
 
+  // The capture of the current part has really started (it begins a moment after the consent
+  // dialog or a tab switch): marker times are measured from here.
+  captureStarted() {
+    if (!this.active) return false;
+    this.segmentStartMs = this.clock.elapsed();
+    return true;
+  }
+
+  // Marks the current moment of the recording. Paused time does not count, as in the file.
+  addMarker() {
+    if (!this.active) return null;
+    const timeMs = Math.max(0, Math.round(this.clock.elapsed() - this.segmentStartMs));
+    this.file.markers.push(timeMs);
+    return { number: this.file.markers.length, timeMs, part: this.session.part };
+  }
+
   setPaused(paused) {
     if (!this.active) return false;
     if (paused) this.clock.pause();
@@ -237,8 +255,8 @@ class Recorder {
     this.session.part += 1;
     this.segmentStartMs = this.clock.elapsed();
     this.authorizedUntil = this.now() + AUTHORIZATION_WINDOW_MS;
-    const indexedMs = await this.closePart(previous);
-    this.onSegment(previous.filePath, indexedMs ?? durationMs, false);
+    const indexed = await this.closePart(previous);
+    this.onSegment(previous.filePath, indexed?.durationMs ?? durationMs, false, { markers: indexed?.markers ?? [] });
     this.onChange();
     return { ok: true };
   }
@@ -252,8 +270,8 @@ class Recorder {
     this.session = null;
     this.authorizedUntil = 0;
     this.clock.reset();
-    const indexedMs = await this.closePart(file);
-    this.onSegment(filePath, indexedMs ?? durationMs, true, { failed });
+    const indexed = await this.closePart(file);
+    this.onSegment(filePath, indexed?.durationMs ?? durationMs, true, { failed, markers: indexed?.markers ?? [] });
     this.onChange();
     this.settleIdle();
     return filePath;

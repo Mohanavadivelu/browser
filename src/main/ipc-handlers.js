@@ -246,6 +246,8 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('recording:chunk', TOOLBAR, chunk, (_e, data) => recorder.write(data));
   ipc.handle('recording:request-stop', INDICATOR, none, () => ui.webContents.send('recording:command', 'stop'));
   ipc.handle('recording:request-pause', INDICATOR, none, () => actions.togglePause());
+  ipc.handle('recording:capture-started', TOOLBAR, none, () => recorder.captureStarted());
+  ipc.handle('recording:mark', BAR_AND_REC, none, () => Boolean(actions.addMarker()));
   ipc.handle('recording:set-paused', TOOLBAR, bool, (_e, paused) => recorder.setPaused(paused));
   ipc.handle('recording:rollover', TOOLBAR, none, async () => {
     const result = await recorder.rollover();

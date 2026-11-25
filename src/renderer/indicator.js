@@ -25,5 +25,6 @@ function update(state) {
 api.onState(update);
 document.getElementById('stop').addEventListener('click', () => api.recording.requestStop());
 document.getElementById('pause').addEventListener('click', () => api.recording.requestPause());
+document.getElementById('mark').addEventListener('click', () => api.recording.mark());
 setInterval(render, 500);
 api.getState().then(update);

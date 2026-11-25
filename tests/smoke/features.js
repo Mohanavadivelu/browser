@@ -8,6 +8,9 @@ const http = require('node:http');
 const path = require('node:path');
 const { app } = require('electron');
 const { start } = require('../../src/main/app');
+const { keyframeTimes } = require('../../src/main/recording/webm-edit');
+// An independent WebM reader, to check what the app writes into files.
+const { inspect: inspectWebm } = require('../unit/webm-fixtures');
 const {
   sleep, waitFor, createChecker, makeTempDir, trackBytes, ensureWindowReady, inspectRecording, stubDialog,
 } = require('./helpers');
@@ -452,7 +455,9 @@ async function main() {
   await startRecording();
   await waitFor(() => recorder.active, 'recording started');
   await bytes.waitForMore('first recorded data');
-  await sleep(2500);
+  await sleep(1500);
+  await evalIn(ui, "document.getElementById('recMark').click()"); // a marker from the toolbar's REC badge
+  await sleep(1000);
   ui.webContents.send('recording:command', 'toggle-pause');
   await waitFor(() => recorder.paused, 'recording paused');
   const frozen = recorder.info;
@@ -461,7 +466,9 @@ async function main() {
   check('pause freezes the timer and shows PAUSED', recorder.info.baseMs === frozen.baseMs && /^PAUSED/.test(badge), badge);
   ui.webContents.send('recording:command', 'toggle-pause');
   await waitFor(() => !recorder.paused, 'recording resumed');
-  await sleep(2500);
+  await sleep(1000);
+  await evalIn(ctx.indicator, "document.getElementById('mark').click()"); // and one from the full-screen REC pill
+  await sleep(1500);
   ui.webContents.send('recording:command', 'stop');
   await waitFor(() => !recorder.active, 'recording stopped');
   await sleep(500);
@@ -478,6 +485,15 @@ async function main() {
     `${pausedInfo.cuePoints} points in ${pausedInfo.duration} s`);
   check('jumping to 70% of a recording works at once', Math.abs(pausedInfo.seekedTo - pausedInfo.seekTarget) < 0.1 && pausedInfo.seekMs < 2000,
     `to ${pausedInfo.seekedTo} s of ${pausedInfo.duration} s in ${pausedInfo.seekMs} ms`);
+  // Markers line up with the file: the second one 1.5 s before Stop, and 2 s after the first
+  // (1 s before the pause and 1 s after it; paused time does not count).
+  const pausedMarkers = recordingsIndex.markersOf(pausedName);
+  const pausedChapters = inspectWebm(fs.readFileSync(path.join(recordingsFolder, pausedName))).chapters ?? [];
+  check('markers set while recording are kept with the recording', pausedMarkers.length === 2 &&
+    Math.abs(pausedInfo.duration * 1000 - pausedMarkers[1] - 1500) < 700 && Math.abs(pausedMarkers[1] - pausedMarkers[0] - 2000) < 700,
+    `${pausedMarkers.join(', ')} in ${pausedInfo.duration} s`);
+  check('markers are written into the file as chapters', JSON.stringify(pausedChapters.map((c) => Math.round(c.ms))) === JSON.stringify(pausedMarkers) &&
+    pausedChapters[1]?.name === 'Marker 2', JSON.stringify(pausedChapters));
 
   // ---------- Recordings page: thumbnails and the player ----------
   tabs.openInternal('recordings');
@@ -497,6 +513,11 @@ async function main() {
   await waitFor(async () => { const s = await playerState(); return Math.abs(s.time - s.duration * 0.8) < 0.3; }, 'player seek', 5000).catch(() => {});
   const sought = await playerState();
   check('the player jumps within the recording', Math.abs(sought.time - sought.duration * 0.8) < 0.3, JSON.stringify(sought));
+  const chips = await inRecPage("[...document.querySelectorAll('#playerMarkers button')].map((b) => b.textContent)");
+  await inRecPage("document.querySelectorAll('#playerMarkers button')[1]?.click()");
+  await waitFor(async () => Math.abs((await playerState()).time * 1000 - pausedMarkers[1]) < 300, 'jump to marker 2', 5000).catch(() => {});
+  check('the player lists the markers and jumps to them', chips.length === 2 && /^Marker 2 · /.test(chips[1]) &&
+    Math.abs((await playerState()).time * 1000 - pausedMarkers[1]) < 300, `${chips.join(' | ')}; at ${(await playerState()).time}`);
   await inRecPage("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
   check('Esc closes the player', (await inRecPage("document.getElementById('player').hidden")) === true);
   const someWebTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');
@@ -523,6 +544,12 @@ async function main() {
   const trimmedInfo = fs.existsSync(path.join(recordingsFolder, trimmedName)) ? await inspectRecording(path.join(recordingsFolder, trimmedName)) : {};
   check('a recording can be trimmed from the player', trimmedInfo.duration >= 2.4 && trimmedInfo.duration <= 5.1 && trimmedInfo.width > 0 && trimmedInfo.cuePoints >= 1,
     `${trimNote} | ${JSON.stringify(trimmedInfo)}`);
+  // The copy starts at the last keyframe at or before 2.5 s and keeps the markers up to 5 s.
+  const cutStart = (await keyframeTimes(path.join(recordingsFolder, pausedName))).filter((ms) => ms <= 2500).at(-1) ?? 0;
+  const expectedMarkers = pausedMarkers.filter((ms) => ms >= cutStart && ms <= 5000).map((ms) => ms - cutStart);
+  const trimmedMarkers = recordingsIndex.markersOf(trimmedName);
+  check('the trimmed copy keeps the markers inside it', JSON.stringify(trimmedMarkers) === JSON.stringify(expectedMarkers),
+    `${trimmedMarkers.join(', ')}; expected ${expectedMarkers.join(', ')} (cut at ${cutStart})`);
   check('the trimmed copy is listed with its length, and the original is kept',
     Math.abs((recordingsIndex.get(trimmedName) ?? 0) - trimmedInfo.duration * 1000) < 100 && fs.statSync(path.join(recordingsFolder, pausedName)).size === pausedSize);
   await inRecPage("document.getElementById('playerClose').click()");

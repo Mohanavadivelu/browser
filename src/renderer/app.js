@@ -290,6 +290,7 @@ async function beginCapture(qualityKey) {
 
   capture = current;
   recorder.start(1000);
+  api.recording.captureStarted();
   if (state.recording.paused) recorder.pause();
   return current;
 }
@@ -410,6 +411,7 @@ $('shot').addEventListener('click', () => api.screenshot());
 $('record').addEventListener('click', toggleRecording);
 $('recPause').addEventListener('click', togglePause);
 $('recStop').addEventListener('click', stopRecording);
+$('recMark').addEventListener('click', () => api.recording.mark());
 $('fullscreen').addEventListener('click', () => api.window.toggleFullscreen());
 $('menu').addEventListener('click', () => api.window.showMenu());
 
