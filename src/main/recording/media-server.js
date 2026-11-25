@@ -16,12 +16,12 @@ function mediaUrl(name) {
   return `${MEDIA_SCHEME}://recordings/${encodeURIComponent(name)}`;
 }
 
-// Must run before the app is ready: lets the player stream and seek in these files.
-function registerMediaScheme(protocol) {
-  protocol.registerSchemesAsPrivileged([
-    { scheme: MEDIA_SCHEME, privileges: { stream: true, secure: true, supportFetchAPI: true } },
-  ]);
-}
+// For registerSchemesAsPrivileged (before the app is ready): lets the player stream and seek in
+// these files.
+const MEDIA_SCHEME_PRIVILEGES = Object.freeze({
+  scheme: MEDIA_SCHEME,
+  privileges: { stream: true, secure: true, supportFetchAPI: true },
+});
 
 // A "Range: bytes=…" header for a file of `size` bytes: { start, end } (inclusive), null when
 // there is no usable range (send the whole file), or 'invalid' when it cannot be satisfied.
@@ -89,4 +89,4 @@ function serveRecordings(session, getFolder) {
   session.protocol.handle(MEDIA_SCHEME, (request) => serveMedia(getFolder(), request.url, request.headers.get('range')));
 }
 
-module.exports = { MEDIA_SCHEME, mediaUrl, registerMediaScheme, parseRange, serveMedia, serveRecordings };
+module.exports = { MEDIA_SCHEME, MEDIA_SCHEME_PRIVILEGES, mediaUrl, parseRange, serveMedia, serveRecordings };

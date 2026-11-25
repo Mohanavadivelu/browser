@@ -56,6 +56,21 @@ async function main() {
   const popup = await tabs.active.view.webContents.executeJavaScript(
     'window.open("file:///C:/Windows/win.ini") === null');
   check('page cannot open file: pop-ups', popup === true && tabs.order.length === 1);
+  const appPageLink = await tabs.active.view.webContents.executeJavaScript(
+    'location.href = "app://browser/library.html"; window.open("app://browser/index.html") === null');
+  await sleep(300);
+  check('page cannot open the browser pages', appPageLink === true && tabs.active.view.webContents.getURL() === pageUrl && tabs.order.length === 1);
+  check('the browser pages are served as app://browser/', ui.webContents.getURL() === 'app://browser/index.html', ui.webContents.getURL());
+  // Even loaded directly, a web session serves only the new tab and warning pages.
+  const probe = tabs.create({ url: pageUrl, activate: false });
+  await waitFor(() => probe.title === 'Smoke Page', 'probe tab loaded');
+  await probe.view.webContents.loadURL('app://browser/library.html').catch(() => {});
+  const leaked = await probe.view.webContents.executeJavaScript("Boolean(document.getElementById('bookmarkList')) || typeof window.browserApi !== 'undefined'");
+  check('a web session does not serve the browser private pages', leaked === false);
+  await probe.view.webContents.loadURL('app://browser/newtab.html?engine=bing');
+  const newTabAction = await probe.view.webContents.executeJavaScript("document.getElementById('search').action");
+  check('a web session serves the new tab page', newTabAction === 'https://www.bing.com/search', newTabAction);
+  tabs.close(probe.id);
 
   // Tabs and private sessions
   const privateTab = tabs.create({ url: pageUrl, isPrivate: true });

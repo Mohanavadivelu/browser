@@ -2,8 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
-const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net, protocol, nativeImage } = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net, protocol, nativeImage, session } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION } = require('./sandbox/session-manager');
@@ -17,7 +16,8 @@ const { publicQualities } = require('./recording/quality');
 const { RecordingIndex } = require('./recording/library');
 const { saveScreenshot } = require('./recording/storage');
 const { pdfFileName } = require('./recording/library');
-const { registerMediaScheme, serveRecordings } = require('./recording/media-server');
+const { MEDIA_SCHEME_PRIVILEGES, serveRecordings } = require('./recording/media-server');
+const { APP_SCHEME_PRIVILEGES, WEB_FILES, isAppUrl, serveAppPages } = require('./app-scheme');
 const { ContentBlocker, hostOf } = require('./blocker');
 const bookmarkTree = require('./bookmarks');
 const { BookmarkIcons } = require('./bookmark-icons');
@@ -71,7 +71,8 @@ function waitUntilLoaded(contents, limitMs = 4000) {
 async function start(options = {}) {
   if (!app.isReady()) {
     app.enableSandbox();
-    registerMediaScheme(protocol);
+    // One call for all of the app's schemes: Electron keeps only the last list it is given.
+    protocol.registerSchemesAsPrivileged([APP_SCHEME_PRIVILEGES, MEDIA_SCHEME_PRIVILEGES]);
   }
   if (options.userDataDir) app.setPath('userData', options.userDataDir);
   if (!options.skipSingleInstanceLock && !app.requestSingleInstanceLock()) {
@@ -128,7 +129,9 @@ async function start(options = {}) {
 
   // `options.dialog` stands in for the Save and Open dialogs in automated tests.
   const appDialog = options.dialog ?? dialog;
-  const host = new BrowserWindow({ rendererDir: RENDERER_DIR, preloadPath: PRELOAD_PATH });
+  // The browser's own pages, served before the window starts loading them.
+  serveAppPages(session.fromPartition(UI_PARTITION), RENDERER_DIR);
+  const host = new BrowserWindow({ preloadPath: PRELOAD_PATH });
   const { win, ui, indicator, find } = host;
   const getRecordingFolder = () => settings.data.recordingFolder ?? path.join(app.getPath('videos'), 'Simple Browser');
 
@@ -278,6 +281,8 @@ async function start(options = {}) {
       return;
     }
     applyPermissionPolicy(ses);
+    // Web tabs show the new tab page and the certificate warning, and nothing else of the app.
+    serveAppPages(ses, RENDERER_DIR, WEB_FILES);
     blocker.attach(ses, {
       pageUrlOf: (details) => {
         const contents = details.webContentsId ? webContents.fromId(details.webContentsId) : null;
@@ -311,9 +316,9 @@ async function start(options = {}) {
     sessions,
     zoom,
     preloadPath: PRELOAD_PATH,
-    newTabPage: path.join(RENDERER_DIR, 'newtab.html'),
-    warningPage: path.join(RENDERER_DIR, 'warning.html'),
-    libraryPage: path.join(RENDERER_DIR, 'library.html'),
+    newTabPage: 'newtab.html',
+    warningPage: 'warning.html',
+    libraryPage: 'library.html',
     getEngine: () => settings.data.searchEngine,
     getHome: () => settings.data.homePage,
     onBlocked,
@@ -697,11 +702,11 @@ async function start(options = {}) {
   for (const view of [ui, indicator, find]) trackInput(view.webContents);
 
   // The trailing slash keeps a sibling folder such as "renderer-old" from matching.
-  const rendererUrl = `${pathToFileURL(RENDERER_DIR).href}/`;
+
   // Which of the browser's own pages sent an IPC call, or null for anything else.
   const senderRole = (event) => {
     const frame = event.senderFrame;
-    if (!frame || frame !== event.sender.mainFrame || !frame.url.startsWith(rendererUrl)) return null;
+    if (!frame || frame !== event.sender.mainFrame || !isAppUrl(frame.url)) return null;
     const id = event.sender.id;
     if (id === ui.webContents.id) return 'toolbar';
     if (id === indicator.webContents.id) return 'indicator';

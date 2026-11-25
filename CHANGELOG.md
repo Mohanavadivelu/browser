@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- The browser's own pages are served from `app://browser/` instead of `file://`, and the packaged app turns off Electron's extra `file://` privileges (the last fuse left on). Web tabs can load only the new tab and certificate warning pages from it.
+- The recording indicator receives only the recording's state, no longer the tabs, addresses and bookmarks.
+
+### Fixes
+
+- A settings save that fails (a full or read-only disk) no longer breaks the action: the change lasts until the browser closes and a message says it could not be saved.
+- The recordings list forgets the length and markers of files deleted or moved outside the browser.
+
 ## 0.7.0
 
 Bookmarks with folders, a new Bookmarks page, a richer bookmarks bar and a star that lets you file a bookmark as you save it.

@@ -7,6 +7,7 @@ const {
   attachNavigationGuards, isAllowedUrl, resolveInput, internalUrl,
 } = require('./security/navigation');
 const { isCertificateError } = require('./security/certificates');
+const { appUrl, isAppUrl } = require('./app-scheme');
 
 const MAX_CLOSED = 25;
 
@@ -62,7 +63,7 @@ class TabManager extends EventEmitter {
   }
 
   loadNewTabPage(contents) {
-    contents.loadFile(this.newTabPage, { query: { engine: this.getEngine() } });
+    contents.loadURL(appUrl(this.newTabPage, { query: { engine: this.getEngine() } })).catch(() => {});
   }
 
   register(tab, index = this.order.length) {
@@ -92,7 +93,7 @@ class TabManager extends EventEmitter {
     const contents = view.webContents;
     contents.on('will-navigate', (event) => event.preventDefault());
     contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    contents.loadFile(this.libraryPage, { hash: page });
+    contents.loadURL(appUrl(this.libraryPage, { hash: page })).catch(() => {});
     this.activate(id);
     this.emit('change');
     return tab;
@@ -157,7 +158,7 @@ class TabManager extends EventEmitter {
     });
     contents.on('did-fail-load', (_event, code, _description, url, isMainFrame) => {
       if (isMainFrame && isCertificateError(code)) {
-        contents.loadFile(this.warningPage, { query: { url, code: String(code) } });
+        contents.loadURL(appUrl(this.warningPage, { query: { url, code: String(code) } })).catch(() => {});
       }
     });
     contents.on('zoom-changed', (_event, direction) => {
@@ -314,8 +315,8 @@ class TabManager extends EventEmitter {
       return {
         id,
         kind: tab.kind,
-        title: tab.title || (internal ? 'Simple Browser' : url.startsWith('file:') ? 'New tab' : url),
-        url: internal ? internalUrl(tab.page) : url.startsWith('file:') ? '' : url,
+        title: tab.title || (internal ? 'Simple Browser' : isAppUrl(url) ? 'New tab' : url),
+        url: internal ? internalUrl(tab.page) : isAppUrl(url) ? '' : url,
         favicon: tab.favicon,
         loading: tab.loading,
         isPrivate: tab.isPrivate,

@@ -54,19 +54,35 @@ async function evaluate(target, expression) {
   return answer.result?.result?.value ?? answer.result?.exceptionDetails?.exception?.description;
 }
 
+// The fuses package.json asks for, as the built .exe has them (0 = off, 1 = on).
+async function checkFuses() {
+  const { getCurrentFuseWire, FuseV1Options } = require('@electron/fuses');
+  const wire = await getCurrentFuseWire(exe);
+  const state = (name) => String.fromCharCode(wire[FuseV1Options[name]]);
+  const wanted = {
+    RunAsNode: '0', EnableCookieEncryption: '1', EnableNodeOptionsEnvironmentVariable: '0', EnableNodeCliInspectArguments: '0',
+    EnableEmbeddedAsarIntegrityValidation: '1', OnlyLoadAppFromAsar: '1', GrantFileProtocolExtraPrivileges: '0',
+  };
+  const wrong = Object.entries(wanted).filter(([name, value]) => state(name) !== value).map(([name]) => name);
+  check('the fuses are set (file:// extra privileges off, app only from app.asar)', wrong.length === 0, wrong.join(', '));
+  const resources = path.join(path.dirname(exe), 'resources');
+  check('the app is packed in app.asar', fs.existsSync(path.join(resources, 'app.asar')) && !fs.existsSync(path.join(resources, 'app')));
+}
+
 async function main() {
   if (!fs.existsSync(exe)) throw new Error(`No packaged app at ${exe}; build it first.`);
+  await checkFuses();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-packaged-'));
   // blockTrackers off: the check must not download the filter lists.
   fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ blockTrackers: false, checkForUpdates: false }));
   const app = spawn(exe, [`--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`], { stdio: 'ignore' });
   try {
-    const toolbar = await findTarget((t) => t.url.endsWith('/renderer/index.html'), 'the toolbar (the app did not start)', 60000);
-    check('the app starts from its app.asar', /app\.asar/.test(toolbar.url));
+    const toolbar = await findTarget((t) => t.url === 'app://browser/index.html', 'the toolbar (the app did not start)', 60000);
+    check('the browser pages are served as app://browser/', Boolean(toolbar));
     const tabs = await waitFor(async () => evaluate(toolbar, "document.querySelectorAll('#tabs .tab').length"), 'tab strip').catch(() => 0);
     check('the toolbar draws its tab strip', tabs >= 1, `${tabs} tab(s)`);
 
-    const newTab = await findTarget((t) => t.url.includes('/renderer/newtab.html'), 'new tab page');
+    const newTab = await findTarget((t) => t.url.startsWith('app://browser/newtab.html'), 'new tab page');
     check('web tabs have no bridge to the app', (await evaluate(newTab, 'typeof window.browserApi')) === 'undefined');
 
     await evaluate(toolbar, `(() => { const a = document.getElementById('address'); a.focus();
@@ -76,7 +92,7 @@ async function main() {
     check('the address bar suggests a search', /Search Google/.test(suggestion), suggestion);
 
     await evaluate(toolbar, "window.browserApi.nav.go('simple-browser://bookmarks')");
-    const library = await findTarget((t) => t.url.includes('/renderer/library.html'), 'bookmarks page');
+    const library = await findTarget((t) => t.url.startsWith('app://browser/library.html'), 'bookmarks page');
     const bookmarksText = () => evaluate(library, "document.getElementById('bookmarkList')?.textContent ?? ''");
     await waitFor(async () => /No bookmarks yet/.test(await bookmarksText()), 'bookmarks list', 8000).catch(() => {});
     const bookmarks = await bookmarksText();

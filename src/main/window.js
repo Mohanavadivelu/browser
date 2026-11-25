@@ -1,9 +1,9 @@
 'use strict';
 
-const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { BaseWindow, WebContentsView } = require('electron');
 const { uiPreferences } = require('./sandbox/web-preferences');
+const { appUrl } = require('./app-scheme');
 
 const TAB_BAR_HEIGHT = 40;
 const TOOLBAR_HEIGHT = 46;
@@ -21,7 +21,7 @@ function lockDown(contents) {
 
 // Owns the window, the browser-chrome views and the layout of tab content around them.
 class BrowserWindow extends EventEmitter {
-  constructor({ rendererDir, preloadPath }) {
+  constructor({ preloadPath }) {
     super();
     this.mode = {
       fullscreen: false, htmlFullscreen: false, revealed: false, recording: false, findOpen: false, suggestionsHeight: 0,
@@ -54,9 +54,9 @@ class BrowserWindow extends EventEmitter {
     this.indicator.setVisible(false);
     this.find.setVisible(false);
 
-    this.ui.webContents.loadFile(path.join(rendererDir, 'index.html'));
-    this.indicator.webContents.loadFile(path.join(rendererDir, 'indicator.html'));
-    this.find.webContents.loadFile(path.join(rendererDir, 'find.html'));
+    this.ui.webContents.loadURL(appUrl('index.html'));
+    this.indicator.webContents.loadURL(appUrl('indicator.html'));
+    this.find.webContents.loadURL(appUrl('find.html'));
 
     this.win.on('resize', () => this.layout());
     // A minimized window reports no size; lay the views out again as soon as it is back.
