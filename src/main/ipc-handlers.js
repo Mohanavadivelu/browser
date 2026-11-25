@@ -240,19 +240,23 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('screenshot:take', TOOLBAR, none, () => actions.screenshot());
 
   // Recording control
+  const captureOptions = () => ({ quality: settings.data.recordingQuality, microphone: settings.data.recordingMicrophone });
   ipc.handle('recording:request-start', TOOLBAR, none, async () => {
     const result = await recorder.requestStart();
-    return result.ok ? { ...result, quality: settings.data.recordingQuality } : result;
+    return result.ok ? { ...result, ...captureOptions() } : result;
   });
   ipc.handle('recording:chunk', TOOLBAR, chunk, (_e, data) => recorder.write(data));
   ipc.handle('recording:request-stop', INDICATOR, none, () => ui.webContents.send('recording:command', 'stop'));
   ipc.handle('recording:request-pause', INDICATOR, none, () => actions.togglePause());
   ipc.handle('recording:capture-started', TOOLBAR, none, () => recorder.captureStarted());
+  ipc.handle('recording:microphone-failed', TOOLBAR, none, () => {
+    notify('The microphone could not be used, so this recording has the page\'s sound only.', 'warning');
+  });
   ipc.handle('recording:mark', BAR_AND_REC, none, () => Boolean(actions.addMarker()));
   ipc.handle('recording:set-paused', TOOLBAR, bool, (_e, paused) => recorder.setPaused(paused));
   ipc.handle('recording:rollover', TOOLBAR, none, async () => {
     const result = await recorder.rollover();
-    return result.ok ? { ...result, quality: settings.data.recordingQuality } : result;
+    return result.ok ? { ...result, ...captureOptions() } : result;
   });
   ipc.handle('recording:reauthorize', TOOLBAR, none, () => ({ ok: recorder.authorizeCapture() }));
   ipc.handle('recording:finish', TOOLBAR, none, () => recorder.finish());

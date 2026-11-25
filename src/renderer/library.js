@@ -422,6 +422,7 @@ function renderSettings(settings) {
   fillSelect($('recordingQuality'), settings.qualities.map((quality) => ({ key: quality.key, label: quality.label })), settings.recordingQuality);
   $('qualityHint').textContent = settings.qualities.find((quality) => quality.key === settings.recordingQuality)?.description ?? '';
   $('recordingFollowTab').checked = settings.recordingFollowTab;
+  $('recordingMicrophone').checked = settings.recordingMicrophone;
   fillSelect($('recordingStopAfter'), settings.stopAfterChoices.map((minutes) => ({
     key: String(minutes),
     label: minutes === 0 ? 'Never' : minutes < 60 || minutes % 60 ? `${minutes} minutes` : `${minutes / 60} hour${minutes === 60 ? '' : 's'}`,
@@ -469,6 +470,7 @@ function bindSettings() {
   });
   $('recordingQuality').addEventListener('change', () => saveSetting({ recordingQuality: $('recordingQuality').value }));
   $('recordingStopAfter').addEventListener('change', () => saveSetting({ recordingStopAfter: Number($('recordingStopAfter').value) }));
+  $('recordingMicrophone').addEventListener('change', () => saveSetting({ recordingMicrophone: $('recordingMicrophone').checked }));
   $('recordingFollowTab').addEventListener('change', () => saveSetting({ recordingFollowTab: $('recordingFollowTab').checked }));
   $('folderChange').addEventListener('click', async () => renderSettings(await api.settings.chooseFolder()));
   $('folderOpen').addEventListener('click', () => api.recordings.openFolder());

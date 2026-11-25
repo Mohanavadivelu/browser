@@ -13,7 +13,7 @@ const ZOOM_RANGE = [0.25, 5];
 // Only these keys can be changed from the settings page.
 const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
-  'checkForUpdates', 'recordingStopAfter',
+  'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone',
 ]);
 const MAX_ALLOWED_SITES = 500;
 // Minutes after which a recording stops by itself; 0 is never.
@@ -66,6 +66,7 @@ function sanitizeSettings(raw) {
     restoreTabs: source.restoreTabs === true,
     recordingQuality: Object.hasOwn(QUALITY, source.recordingQuality) ? source.recordingQuality : DEFAULT_QUALITY,
     recordingFollowTab: source.recordingFollowTab !== false,
+    recordingMicrophone: source.recordingMicrophone === true,
     recordingStopAfter: STOP_AFTER_CHOICES.includes(source.recordingStopAfter) ? source.recordingStopAfter : 0,
     blockTrackers: source.blockTrackers !== false,
     checkForUpdates: source.checkForUpdates !== false,

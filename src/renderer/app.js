@@ -239,7 +239,40 @@ function qualitySettings(key) {
   return state.qualities.find((quality) => quality.key === key) ?? state.qualities[1];
 }
 
-async function beginCapture(qualityKey) {
+// Mixes the microphone into the tab's sound. Returns the stream to record and a function that
+// releases what was opened for it. If the microphone cannot be used, the tab's stream as it is.
+async function withMicrophone(tabStream) {
+  let microphone;
+  try {
+    microphone = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+  } catch (error) {
+    console.error(`Microphone not available: ${error.name}: ${error.message}`);
+    api.recording.microphoneFailed();
+    return { stream: tabStream, release: () => {} };
+  }
+  const context = new AudioContext();
+  const mix = context.createMediaStreamDestination();
+  // The page and the voice are added together; a limiter keeps the sum from clipping.
+  const limiter = context.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.25;
+  limiter.connect(mix);
+  for (const track of [...tabStream.getAudioTracks(), ...microphone.getAudioTracks()]) {
+    context.createMediaStreamSource(new MediaStream([track])).connect(limiter);
+  }
+  return {
+    stream: new MediaStream([...tabStream.getVideoTracks(), ...mix.stream.getAudioTracks()]),
+    release: () => {
+      microphone.getTracks().forEach((track) => track.stop());
+      context.close().catch(() => {});
+    },
+  };
+}
+
+async function beginCapture(qualityKey, useMicrophone = false) {
   const quality = qualitySettings(qualityKey);
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: quality.frameRate },
@@ -265,7 +298,8 @@ async function beginCapture(qualityKey) {
   }
   const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
     .find((type) => MediaRecorder.isTypeSupported(type));
-  const recorder = new MediaRecorder(stream, {
+  const recorded = useMicrophone ? await withMicrophone(stream) : { stream, release: () => {} };
+  const recorder = new MediaRecorder(recorded.stream, {
     mimeType,
     videoBitsPerSecond: quality.videoBitsPerSecond,
     audioBitsPerSecond: quality.audioBitsPerSecond,
@@ -281,6 +315,7 @@ async function beginCapture(qualityKey) {
   current.stopped = new Promise((resolve) => {
     recorder.onstop = async () => {
       stream.getTracks().forEach((track) => track.stop());
+      recorded.release();
       await current.pending;
       resolve();
       if (!current.final) return;
@@ -301,11 +336,11 @@ async function beginCapture(qualityKey) {
 }
 
 // A capture can fail if the tab's frame was replaced a moment earlier, so try a few times.
-async function beginCaptureWithRetry(qualityKey) {
+async function beginCaptureWithRetry(qualityKey, useMicrophone) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await beginCapture(qualityKey);
+      return await beginCapture(qualityKey, useMicrophone);
     } catch (error) {
       lastError = error;
       console.error(`Capture attempt ${attempt + 1} failed: ${error.name}: ${error.message}`);
@@ -321,7 +356,7 @@ async function startRecording() {
   const grant = await api.recording.requestStart();
   if (!grant.ok) return;
   try {
-    await beginCaptureWithRetry(grant.quality);
+    await beginCaptureWithRetry(grant.quality, grant.microphone);
   } catch (error) {
     console.error(`Could not start capture: ${error.name}: ${error.message}`);
     capture = null;
@@ -341,7 +376,7 @@ async function switchCapture() {
     return false;
   }
   try {
-    await beginCaptureWithRetry(result.quality);
+    await beginCaptureWithRetry(result.quality, result.microphone);
     return true;
   } catch (error) {
     console.error(`Could not follow the new tab: ${error.name}: ${error.message}`);

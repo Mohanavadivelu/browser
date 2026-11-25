@@ -29,6 +29,8 @@ const ANIMATED = '<!doctype html><title>Animated</title><style>@keyframes m{from
 
 async function main() {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  // Chromium's fake microphone (a test tone) stands in for a real one in the narration check.
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
   const work = makeTempDir();
   const iconRequests = []; // the Cookie header of each request for /icon.png
   const dialogTargets = { save: '', open: '' }; // what the stubbed Save and Open dialogs answer
@@ -610,9 +612,10 @@ async function main() {
   const joinedName = partOneName.replace(/\.webm$/, '-joined.webm');
   await waitFor(() => fs.existsSync(path.join(recordingsFolder, joinedName)) && recordingsIndex.get(joinedName) !== null, 'joined recording', 20000).catch(() => {});
   const joinedInfo = fs.existsSync(path.join(recordingsFolder, joinedName)) ? await inspectRecording(path.join(recordingsFolder, joinedName)) : {};
+  const joinMessage = await evalIn(joinPage.view, "document.getElementById('recMessage').textContent");
   check('the parts are joined into one recording as long as both',
     Math.abs(joinedInfo.duration - (partOne.duration + partTwo.duration)) < 0.3 && joinedInfo.width > 0 && joinedInfo.cuePoints >= 2,
-    JSON.stringify(joinedInfo));
+    `${joinMessage} | ${JSON.stringify(joinedInfo)} | parts ${partOne.duration} s + ${partTwo.duration} s`);
 
   // ---------- Follow-tab switched off ----------
   settings.update({ recordingFollowTab: false });
@@ -647,6 +650,30 @@ async function main() {
     noticeLike(/stopped after 5 min, as set in Settings, and saved/), `${limitBadge}; ${autoStoppedLength} ms`);
   check('the REC badge shows the limit', / \/ 00:03$/.test(limitBadge), limitBadge);
   settings.update({ recordingStopAfter: 0 });
+
+  // ---------- Microphone narration ----------
+  const micWebTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web');
+  const askMicrophone = "navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => { s.getTracks().forEach((t) => t.stop()); return 'granted'; }, (e) => e.name)";
+  const pageMicrophone = await micWebTab.view.webContents.executeJavaScript(askMicrophone);
+  check('web pages cannot use the microphone', pageMicrophone !== 'granted', pageMicrophone);
+  const idleMicrophone = await evalIn(ui, askMicrophone);
+  check('the toolbar cannot use the microphone when nothing is recording', idleMicrophone !== 'granted', idleMicrophone);
+  settings.update({ recordingMicrophone: true });
+  const beforeMicrophone = new Set(fs.readdirSync(recordingsFolder));
+  const noticesBeforeMicrophone = notices.length;
+  tabs.activate(tabA.id); // an animation page with no sound of its own
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started (microphone)');
+  await bytes.waitForMore('first data (microphone)');
+  await sleep(3000);
+  ui.webContents.send('recording:command', 'stop');
+  await waitFor(() => !recorder.active, 'recording stopped (microphone)');
+  await sleep(500);
+  const microphoneFile = fs.readdirSync(recordingsFolder).find((f) => f.endsWith('.webm') && !beforeMicrophone.has(f));
+  const microphoneInfo = microphoneFile ? await inspectRecording(path.join(recordingsFolder, microphoneFile)) : {};
+  check('narration records the microphone with a silent page, without clipping', microphoneInfo.audioPeak > 0.05 && microphoneInfo.audioPeak <= 1 &&
+    !notices.slice(noticesBeforeMicrophone).some((text) => /microphone could not be used/.test(text)), JSON.stringify(microphoneInfo));
+  settings.update({ recordingMicrophone: false });
 
   // ---------- Pause pressed while the recording moves to another tab ----------
   tabs.activate(tabA.id);

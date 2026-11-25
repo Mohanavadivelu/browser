@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('browserApi', {
     requestPause: () => invoke('recording:request-pause'),
     setPaused: (paused) => invoke('recording:set-paused', paused),
     captureStarted: () => invoke('recording:capture-started'),
+    microphoneFailed: () => invoke('recording:microphone-failed'),
     mark: () => invoke('recording:mark'),
     rollover: () => invoke('recording:rollover'),
     reauthorize: () => invoke('recording:reauthorize'),

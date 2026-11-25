@@ -7,12 +7,23 @@ function isPermissionAllowed(permission, allowed = WEB_ALLOWED) {
   return allowed.has(permission);
 }
 
-function applyPermissionPolicy(ses, allowed = WEB_ALLOWED) {
-  ses.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(isPermissionAllowed(permission, allowed));
+// A request (or check) for the microphone alone: never the camera, never both.
+function isMicrophoneOnly(permission, details = {}) {
+  if (permission !== 'media') return false;
+  if (Array.isArray(details.mediaTypes)) return details.mediaTypes.length > 0 && details.mediaTypes.every((type) => type === 'audio');
+  return details.mediaType === 'audio';
+}
+
+// `allowMicrophone(contents)` may grant the microphone (audio only) to particular pages: the
+// browser's own toolbar, while a recording with narration is running. Web sessions never pass it.
+function applyPermissionPolicy(ses, allowed = WEB_ALLOWED, { allowMicrophone = () => false } = {}) {
+  const decide = (contents, permission, details) => isPermissionAllowed(permission, allowed) ||
+    (isMicrophoneOnly(permission, details) && Boolean(allowMicrophone(contents)));
+  ses.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(decide(contents, permission, details));
   });
-  ses.setPermissionCheckHandler((_contents, permission) => isPermissionAllowed(permission, allowed));
+  ses.setPermissionCheckHandler((contents, permission, _origin, details) => decide(contents, permission, details));
   ses.setDevicePermissionHandler(() => false);
 }
 
-module.exports = { WEB_ALLOWED, isPermissionAllowed, applyPermissionPolicy };
+module.exports = { WEB_ALLOWED, isPermissionAllowed, isMicrophoneOnly, applyPermissionPolicy };

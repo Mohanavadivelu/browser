@@ -176,7 +176,9 @@ async function start(options = {}) {
 
   recorder = new Recorder({
     getFolder: getRecordingFolder,
-    requestConsent: options.autoConsent ? async () => ({ granted: true }) : () => askRecordingConsent(win),
+    requestConsent: options.autoConsent
+      ? async () => ({ granted: true })
+      : () => askRecordingConsent(win, { microphone: settings.data.recordingMicrophone }),
     onChange: () => {
       host.setRecording(recorder.active);
       pushState();
@@ -244,7 +246,10 @@ async function start(options = {}) {
     if (kind === 'ui') {
       // The browser's own views may ask for screen capture, but the handler below only grants it
       // to the main interface, right after the consent dialog.
-      applyPermissionPolicy(ses, new Set(['display-capture']));
+      // The microphone only for the toolbar, only while a recording runs with narration turned on.
+      applyPermissionPolicy(ses, new Set(['display-capture']), {
+        allowMicrophone: (contents) => contents?.id === ui.webContents.id && settings.data.recordingMicrophone && recorder.active,
+      });
       // Recordings and screenshots for the Recordings page's player; web sessions never get this.
       serveRecordings(ses, getRecordingFolder);
       ses.setDisplayMediaRequestHandler(async (request, callback) => {
