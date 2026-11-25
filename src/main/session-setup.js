@@ -1,0 +1,54 @@
+'use strict';
+
+const { webContents } = require('electron');
+const { applyPermissionPolicy } = require('./security/permissions');
+const { attachDownloadPolicy } = require('./security/downloads');
+const { serveRecordings } = require('./recording/media-server');
+const { WEB_FILES, serveAppPages } = require('./app-scheme');
+
+function cleanUserAgent(userAgent) {
+  return userAgent.replace(/\s?Electron\/\S+/, '').replace(/\s?simple-browser\/\S+/i, '');
+}
+
+// How each session is set up the first time it is used (see SessionManager): the browser's own
+// session ('ui') and the web sessions (the regular profile and each private tab's).
+// `ctx`: rendererDir, recording (the recording controller), getFolder(), blocker,
+// blockingActiveFor(url), getTabs(), downloads, notify, downloadDir, downloadSaveName.
+function createSessionSetup(ctx) {
+  const { rendererDir, recording, getFolder, blocker, blockingActiveFor, getTabs, downloads, notify } = ctx;
+
+  return (ses, kind) => {
+    if (kind === 'ui') {
+      // The browser's own views may ask for screen capture (granted only to the toolbar, right
+      // after the consent dialog) and, while narrating, the microphone.
+      applyPermissionPolicy(ses, new Set(['display-capture']), { allowMicrophone: recording.allowMicrophone });
+      // Recordings and screenshots for the Recordings page's player; web sessions never get this.
+      serveRecordings(ses, getFolder);
+      ses.setDisplayMediaRequestHandler((request, callback) => {
+        const requester = request.frame ? webContents.fromFrame(request.frame) : null;
+        recording.handleDisplayMedia(requester, callback);
+      }, { useSystemPicker: false });
+      return;
+    }
+    applyPermissionPolicy(ses);
+    // Web tabs show the new tab page and the certificate warning, and nothing else of the app.
+    serveAppPages(ses, rendererDir, WEB_FILES);
+    blocker.attach(ses, {
+      pageUrlOf: (details) => {
+        const contents = details.webContentsId ? webContents.fromId(details.webContentsId) : null;
+        return contents && !contents.isDestroyed() ? contents.getURL() : '';
+      },
+      isActive: blockingActiveFor,
+      onBlocked: (contentsId) => getTabs().countBlocked(contentsId),
+    });
+    attachDownloadPolicy(ses, {
+      onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
+      onStart: (item) => downloads.track(item),
+      autoSaveDir: ctx.downloadDir,
+      saveName: ctx.downloadSaveName,
+    });
+    ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
+  };
+}
+
+module.exports = { createSessionSetup, cleanUserAgent };

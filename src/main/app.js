@@ -1,26 +1,26 @@
 'use strict';
 
-const fs = require('node:fs');
+// The composition root: creates the window, sessions, tabs and services, wires them together,
+// and returns them (the smoke tests drive the app through what start() returns).
 const path = require('node:path');
-const { app, ipcMain, shell, dialog, Menu, clipboard, webContents, net, protocol, session } = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, net, protocol, session } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION } = require('./sandbox/session-manager');
-const { applyPermissionPolicy } = require('./security/permissions');
-const { attachDownloadPolicy } = require('./security/downloads');
 const { engineFor } = require('./security/navigation');
 const { createIpc } = require('./security/ipc-validate');
-const { Recorder } = require('./recording/recorder');
 const { askRecordingConsent } = require('./recording/consent');
 const { publicQualities } = require('./recording/quality');
 const { RecordingIndex } = require('./recording/library');
-const { saveScreenshot } = require('./recording/storage');
-const { pdfFileName } = require('./recording/library');
-const { MEDIA_SCHEME_PRIVILEGES, serveRecordings } = require('./recording/media-server');
-const { APP_SCHEME_PRIVILEGES, WEB_FILES, isAppUrl, serveAppPages } = require('./app-scheme');
+const { MEDIA_SCHEME_PRIVILEGES } = require('./recording/media-server');
+const { createRecordingController } = require('./recording/recording-controller');
+const { APP_SCHEME_PRIVILEGES, isAppUrl, serveAppPages } = require('./app-scheme');
+const { createSessionSetup } = require('./session-setup');
 const { ContentBlocker, hostOf } = require('./blocker');
 const bookmarkTree = require('./bookmarks');
 const { BookmarkIcons } = require('./bookmark-icons');
+const { createBookmarkActions } = require('./actions/bookmark-actions');
+const { createPageActions } = require('./actions/page-actions');
 const { UpdateService, updateMode, fetchLatestRelease, RELEASES } = require('./updates');
 const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
@@ -37,36 +37,13 @@ const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
 const SESSION_SAVE_DELAY_MS = 1000;
 const DOWNLOAD_BROADCAST_MS = 200;
 const BLOCKER_FIRST_UPDATE_MS = 10_000;
-const AUTO_STOP_CHECK_MS = 250;
-const MAX_OPEN_AT_ONCE = 50;
 const BLOCKER_CHECK_MS = 6 * 60 * 60 * 1000;
-// How long the toolbar gets to stop its capture and send the last chunks before the recording
-// is closed without them.
-const CAPTURE_STOP_TIMEOUT_MS = 3000;
 
 const BLOCK_MESSAGES = {
   'blocked-scheme': 'Blocked: only http and https addresses can be opened.',
   'too-long': 'That address is too long.',
 };
 const EDIT_COMMANDS = new Set(['cut', 'copy', 'paste', 'selectAll']);
-
-function cleanUserAgent(userAgent) {
-  return userAgent.replace(/\s?Electron\/\S+/, '').replace(/\s?simple-browser\/\S+/i, '');
-}
-
-// Resolves when the page has finished loading, or after a short limit so capture is never blocked.
-function waitUntilLoaded(contents, limitMs = 4000) {
-  if (!contents || contents.isDestroyed() || !contents.isLoading()) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      contents.removeListener('did-stop-loading', done);
-      resolve();
-    };
-    const timer = setTimeout(done, limitMs);
-    contents.once('did-stop-loading', done);
-  });
-}
 
 async function start(options = {}) {
   if (!app.isReady()) {
@@ -86,6 +63,7 @@ async function start(options = {}) {
     contents.on('will-attach-webview', (event) => event.preventDefault());
   });
 
+  // ---------- Stored data ----------
   const userData = app.getPath('userData');
   const settings = new Settings(path.join(userData, 'settings.json'));
   settings.load();
@@ -99,8 +77,10 @@ async function start(options = {}) {
   const recordingsIndex = new RecordingIndex(path.join(userData, 'recordings-index.json'));
   recordingsIndex.load();
   const downloads = new DownloadManager();
+  const zoom = new ZoomController({ settings });
 
-  // Ad and tracker blocking. Tests pass their own filters instead of downloading the lists.
+  // ---------- Ad and tracker blocking ----------
+  // Tests pass their own filters instead of downloading the lists.
   const blocker = new ContentBlocker({
     cacheDir: path.join(userData, 'blocker'),
     fetchText: async (url) => {
@@ -125,8 +105,8 @@ async function start(options = {}) {
   }
   const blockingActiveFor = (pageUrl) => settings.data.blockTrackers &&
     !settings.data.blockerAllowedSites.includes(hostOf(pageUrl));
-  const zoom = new ZoomController({ settings });
 
+  // ---------- The window ----------
   // `options.dialog` stands in for the Save and Open dialogs in automated tests.
   const appDialog = options.dialog ?? dialog;
   // The browser's own pages, served before the window starts loading them.
@@ -136,17 +116,16 @@ async function start(options = {}) {
   const getRecordingFolder = () => settings.data.recordingFolder ?? path.join(app.getPath('videos'), 'Simple Browser');
 
   let tabs;
-  let recorder;
   let idle;
-  let recordingTabId = null;
 
+  // ---------- What the browser's own pages are told ----------
   const buildState = () => ({
     tabs: tabs.snapshot(),
     activeId: tabs.activeId,
     fullscreen: host.mode.fullscreen,
     htmlFullscreen: host.mode.htmlFullscreen,
     revealed: host.mode.revealed,
-    recording: { ...recorder.info, limitMs: recordingLimitMs() },
+    recording: recording.state(),
     recordingQuality: settings.data.recordingQuality,
     qualities: publicQualities(),
     // The bar's own items (folders without their contents) and whether this page is bookmarked.
@@ -190,35 +169,27 @@ async function start(options = {}) {
     for (const contents of tabs.internalContents()) contents.send(channel, payload);
   };
 
-  recorder = new Recorder({
+  // ---------- Recording ----------
+  const recording = createRecordingController({
+    settings,
+    host,
+    ui,
+    getTabs: () => tabs,
     getFolder: getRecordingFolder,
+    recordingsIndex,
+    notify,
+    pushState,
+    broadcastToLibrary,
     requestConsent: options.autoConsent
       ? async () => ({ granted: true })
       : () => askRecordingConsent(win, { microphone: settings.data.recordingMicrophone }),
-    onChange: () => {
-      host.setRecording(recorder.active);
-      pushState();
-    },
-    notify,
-    onFailure: () => { stopCapture(); },
-    onSegment: (filePath, durationMs, final, { failed = false, markers = [] } = {}) => {
-      if (recorder.removeIfEmpty(filePath)) {
-        if (final && !failed) notify('The recording was empty and was not saved. Keep the page visible while recording.', 'error');
-        return;
-      }
-      recordingsIndex.set(path.basename(filePath), durationMs);
-      recordingsIndex.setMarkers(path.basename(filePath), markers);
-      // After a write error the error notice stays up instead of a "saved" message.
-      if (final && !failed) {
-        notify(autoStopped ? `Recording stopped after ${autoStopped} min, as set in Settings, and saved: ${filePath}` : `Recording saved: ${filePath}`);
-      }
-      if (final) autoStopped = 0;
-      broadcastToLibrary('recordings:changed');
-    },
+    minuteMs: options.minuteMs,
   });
+  const { recorder, stopCapture } = recording;
 
-  // Updates from GitHub Releases: installed copies update themselves, portable ones are told
-  // where to download. Nothing is checked when running from source.
+  // ---------- Updates ----------
+  // From GitHub Releases: installed copies update themselves, portable ones are told where to
+  // download. Nothing is checked when running from source.
   const mode = options.updateMode ?? updateMode({ isPackaged: app.isPackaged });
   const updates = new UpdateService({
     mode,
@@ -231,75 +202,19 @@ async function start(options = {}) {
   updates.on('change', () => pushState());
   updates.start();
 
-  // Stops a recording once it reaches the length chosen in Settings (paused time does not
-  // count). `options.minuteMs` shortens a "minute" in tests.
-  const minuteMs = options.minuteMs ?? 60_000;
-  function recordingLimitMs() {
-    return settings.data.recordingStopAfter * minuteMs;
-  }
-  let autoStopped = 0; // the limit in minutes, while a recording it stopped is being saved
-  setInterval(() => {
-    const limit = recordingLimitMs();
-    if (!limit || !recorder.active || autoStopped || recorder.clock.elapsed() < limit) return;
-    autoStopped = settings.data.recordingStopAfter;
-    stopCapture().catch((error) => console.error(`Could not stop the recording: ${error.message}`));
-  }, AUTO_STOP_CHECK_MS).unref?.();
-
-  // Asks the toolbar to stop its capture, so the chunks it still holds are written, and makes
-  // sure the recording ends even if the toolbar does not answer in time.
-  const stopCapture = async () => {
-    if (!recorder.active) return;
-    if (!ui.webContents.isDestroyed()) ui.webContents.send('recording:command', 'stop');
-    if (!(await recorder.whenIdle(CAPTURE_STOP_TIMEOUT_MS))) await recorder.finish();
-  };
-
-  const onBlocked = (_target, reason) => {
-    if (reason === 'empty') return;
-    notify(BLOCK_MESSAGES[reason] ?? BLOCK_MESSAGES['blocked-scheme'], 'warning');
-  };
-
-  const configureSession = (ses, kind) => {
-    if (kind === 'ui') {
-      // The browser's own views may ask for screen capture, but the handler below only grants it
-      // to the main interface, right after the consent dialog.
-      // The microphone only for the toolbar, only while a recording runs with narration turned on.
-      applyPermissionPolicy(ses, new Set(['display-capture']), {
-        allowMicrophone: (contents) => contents?.id === ui.webContents.id && settings.data.recordingMicrophone && recorder.active,
-      });
-      // Recordings and screenshots for the Recordings page's player; web sessions never get this.
-      serveRecordings(ses, getRecordingFolder);
-      ses.setDisplayMediaRequestHandler(async (request, callback) => {
-        const requester = request.frame ? webContents.fromFrame(request.frame) : null;
-        const allowed = requester?.id === ui.webContents.id && recorder.consumeAuthorization();
-        // A tab that is still loading swaps its frame when the page commits, so wait for it to settle.
-        if (allowed) await waitUntilLoaded(tabs.active?.view.webContents);
-        // Capture the active tab's page and its sound; never other windows, apps or the microphone.
-        const page = allowed ? tabs.active?.view.webContents.mainFrame : null;
-        if (page) recordingTabId = tabs.activeId;
-        callback(page ? { video: page, audio: page } : null);
-      }, { useSystemPicker: false });
-      return;
-    }
-    applyPermissionPolicy(ses);
-    // Web tabs show the new tab page and the certificate warning, and nothing else of the app.
-    serveAppPages(ses, RENDERER_DIR, WEB_FILES);
-    blocker.attach(ses, {
-      pageUrlOf: (details) => {
-        const contents = details.webContentsId ? webContents.fromId(details.webContentsId) : null;
-        return contents && !contents.isDestroyed() ? contents.getURL() : '';
-      },
-      isActive: blockingActiveFor,
-      onBlocked: (contentsId) => tabs.countBlocked(contentsId),
-    });
-    attachDownloadPolicy(ses, {
-      onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
-      onStart: (item) => downloads.track(item),
-      autoSaveDir: options.downloadDir,
-      saveName: options.downloadSaveName,
-    });
-    ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
-  };
-  const sessions = new SessionManager(configureSession);
+  // ---------- Sessions and tabs ----------
+  const sessions = new SessionManager(createSessionSetup({
+    rendererDir: RENDERER_DIR,
+    recording,
+    getFolder: getRecordingFolder,
+    blocker,
+    blockingActiveFor,
+    getTabs: () => tabs,
+    downloads,
+    notify,
+    downloadDir: options.downloadDir,
+    downloadSaveName: options.downloadSaveName,
+  }));
   sessions.ensure(UI_PARTITION, 'ui');
 
   let shortcutHandler = () => {};
@@ -321,7 +236,9 @@ async function start(options = {}) {
     libraryPage: 'library.html',
     getEngine: () => settings.data.searchEngine,
     getHome: () => settings.data.homePage,
-    onBlocked,
+    onBlocked: (_target, reason) => {
+      if (reason !== 'empty') notify(BLOCK_MESSAGES[reason] ?? BLOCK_MESSAGES['blocked-scheme'], 'warning');
+    },
     onInput: trackInput,
   });
   idle = new FullscreenIdle({ host, tabs, idleMs: options.idleMs });
@@ -373,9 +290,7 @@ async function start(options = {}) {
 
   tabs.on('activated', (id) => {
     host.closeFind();
-    if (recorder.active && settings.data.recordingFollowTab && id !== recordingTabId) {
-      ui.webContents.send('recording:command', 'retarget');
-    }
+    recording.onTabActivated(id);
   });
 
   let downloadTimer = null;
@@ -407,269 +322,21 @@ async function start(options = {}) {
   // Closing a tab in the background activates nothing, but it still changes the session.
   tabs.on('closed', scheduleSessionSave);
 
-  // Actions shared by keyboard shortcuts, menus and the interface.
+  // ---------- Actions shared by keyboard shortcuts, menus and the interface ----------
   const actions = {
-    toggleBookmark: () => {
-      const tab = tabs.active;
-      if (!tab || tab.kind !== 'web') return;
-      if (tab.isPrivate) {
-        notify('Bookmarks are not saved from private tabs.', 'warning');
-        return;
-      }
-      const url = tab.view.webContents.getURL();
-      const tree = settings.data.bookmarks;
-      const existing = bookmarkTree.findLinkByUrl(tree, url);
-      if (existing) {
-        settings.update({ bookmarks: bookmarkTree.remove(tree, [existing.id]) });
-        keepBookmarkIcons();
-      } else {
-        const added = bookmarkTree.addLink(tree, settings.data.bookmarkFolder, { url, title: tab.title || url });
-        if (!added) {
-          notify('This page could not be bookmarked.', 'warning');
-          return;
-        }
-        settings.update({ bookmarks: added.tree });
-        if (tab.favicon) bookmarkIcons.set(url, tab.favicon);
-      }
-      notify(existing ? 'Bookmark removed.' : 'Bookmark added.');
-      broadcastToLibrary('bookmarks:changed');
-      pushState();
-    },
-    // A folder's contents for the bookmarks bar's menus: its bookmarks (with their site icons)
-    // and folders, one level at a time, and how many bookmarks it holds in all.
-    bookmarkFolder: (folderId) => {
-      const folder = bookmarkTree.find(settings.data.bookmarks, folderId)?.node;
-      if (!folder || folder.type !== 'folder') return null;
-      return {
-        id: folder.id,
-        title: folder.title,
-        count: bookmarkUrls([folder.id]).length,
-        children: folder.children.map((node) => (node.type === 'folder'
-          ? { id: node.id, type: 'folder', title: node.title, count: bookmarkUrls([node.id]).length }
-          : { id: node.id, type: 'link', title: node.title, url: node.url, icon: bookmarkIcons.get(node.url) ?? null })),
-      };
-    },
-    // What the bar's menus and the Bookmarks page's menu do with one bookmark or folder. The
-    // pages name it by id, so they cannot open or copy any other address.
-    bookmarkAction: (id, action) => {
-      const found = bookmarkTree.find(settings.data.bookmarks, id);
-      if (!found) return false;
-      const { node } = found;
-      const fixed = found.parent === null; // Bookmarks bar and Other bookmarks
-      const forLink = {
-        open: () => tabs.navigate(node.url),
-        tab: () => tabs.create({ url: node.url }),
-        private: () => tabs.create({ url: node.url, isPrivate: true }),
-        copy: () => clipboard.writeText(node.url),
-      };
-      const run = node.type === 'link' ? forLink[action] : { 'open-all': () => actions.openBookmarks([id]) }[action];
-      if (run) {
-        run();
-        return true;
-      }
-      if (action === 'edit' && !fixed) {
-        actions.editBookmark(id);
-        return true;
-      }
-      if (action === 'delete' && !fixed) return actions.deleteBookmark(id);
-      return false;
-    },
-    // Opens the Bookmarks page on this bookmark's folder, with its name and address ready to edit.
-    editBookmark: (id) => {
-      const page = tabs.openInternal('bookmarks');
-      const reveal = () => page.view.webContents.send('bookmarks:reveal', id);
-      if (page.view.webContents.isLoading()) page.view.webContents.once('did-finish-load', reveal);
-      else reveal();
-    },
-    deleteBookmark: async (id) => {
-      const found = bookmarkTree.find(settings.data.bookmarks, id);
-      if (!found || found.parent === null) return false;
-      const { node } = found;
-      const inside = node.type === 'folder' ? bookmarkUrls([id]).length : 0;
-      if (inside > 0) {
-        const { response } = await appDialog.showMessageBox(win, {
-          type: 'warning',
-          message: `Delete the folder “${node.title}” and the ${inside} bookmark${inside === 1 ? '' : 's'} in it?`,
-          buttons: ['Delete', 'Cancel'],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
-        });
-        if (response !== 0) return false;
-      }
-      settings.update({ bookmarks: bookmarkTree.remove(settings.data.bookmarks, [id]) });
-      keepBookmarkIcons();
-      notify(node.type === 'folder' ? `Deleted the folder “${node.title}”.` : 'Bookmark deleted.');
-      broadcastToLibrary('bookmarks:changed');
-      pushState();
-      return true;
-    },
-    // The star (☆ or Ctrl+D): bookmarks the page into the folder used last if it is not yet
-    // bookmarked, and returns what the star's popover shows. Null for pages that cannot be.
-    starPage: () => {
-      const tab = tabs.active;
-      if (!tab || tab.kind !== 'web') return null;
-      if (tab.isPrivate) {
-        notify('Bookmarks are not saved from private tabs.', 'warning');
-        return null;
-      }
-      const url = tab.view.webContents.getURL();
-      let tree = settings.data.bookmarks;
-      let link = bookmarkTree.findLinkByUrl(tree, url);
-      const added = !link;
-      if (added) {
-        const result = bookmarkTree.addLink(tree, settings.data.bookmarkFolder, { url, title: tab.title || url });
-        if (!result) {
-          notify('This page could not be bookmarked.', 'warning');
-          return null;
-        }
-        settings.update({ bookmarks: result.tree });
-        if (tab.favicon) bookmarkIcons.set(url, tab.favicon);
-        tree = settings.data.bookmarks;
-        link = bookmarkTree.findLinkByUrl(tree, url);
-        broadcastToLibrary('bookmarks:changed');
-        pushState();
-      }
-      const found = bookmarkTree.find(tree, link.id);
-      return {
-        added,
-        id: link.id,
-        title: link.title,
-        folderId: found.parent.id,
-        folders: bookmarkTree.folders(tree).map(({ id, label }) => ({ id, label })),
-      };
-    },
-    // Done in the star's popover: the name, and the folder (a new one is made in the bar).
-    saveStar: (id, { title, folderId, newFolder }) => {
-      let tree = settings.data.bookmarks;
-      const found = bookmarkTree.find(tree, id);
-      if (!found || found.node.type !== 'link') return false;
-      let target = folderId ?? found.parent.id;
-      if (newFolder !== undefined) {
-        const made = bookmarkTree.addFolder(tree, 'bar', newFolder);
-        if (!made) return false;
-        tree = made.tree;
-        target = made.id;
-      }
-      if (title !== undefined) tree = bookmarkTree.update(tree, id, { title }) ?? tree;
-      if (target !== found.parent.id) tree = bookmarkTree.move(tree, id, target, 10000) ?? tree;
-      settings.update({ bookmarks: tree, bookmarkFolder: target });
-      broadcastToLibrary('bookmarks:changed');
-      pushState();
-      return true;
-    },
-    removeStar: (id) => {
-      const next = bookmarkTree.remove(settings.data.bookmarks, [id]);
-      if (!next) return false;
-      settings.update({ bookmarks: next });
-      keepBookmarkIcons();
-      notify('Bookmark removed.');
-      broadcastToLibrary('bookmarks:changed');
-      pushState();
-      return true;
-    },
-    // Ctrl+D: the toolbar opens the star's popover.
-    openStar: () => {
-      host.setRevealed(true);
-      ui.webContents.focus();
-      ui.webContents.send('ui:star');
-    },
-    toggleBookmarksBar: () => {
-      settings.update({ showBookmarksBar: !settings.data.showBookmarksBar });
-      host.setBookmarksBar(settings.data.showBookmarksBar);
-      pushState();
-    },
-    openBookmarks: (ids) => {
-      const urls = bookmarkUrls(ids);
-      urls.slice(0, MAX_OPEN_AT_ONCE).forEach((url, i) => tabs.create({ url, activate: i === 0 }));
-      if (urls.length > MAX_OPEN_AT_ONCE) notify(`Opened the first ${MAX_OPEN_AT_ONCE} of ${urls.length} bookmarks.`, 'warning');
-      return Math.min(urls.length, MAX_OPEN_AT_ONCE);
-    },
-    zoom: (direction) => {
-      const tab = tabs.active;
-      if (!tab || tab.kind !== 'web') return;
-      const factor = zoom.change(tab, direction);
-      if (factor === null) return;
-      pushState();
-      notify(`Zoom ${Math.round(factor * 100)}%`);
-    },
-    find: () => host.openFind(),
-    openLibrary: (page) => tabs.openInternal(page),
-    toggleRecording: () => ui.webContents.send('recording:command', recorder.active ? 'stop' : 'start'),
-    // A marker at the current moment of the recording (Ctrl+Shift+M, or Mark on the REC controls).
-    addMarker: () => {
-      const marker = recorder.addMarker();
-      if (!marker) return null;
-      const seconds = Math.floor(marker.timeMs / 1000);
-      const at = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-      notify(`Marker ${marker.number} at ${at}${marker.part > 1 ? ` in part ${marker.part}` : ''}`);
-      return marker;
-    },
-    togglePause: () => {
-      if (recorder.active) ui.webContents.send('recording:command', 'toggle-pause');
-    },
-    // The system print dialog for the current page.
-    print: () => {
-      const tab = tabs.active;
-      if (!tab || tab.kind !== 'web') return;
-      tab.view.webContents.print({}, (success, reason) => {
-        if (!success && reason !== 'cancelled' && reason !== 'Print job canceled') notify(`Could not print: ${reason}`, 'error');
-      });
-    },
-    // Saves the current page as a PDF, named after its title.
-    savePdf: async () => {
-      const tab = tabs.active;
-      if (!tab || tab.kind !== 'web') return null;
-      const result = await appDialog.showSaveDialog(win, {
-        title: 'Save page as PDF',
-        defaultPath: path.join(app.getPath('documents'), pdfFileName(tab.title)),
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
-      });
-      if (result.canceled || !result.filePath) return null;
-      try {
-        const pdf = await tab.view.webContents.printToPDF({ printBackground: true });
-        fs.writeFileSync(result.filePath, pdf);
-      } catch (error) {
-        notify(`Could not save the PDF: ${error.message}`, 'error');
-        return null;
-      }
-      notify(`Saved PDF: ${result.filePath}`);
-      return result.filePath;
-    },
-    screenshot: async () => {
-      const tab = tabs.active;
-      if (!tab) return null;
-      try {
-        const image = await tab.view.webContents.capturePage();
-        if (image.isEmpty()) throw new Error('The page is not visible.');
-        const filePath = saveScreenshot(getRecordingFolder(), image.toPNG());
-        notify(`Screenshot saved: ${filePath}`);
-        broadcastToLibrary('recordings:changed');
-        return filePath;
-      } catch (error) {
-        notify(`Could not capture a screenshot: ${error.message}`, 'error');
-        return null;
-      }
-    },
+    ...createBookmarkActions({
+      settings, bookmarkIcons, keepBookmarkIcons, tabs, host, ui, win, dialog: appDialog, clipboard, notify, pushState, broadcastToLibrary,
+    }),
+    ...createPageActions({
+      tabs, host, zoom, dialog: appDialog, win, documentsDir: () => app.getPath('documents'), getRecordingFolder, notify, pushState, broadcastToLibrary,
+    }),
+    ...recording.actions,
   };
-
-  // Every link under the given bookmarks and folders, in order.
-  function bookmarkUrls(ids) {
-    const urls = [];
-    const collect = (node) => {
-      if (node.type === 'link') urls.push(node.url);
-      else node.children.forEach(collect);
-    };
-    for (const id of ids) {
-      const node = bookmarkTree.find(settings.data.bookmarks, id)?.node;
-      if (node) collect(node);
-    }
-    return urls;
-  }
 
   shortcutHandler = createShortcutHandler({ tabs, host, ui, actions });
   for (const view of [ui, indicator, find]) trackInput(view.webContents);
 
+  // ---------- IPC ----------
   // Which of the browser's own pages sent an IPC call, or null for anything else.
   const senderRole = (event) => {
     const frame = event.senderFrame;
@@ -702,6 +369,7 @@ async function start(options = {}) {
   });
   tabs.on('change', pushState);
 
+  // ---------- Closing ----------
   // A running recording is stopped through the toolbar first, so its last second is kept.
   let closing = false;
   win.on('close', (event) => {
@@ -739,6 +407,7 @@ async function start(options = {}) {
     if (options.quitOnClose !== false) app.quit();
   });
 
+  // ---------- First tabs ----------
   const restored = settings.data.restoreTabs ? settings.data.session : { urls: [], active: 0 };
   if (restored.urls.length) {
     restored.urls.forEach((url) => tabs.create({ url, activate: false }));
