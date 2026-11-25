@@ -118,6 +118,12 @@ button:disabled { color: #5f6368; cursor: default; }
 .folder-icon { flex: none; width: 14px; height: 14px; fill: none; stroke: #fdd663; stroke-width: 2; stroke-linejoin: round; }
 .folder-icon.muted { stroke: var(--muted); }
 .bookmarks .chip[hidden] { display: none; }
+/* Dragging a bookmark along the bar */
+.bookmarks .chip.dragging { opacity: .45; }
+.bookmarks .chip.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.bookmarks .chip.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+.bookmarks .chip.drop-into { background: var(--hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.dark-menu .bm-star { font-size: 11px; color: var(--muted); }
 .bookmarks .bm-icon { flex: none; width: 14px; height: 14px; object-fit: contain; }
 .bookmarks .bm-star { flex: none; font-size: 11px; }
 .bookmarks .spacer { flex: 1; }

@@ -41,7 +41,7 @@ function registerIpcHandlers(ipc, ctx) {
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
-    bookmarkPatch, bookmarkMove, idList, menuAt, idListAt, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
+    bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -73,9 +73,8 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('bookmarks:star', TOOLBAR, none, () => actions.starPage());
   ipc.handle('bookmarks:star-save', TOOLBAR, starSave, (_e, id, patch) => actions.saveStar(id, patch));
   ipc.handle('bookmarks:star-remove', TOOLBAR, text, (_e, id) => actions.removeStar(id));
-  ipc.handle('bookmarks:folder-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkFolder(id, x, y));
-  ipc.handle('bookmarks:items-menu', TOOLBAR, idListAt, (_e, ids, x, y) => actions.showBookmarkItems(ids, x, y));
-  ipc.handle('bookmarks:context-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkContext(id, x, y));
+  ipc.handle('bookmarks:folder', TOOLBAR, bookmarkId, (_e, id) => actions.bookmarkFolder(id));
+  ipc.handle('bookmarks:action', TOOLBAR_AND_LIBRARY, bookmarkAction, (_e, id, action) => actions.bookmarkAction(id, action));
   ipc.handle('bookmarks:icons', TOOLBAR_AND_LIBRARY, urlList, (_e, urls) => bookmarkIcons.pick(urls));
   ipc.handle('zoom:reset', TOOLBAR, none, () => actions.zoom(0));
 
@@ -161,11 +160,15 @@ function registerIpcHandlers(ipc, ctx) {
     return { tree: saveBookmarks(added?.tree), id: added?.id ?? null };
   });
   ipc.handle('bookmarks:update', LIBRARY, bookmarkPatch, (_e, id, patch) => saveBookmarks(bookmarkList.update(settings.data.bookmarks, id, patch)));
-  ipc.handle('bookmarks:move', LIBRARY, bookmarkMove, (_e, id, parentId, index) => {
+  // Drag and drop on the Bookmarks page and on the bookmarks bar.
+  ipc.handle('bookmarks:move', TOOLBAR_AND_LIBRARY, bookmarkMove, (event, id, parentId, index) => {
     const moved = bookmarkList.move(settings.data.bookmarks, id, parentId, index);
     // The star files new bookmarks where the user last put one.
     if (moved && bookmarkList.find(moved, id)?.node.type === 'link') settings.update({ bookmarkFolder: parentId });
-    return saveBookmarks(moved);
+    const tree = saveBookmarks(moved);
+    // A drag on the bar: an open Bookmarks page shows the new order too.
+    if (moved && event.sender === ui.webContents) broadcastToLibrary('bookmarks:changed');
+    return tree;
   });
   ipc.handle('bookmarks:remove', LIBRARY, idList, (_e, ids) => saveBookmarks(bookmarkList.remove(settings.data.bookmarks, ids)));
   ipc.handle('bookmarks:open', LIBRARY, idList, (_e, ids) => actions.openBookmarks(ids));

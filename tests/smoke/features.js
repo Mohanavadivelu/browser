@@ -6,7 +6,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { app } = require('electron');
+const { app, clipboard } = require('electron');
 const { start } = require('../../src/main/app');
 const { keyframeTimes } = require('../../src/main/recording/webm-edit');
 const bookmarkTree = require('../../src/main/bookmarks');
@@ -349,9 +349,22 @@ async function main() {
 
   // Tick two bookmarks and move them into the folder together.
   for (const title of ['Bm B', 'Bm C']) await inBookmarks(`document.querySelector(${JSON.stringify(`${rowSelector(linkId(title))} input[type=checkbox]`)}).click()`);
-  await inBookmarks(`(() => { document.getElementById('bookmarksMoveTo').value = ${JSON.stringify(workFolder().id)}; document.getElementById('bookmarksMove').click(); })()`);
+  await inBookmarks("document.getElementById('bookmarksMove').click()");
+  await waitFor(() => inBookmarks("document.getElementById('moveDialog').open"), 'Move to dialog', 3000).catch(() => {});
+  const moveDialog = await inBookmarks(`({ open: document.getElementById('moveDialog').open,
+    folders: [...document.querySelectorAll('#moveDialogTree .move-folder')].map((b) => b.textContent).join(',') })`);
+  check('Move to… shows the folder tree in a dialog', moveDialog.open && moveDialog.folders === 'Bookmarks bar,Work,Other bookmarks', moveDialog.folders);
+  await inBookmarks(`(() => { document.querySelector('#moveDialogTree [data-id="${workFolder().id}"]').click(); document.getElementById('moveDialogMove').click(); })()`);
   await waitFor(() => titlesOf(workFolder()?.children ?? []) === 'Bm B,Bm C', 'moved into Work', 3000).catch(() => {});
   check('several bookmarks move into a folder together', titlesOf(workFolder().children) === 'Bm B,Bm C' && titlesOf(settings.data.bookmarks.bar.children) === 'Bm A,Work');
+  check('the dialog closes after moving', (await inBookmarks("document.getElementById('moveDialog').open")) === false);
+
+  // A folder cannot be moved into itself.
+  await inBookmarks(`document.querySelector(${JSON.stringify(`${rowSelector(workFolder().id)} input[type=checkbox]`)}).click()`);
+  await inBookmarks("document.getElementById('bookmarksMove').click()");
+  const intoItself = await inBookmarks(`document.querySelector('#moveDialogTree [data-id="${workFolder().id}"]').disabled`);
+  check('Move to… does not offer a folder as its own destination', intoItself === true);
+  await inBookmarks("document.getElementById('moveDialogCancel').click(); document.getElementById('bookmarksClear').click()");
 
   // Open the folder from the tree, then reorder with ↓ and by dragging.
   await inBookmarks(`document.querySelector('#bookmarkFolders [data-id="${workFolder().id}"]').click()`);
@@ -362,6 +375,33 @@ async function main() {
   await dragBookmark(rowSelector(linkId('Bm C')), rowSelector(linkId('Bm B')), 0.9);
   await waitFor(() => titlesOf(workFolder().children) === 'Bm B,Bm C', 'dragged below', 3000).catch(() => {});
   check('dragging a bookmark reorders it', titlesOf(workFolder().children) === 'Bm B,Bm C', titlesOf(workFolder().children));
+
+  // ⋯ on a row: open in a new or private tab, or copy the address.
+  const rowMenu = async (id) => {
+    await clickInBookmarkRow(id, '⋯');
+    const labels = () => inBookmarks("[...document.querySelectorAll('.dark-menu .dm-item .dm-label')].map((l) => l.textContent).join('|')");
+    await waitFor(labels, 'the ⋯ menu', 3000).catch(() => {});
+    return labels();
+  };
+  const clickPageMenu = (label) => inBookmarks(`[...document.querySelectorAll('.dark-menu .dm-item')].find((b) => b.textContent.includes(${JSON.stringify(label)})).click()`);
+  check('⋯ on a bookmark offers new tab, private tab and copy', (await rowMenu(linkId('Bm B'))) === 'Open in new tab|Open in private tab|Copy address');
+  // The clipboard may answer at once or with a promise; the user's own text is put back afterwards.
+  const readClipboard = async () => String(await clipboard.readText());
+  const savedClipboard = await readClipboard();
+  await clickPageMenu('Copy address');
+  await waitFor(async () => (await readClipboard()) === `${base}/bm-b`, 'address copied', 3000).catch(() => {});
+  const copied = await readClipboard();
+  check('Copy address puts the bookmark address on the clipboard', copied === `${base}/bm-b`, copied);
+  await clipboard.writeText(savedClipboard);
+  check('the menu closes after a choice', (await inBookmarks("document.querySelectorAll('.dark-menu').length")) === 0);
+  const tabsBeforeRowMenu = tabs.order.length;
+  await rowMenu(linkId('Bm C'));
+  await clickPageMenu('Open in private tab');
+  await waitFor(() => tabs.order.length === tabsBeforeRowMenu + 1, 'private tab from ⋯', 5000).catch(() => {});
+  const fromRowMenu = tabs.tabs.get(tabs.order[tabs.order.length - 1]);
+  check('⋯ opens a bookmark in a private tab', fromRowMenu?.isPrivate === true && tabs.order.length === tabsBeforeRowMenu + 1);
+  if (fromRowMenu?.isPrivate) tabs.close(fromRowMenu.id);
+  tabs.activate(bookmarksPage.id);
 
   // Drop a bookmark from the bar onto the folder in the tree.
   await inBookmarks("document.querySelector('#bookmarkFolders [data-id=\"bar\"]').click()");
@@ -459,31 +499,102 @@ async function main() {
   const layout = await barLayout();
   const titleOf = (id) => bookmarkTree.find(settings.data.bookmarks, id)?.node.title;
   check('bookmarks that do not fit go under »', layout.more && layout.hiddenIds.length > 0 && layout.hiddenIds.length < 40, `${layout.hiddenIds.length} hidden`);
-  check('the » menu lists exactly the hidden bookmarks',
-    ctx.bookmarkMenus.items(layout.hiddenIds).map((item) => item.label).join('|') === layout.hiddenIds.map(titleOf).join('|'));
+  // The toolbar's own dark menus: one list of labels per open menu, outermost first.
+  const menus = () => evalIn(ui, "[...document.querySelectorAll('.dark-menu')].map((m) => [...m.querySelectorAll('.dm-item .dm-label')].map((l) => l.textContent).join('|'))");
+  const menuItem = (label) => `[...document.querySelectorAll('.dark-menu .dm-item')].find((b) => b.querySelector('.dm-label').textContent === ${JSON.stringify(label)})`;
+  const clickMenu = (label) => evalIn(ui, `${menuItem(label)}.click()`);
+  const closeMenus = () => evalIn(ui, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  const rightClickChip = (id) => evalIn(ui, `(() => { const chip = document.querySelector('#bookmarks .chip[data-id="${id}"]'); const box = chip.getBoundingClientRect();
+    chip.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left + 5, clientY: box.bottom - 2 })); })()`);
+  const waitForMenus = (count, label) => waitFor(async () => (await menus()).length === count, label, 3000).catch(() => {});
+
+  await evalIn(ui, "document.querySelector('#bookmarks .more').click()");
+  await waitForMenus(1, 'the » menu');
+  check('the » menu lists exactly the hidden bookmarks', (await menus())[0] === layout.hiddenIds.map(titleOf).join('|'));
+  await waitFor(() => ui.getBounds().height > 116, 'toolbar grows over the page', 3000).catch(() => {});
+  check('the toolbar grows over the page while a menu is open', ui.getBounds().height > 116, `toolbar ${ui.getBounds().height}`);
+  await closeMenus();
+  await waitFor(() => ui.getBounds().height === 116, 'toolbar back to size', 3000).catch(() => {});
+  check('Esc closes the menu and the toolbar shrinks back', (await menus()).length === 0 && ui.getBounds().height === 116, `toolbar ${ui.getBounds().height}`);
   check('Other bookmarks has its own button on the bar', /Other bookmarks/.test(layout.other), layout.other);
 
   const firstBookmark = settings.data.bookmarks.bar.children[0];
-  const contextMenu = ctx.bookmarkMenus.context(firstBookmark.id);
-  check('right-clicking a bookmark offers open, new tab, private tab, edit and delete',
-    contextMenu.map((item) => item.label ?? '').join('|') === 'Open|Open in new tab|Open in private tab||Edit…|Delete');
+  await rightClickChip(firstBookmark.id);
+  await waitForMenus(1, 'right-click menu');
+  check('right-clicking a bookmark offers open, new tab, private tab, copy, edit and delete',
+    (await menus())[0] === 'Open|Open in new tab|Open in private tab|Copy address|Edit…|Delete', (await menus())[0]);
   const tabsBefore = tabs.order.length;
-  contextMenu.find((item) => item.label === 'Open in private tab').click();
+  await clickMenu('Open in private tab');
   await waitFor(() => tabs.order.length === tabsBefore + 1 && tabs.active.isPrivate && tabs.active.view.webContents.getURL().endsWith('/many-0'), 'private tab from the menu', 5000).catch(() => {});
   check('a bookmark opens in a private tab from its menu', tabs.active.isPrivate && tabs.active.view.webContents.getURL().endsWith('/many-0'));
   tabs.close(tabs.activeId);
 
-  contextMenu.find((item) => item.label === 'Edit…').click();
+  await rightClickChip(firstBookmark.id);
+  await waitForMenus(1, 'right-click menu');
+  await clickMenu('Edit…');
   const editField = `document.querySelector('#bookmarkList .bm-row[data-id="${firstBookmark.id}"] input[type=text]')`;
   await waitFor(async () => tabs.active.kind === 'internal' && (await evalIn(tabs.active.view, `Boolean(${editField})`)), 'bookmark ready to edit', 5000).catch(() => {});
   check('Edit… opens the bookmark ready to edit on the Bookmarks page', tabs.active.kind === 'internal' &&
     (await evalIn(tabs.active.view, `${editField}?.value ?? ''`)) === 'Many bookmarks 0');
 
-  await contextMenu.find((item) => item.label === 'Delete').click();
+  tabs.activate(barTab.id);
+  await rightClickChip(firstBookmark.id);
+  await waitForMenus(1, 'right-click menu');
+  await clickMenu('Delete');
   await waitFor(() => !bookmarkTree.find(settings.data.bookmarks, firstBookmark.id), 'bookmark deleted', 3000).catch(() => {});
   check('Delete in the menu removes the bookmark', !bookmarkTree.find(settings.data.bookmarks, firstBookmark.id));
-  const otherMenu = ctx.bookmarkMenus.context('other').map((item) => item.label ?? '');
-  check('Other bookmarks can be opened but not renamed or deleted', otherMenu.join('|') === 'Open all (1) in new tabs', otherMenu.join('|'));
+  await rightClickChip('other');
+  await waitForMenus(1, 'Other bookmarks menu');
+  const otherMenu = (await menus())[0];
+  check('Other bookmarks can be opened but not renamed or deleted', otherMenu === 'Open all (1) in new tabs', otherMenu);
+  await closeMenus();
+
+  // A folder on the bar opens as a menu, its folders as submenus; drag to reorder the bar.
+  settings.update({ bookmarks: {
+    bar: { children: [
+      { type: 'link', url: `${base}/bar-a`, title: 'Bar A' },
+      { type: 'folder', title: 'Projects', children: [
+        { type: 'link', url: `${base}/inside`, title: 'Inside' },
+        { type: 'folder', title: 'Deep', children: [{ type: 'link', url: `${base}/deep`, title: 'Deep link' }] },
+      ] },
+      { type: 'link', url: `${base}/bar-b`, title: 'Bar B' },
+    ] },
+    other: { children: [] },
+  } });
+  tabs.activate(barTab.id);
+  const barTitles = () => settings.data.bookmarks.bar.children.map((node) => node.title).join(',');
+  const projects = () => settings.data.bookmarks.bar.children.find((node) => node.title === 'Projects');
+  await waitFor(() => evalIn(ui, `Boolean(document.querySelector('#bookmarks .chip[data-id="${projects().id}"]'))`), 'folder on the bar', 3000).catch(() => {});
+  await evalIn(ui, `document.querySelector('#bookmarks .chip[data-id="${projects().id}"]').click()`);
+  await waitForMenus(1, 'folder menu');
+  check('a folder on the bar opens as a menu', (await menus())[0] === 'Inside|Deep|Open all (2) in new tabs', (await menus())[0]);
+  await evalIn(ui, `${menuItem('Deep')}.dispatchEvent(new MouseEvent('mouseenter'))`);
+  await waitForMenus(2, 'submenu');
+  check('a folder inside it opens as a submenu', (await menus())[1] === 'Deep link|Open all (1) in new tabs', (await menus()).join(' / '));
+  await clickMenu('Deep link');
+  await waitFor(() => barTab.view.webContents.getURL() === `${base}/deep`, 'opened from the submenu', 5000).catch(() => {});
+  check('a bookmark in a submenu opens in the current tab', barTab.view.webContents.getURL() === `${base}/deep` && (await menus()).length === 0);
+
+  const dragOnBar = (fromId, toId, fraction) => evalIn(ui, `(() => {
+    const from = document.querySelector('#bookmarks .chip[data-id="${fromId}"]');
+    const to = document.querySelector('#bookmarks .chip[data-id="${toId}"]');
+    const data = new DataTransfer();
+    from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }));
+    const box = to.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, dataTransfer: data, clientX: box.left + box.width * ${fraction}, clientY: box.top + box.height / 2 };
+    to.dispatchEvent(new DragEvent('dragover', at));
+    to.dispatchEvent(new DragEvent('drop', at));
+    from.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }));
+  })()`);
+  const idOnBar = (title) => settings.data.bookmarks.bar.children.find((node) => node.title === title).id;
+  await dragOnBar(idOnBar('Bar A'), idOnBar('Bar B'), 0.9);
+  await waitFor(() => barTitles() === 'Projects,Bar B,Bar A', 'dragged along the bar', 3000).catch(() => {});
+  check('dragging a bookmark along the bar reorders it', barTitles() === 'Projects,Bar B,Bar A', barTitles());
+  await waitFor(() => evalIn(ui, "[...document.querySelectorAll('#bookmarks .chip:not(.more)')].map((c) => c.textContent).join(',').startsWith('Projects')"), 'bar redrawn', 3000).catch(() => {});
+  await dragOnBar(idOnBar('Bar A'), projects().id, 0.5);
+  await waitFor(() => barTitles() === 'Projects,Bar B', 'dropped into the folder', 3000).catch(() => {});
+  check('dropping a bookmark on a folder on the bar moves it in', barTitles() === 'Projects,Bar B' &&
+    projects().children.map((node) => node.title).join(',') === 'Inside,Deep,Bar A', barTitles());
 
   tabs.activate(barTab.id);
   actions.toggleBookmarksBar();

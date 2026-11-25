@@ -115,11 +115,15 @@ class BrowserWindow extends EventEmitter {
     this.layout();
   }
 
-  // Extra height for the toolbar's view while the address-bar suggestions are open.
+  // Extra height for the toolbar's view while the address-bar suggestions, the star's popover or
+  // a bookmarks menu is open. Returns the height of the window's content, so a menu knows how
+  // far down it can reach.
   setSuggestionsHeight(height) {
-    if (this.mode.suggestionsHeight === height) return;
-    this.mode.suggestionsHeight = height;
-    this.layout();
+    if (this.mode.suggestionsHeight !== height) {
+      this.mode.suggestionsHeight = height;
+      this.layout();
+    }
+    return this.win.isDestroyed() ? 0 : this.win.getContentBounds().height;
   }
 
   openFind() {

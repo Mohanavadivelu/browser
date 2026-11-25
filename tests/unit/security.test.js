@@ -207,7 +207,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   const channels = [...ipcMain.handlers.keys()];
   const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
 
-  assert.equal(channels.length, 69);
+  assert.equal(channels.length, 68);
   assert.deepEqual(allowed('indicator'), ['recording:mark', 'recording:request-pause', 'recording:request-stop', 'ui:get-state']);
   assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
   // The library tab shows text from websites: no recording, navigation or tab controls.
@@ -215,7 +215,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   assert.ok(!allowed('library').includes('bookmarks:toggle'));
   // The toolbar has no access to files, settings or history.
   assert.ok(allowed('toolbar').every((channel) => !/^(history|downloads|recordings|settings):/.test(channel)), allowed('toolbar').join());
-  assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('bookmarks:')), ['bookmarks:context-menu', 'bookmarks:folder-menu', 'bookmarks:icons', 'bookmarks:items-menu', 'bookmarks:star', 'bookmarks:star-remove', 'bookmarks:star-save']);
+  assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('bookmarks:')), ['bookmarks:action', 'bookmarks:folder', 'bookmarks:icons', 'bookmarks:move', 'bookmarks:star', 'bookmarks:star-remove', 'bookmarks:star-save']);
   assert.ok(allowed('toolbar').includes('recording:chunk'));
   // Every channel is open to exactly the pages listed, and to at least one of them.
   for (const channel of channels) {
@@ -267,4 +267,18 @@ test('history entries and downloads are addressed by a positive whole number', (
   assert.equal(validators.entryId('12'), false);
   assert.equal(validators.entryId(2 ** 60), false);
   assert.equal(validators.entryId(1, 2), false);
+});
+
+test('bookmark menus name a bookmark by id and one of a fixed set of actions', () => {
+  for (const action of ['open', 'tab', 'private', 'copy', 'edit', 'delete', 'open-all']) {
+    assert.equal(validators.bookmarkAction('b12', action), true, action);
+  }
+  assert.equal(validators.bookmarkAction('b12', 'navigate'), false);
+  assert.equal(validators.bookmarkAction('https://example.com/', 'open'), false, 'an address is not an id');
+  assert.equal(validators.bookmarkAction('b12'), false);
+  assert.equal(validators.bookmarkId('bar'), true);
+  assert.equal(validators.bookmarkId('../x'), false);
+  assert.equal(validators.bookmarkId('a', 'b'), false);
+  assert.equal(validators.pixels(4000), true);
+  assert.equal(validators.pixels(4001), false);
 });

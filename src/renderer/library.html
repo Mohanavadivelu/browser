@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src sb-media:; img-src sb-media: data:">
   <title>Simple Browser</title>
   <link rel="stylesheet" href="library.css">
+  <link rel="stylesheet" href="menu.css">
 </head>
 <body>
   <nav class="side">
@@ -47,8 +48,7 @@
           </div>
           <div id="bookmarksSelection" class="bm-selection" hidden>
             <span id="bookmarksSelected"></span>
-            <label>Move to <select id="bookmarksMoveTo"></select></label>
-            <button id="bookmarksMove" type="button">Move</button>
+            <button id="bookmarksMove" type="button">Move to…</button>
             <button id="bookmarksDelete" type="button" class="danger">Delete</button>
             <button id="bookmarksClear" type="button">Clear</button>
           </div>
@@ -156,6 +156,16 @@
       </div>
     </section>
   </main>
+  <dialog id="moveDialog" class="move-dialog" aria-labelledby="moveDialogTitle">
+    <h2 id="moveDialogTitle">Move to</h2>
+    <p id="moveDialogNote" class="note"></p>
+    <div id="moveDialogTree" class="move-tree" role="listbox" aria-label="Folders"></div>
+    <div class="move-actions">
+      <button id="moveDialogCancel" type="button">Cancel</button>
+      <button id="moveDialogMove" type="button" class="primary">Move</button>
+    </div>
+  </dialog>
+  <script src="menu.js"></script>
   <script src="library.js"></script>
 </body>
 </html>

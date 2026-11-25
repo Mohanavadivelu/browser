@@ -2,6 +2,7 @@
 
 const MAX_CHUNK_BYTES = 32 * 1024 * 1024;
 
+const BOOKMARK_ACTIONS = new Set(['open', 'tab', 'private', 'copy', 'edit', 'delete', 'open-all']);
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
 
 const validators = {
@@ -33,12 +34,12 @@ const validators = {
     (args[1].title === undefined || (typeof args[1].title === 'string' && args[1].title.length <= 2048)) &&
     (args[1].folderId === undefined || isId(args[1].folderId)) &&
     (args[1].newFolder === undefined || (typeof args[1].newFolder === 'string' && args[1].newFolder.length <= 2048)),
-  idListAt: (...args) => args.length === 3 && Array.isArray(args[0]) && args[0].length > 0 && args[0].length <= 1000 &&
-    args[0].every(isId) && [args[1], args[2]].every((n) => Number.isInteger(n) && n >= 0 && n <= 20000),
   urlList: (...args) => args.length === 1 && Array.isArray(args[0]) && args[0].length <= 5000 &&
     args[0].every((url) => typeof url === 'string' && url.length <= 2048),
-  menuAt: (...args) => args.length === 3 && isId(args[0]) && [args[1], args[2]].every((n) => Number.isInteger(n) && n >= 0 && n <= 20000),
-  pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 1000,
+  bookmarkId: (...args) => args.length === 1 && isId(args[0]),
+  // One of the things the bookmark menus do, to the bookmark or folder with this id.
+  bookmarkAction: (...args) => args.length === 2 && isId(args[0]) && BOOKMARK_ACTIONS.has(args[1]),
+  pixels: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] <= 4000,
   settingsPatch: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
     !Array.isArray(args[0]) && Object.keys(args[0]).length <= 20,
   findQuery: (...args) => args.length === 2 && typeof args[0] === 'string' && args[0].length <= 500 &&

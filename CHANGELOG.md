@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### New
+
+- **Bookmark menus match the browser**: folders, » and right-click on the bookmarks bar open dark menus, with subfolders to the side and arrow-key control. Right-click also offers **Copy address**.
+- **Drag bookmarks along the bar** to reorder them, or drop one on a folder (or on Other bookmarks) to move it there.
+- **⋯ on each row of the Bookmarks page**: open a bookmark in a new or private tab, or copy its address; open all of a folder's bookmarks.
+- **Move to…** on the Bookmarks page opens a dialog with the folder tree (a folder cannot be moved into itself).
+
 ### Security
 
 - The browser's own pages are served from `app://browser/` instead of `file://`, and the packaged app turns off Electron's extra `file://` privileges (the last fuse left on). Web tabs can load only the new tab and certificate warning pages from it.
