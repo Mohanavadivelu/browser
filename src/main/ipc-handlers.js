@@ -38,7 +38,7 @@ function registerIpcHandlers(ipc, ctx) {
   } = ctx;
   const {
     none, tabId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
-    bookmarkPatch, bookmarkMove, idList, menuAt, idListAt, urlList, settingsPatch, findQuery, tabOptions, chunk,
+    bookmarkPatch, bookmarkMove, idList, menuAt, idListAt, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
   const settingsPayload = () => ({
@@ -67,7 +67,9 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('window:toggle-fullscreen', TOOLBAR, none, () => host.toggleFullscreen());
   ipc.handle('window:reveal', TOOLBAR, bool, (_e, revealed) => host.setRevealed(revealed));
   ipc.handle('window:menu', TOOLBAR, none, () => showMenu());
-  ipc.handle('bookmarks:toggle', TOOLBAR, none, () => actions.toggleBookmark());
+  ipc.handle('bookmarks:star', TOOLBAR, none, () => actions.starPage());
+  ipc.handle('bookmarks:star-save', TOOLBAR, starSave, (_e, id, patch) => actions.saveStar(id, patch));
+  ipc.handle('bookmarks:star-remove', TOOLBAR, text, (_e, id) => actions.removeStar(id));
   ipc.handle('bookmarks:folder-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkFolder(id, x, y));
   ipc.handle('bookmarks:items-menu', TOOLBAR, idListAt, (_e, ids, x, y) => actions.showBookmarkItems(ids, x, y));
   ipc.handle('bookmarks:context-menu', TOOLBAR, menuAt, (_e, id, x, y) => actions.showBookmarkContext(id, x, y));

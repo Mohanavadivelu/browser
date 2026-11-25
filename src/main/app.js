@@ -476,6 +476,76 @@ async function start(options = {}) {
       pushState();
       return true;
     },
+    // The star (☆ or Ctrl+D): bookmarks the page into the folder used last if it is not yet
+    // bookmarked, and returns what the star's popover shows. Null for pages that cannot be.
+    starPage: () => {
+      const tab = tabs.active;
+      if (!tab || tab.kind !== 'web') return null;
+      if (tab.isPrivate) {
+        notify('Bookmarks are not saved from private tabs.', 'warning');
+        return null;
+      }
+      const url = tab.view.webContents.getURL();
+      let tree = settings.data.bookmarks;
+      let link = bookmarkTree.findLinkByUrl(tree, url);
+      const added = !link;
+      if (added) {
+        const result = bookmarkTree.addLink(tree, settings.data.bookmarkFolder, { url, title: tab.title || url });
+        if (!result) {
+          notify('This page could not be bookmarked.', 'warning');
+          return null;
+        }
+        settings.update({ bookmarks: result.tree });
+        if (tab.favicon) bookmarkIcons.set(url, tab.favicon);
+        tree = settings.data.bookmarks;
+        link = bookmarkTree.findLinkByUrl(tree, url);
+        broadcastToLibrary('bookmarks:changed');
+        pushState();
+      }
+      const found = bookmarkTree.find(tree, link.id);
+      return {
+        added,
+        id: link.id,
+        title: link.title,
+        folderId: found.parent.id,
+        folders: bookmarkTree.folders(tree).map(({ id, label }) => ({ id, label })),
+      };
+    },
+    // Done in the star's popover: the name, and the folder (a new one is made in the bar).
+    saveStar: (id, { title, folderId, newFolder }) => {
+      let tree = settings.data.bookmarks;
+      const found = bookmarkTree.find(tree, id);
+      if (!found || found.node.type !== 'link') return false;
+      let target = folderId ?? found.parent.id;
+      if (newFolder !== undefined) {
+        const made = bookmarkTree.addFolder(tree, 'bar', newFolder);
+        if (!made) return false;
+        tree = made.tree;
+        target = made.id;
+      }
+      if (title !== undefined) tree = bookmarkTree.update(tree, id, { title }) ?? tree;
+      if (target !== found.parent.id) tree = bookmarkTree.move(tree, id, target, 10000) ?? tree;
+      settings.update({ bookmarks: tree, bookmarkFolder: target });
+      broadcastToLibrary('bookmarks:changed');
+      pushState();
+      return true;
+    },
+    removeStar: (id) => {
+      const next = bookmarkTree.remove(settings.data.bookmarks, [id]);
+      if (!next) return false;
+      settings.update({ bookmarks: next });
+      keepBookmarkIcons();
+      notify('Bookmark removed.');
+      broadcastToLibrary('bookmarks:changed');
+      pushState();
+      return true;
+    },
+    // Ctrl+D: the toolbar opens the star's popover.
+    openStar: () => {
+      host.setRevealed(true);
+      ui.webContents.focus();
+      ui.webContents.send('ui:star');
+    },
     toggleBookmarksBar: () => {
       settings.update({ showBookmarksBar: !settings.data.showBookmarksBar });
       host.setBookmarksBar(settings.data.showBookmarksBar);

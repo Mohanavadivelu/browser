@@ -31,6 +31,7 @@ function setup(modeOverrides = {}) {
   const ui = { webContents: { focus: record('focus'), send: record('send') } };
   const actions = {
     toggleBookmark: record('bookmark'),
+    openStar: record('openStar'),
     zoom: record('zoom'),
     find: record('find'),
     openLibrary: record('openLibrary'),
@@ -83,6 +84,12 @@ test('Ctrl+Shift+M adds a marker to the recording', () => {
   const { calls, press } = setup();
   assert.equal(press({ key: 'M', control: true, shift: true }), true);
   assert.deepEqual(calls.map((call) => call[0]), ['addMarker']);
+});
+
+test('Ctrl+D opens the star popover for the page', () => {
+  const { calls, press } = setup();
+  assert.equal(press({ key: 'd', control: true }), true);
+  assert.deepEqual(calls.map((call) => call[0]), ['openStar']);
 });
 
 test('Ctrl+Shift+B shows or hides the bookmarks bar', () => {

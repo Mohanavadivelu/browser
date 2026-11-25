@@ -42,7 +42,9 @@ contextBridge.exposeInMainWorld('browserApi', {
     showMenu: () => invoke('window:menu'),
   },
   bookmarks: {
-    toggle: () => invoke('bookmarks:toggle'),
+    star: () => invoke('bookmarks:star'),
+    starSave: (id, patch) => invoke('bookmarks:star-save', id, patch),
+    starRemove: (id) => invoke('bookmarks:star-remove', id),
     folderMenu: (id, x, y) => invoke('bookmarks:folder-menu', id, x, y),
     itemsMenu: (ids, x, y) => invoke('bookmarks:items-menu', ids, x, y),
     contextMenu: (id, x, y) => invoke('bookmarks:context-menu', id, x, y),
@@ -109,6 +111,7 @@ contextBridge.exposeInMainWorld('browserApi', {
   onState: (callback) => subscribe('ui:state', callback),
   onNotice: (callback) => subscribe('ui:notice', callback),
   onFocusAddress: (callback) => subscribe('ui:focus-address', callback),
+  onStar: (callback) => subscribe('ui:star', callback),
   onRecordingCommand: (callback) => subscribe('recording:command', callback),
   onFindResult: (callback) => subscribe('find:result', callback),
   onFindFocus: (callback) => subscribe('find:focus', callback),

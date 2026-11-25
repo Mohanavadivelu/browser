@@ -44,6 +44,22 @@
     <div class="bookmarks" id="bookmarks"></div>
     <div class="loading" id="loading"></div>
   </div>
+  <section id="starPopover" class="star-popover" role="dialog" aria-labelledby="starTitle" hidden>
+    <h2 id="starTitle">Bookmark added</h2>
+    <label class="field">Name
+      <input id="starName" type="text" maxlength="200" spellcheck="false">
+    </label>
+    <label class="field">Folder
+      <select id="starFolder"></select>
+    </label>
+    <label class="field" id="starNewFolderField" hidden>New folder name (in the Bookmarks bar)
+      <input id="starNewFolder" type="text" maxlength="200" spellcheck="false" value="New folder">
+    </label>
+    <div class="star-actions">
+      <button id="starRemove" type="button" class="danger">Remove</button>
+      <button id="starDone" type="button" class="primary">Done</button>
+    </div>
+  </section>
   <script src="app.js"></script>
 </body>
 </html>

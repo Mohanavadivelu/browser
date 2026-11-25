@@ -25,6 +25,12 @@ const validators = {
   bookmarkMove: (...args) => args.length === 3 && isId(args[0]) && isId(args[1]) &&
     Number.isInteger(args[2]) && args[2] >= 0 && args[2] <= 10000,
   idList: (...args) => args.length === 1 && Array.isArray(args[0]) && args[0].length > 0 && args[0].length <= 5000 && args[0].every(isId),
+  // Done in the star's popover: a bookmark's id and { title?, folderId?, newFolder? }.
+  starSave: (...args) => args.length === 2 && isId(args[0]) && args[1] !== null && typeof args[1] === 'object' &&
+    !Array.isArray(args[1]) && Object.keys(args[1]).every((key) => ['title', 'folderId', 'newFolder'].includes(key)) &&
+    (args[1].title === undefined || (typeof args[1].title === 'string' && args[1].title.length <= 2048)) &&
+    (args[1].folderId === undefined || isId(args[1].folderId)) &&
+    (args[1].newFolder === undefined || (typeof args[1].newFolder === 'string' && args[1].newFolder.length <= 2048)),
   idListAt: (...args) => args.length === 3 && Array.isArray(args[0]) && args[0].length > 0 && args[0].length <= 1000 &&
     args[0].every(isId) && [args[1], args[2]].every((n) => Number.isInteger(n) && n >= 0 && n <= 20000),
   urlList: (...args) => args.length === 1 && Array.isArray(args[0]) && args[0].length <= 5000 &&

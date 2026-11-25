@@ -496,6 +496,75 @@ async function main() {
   settings.update({ bookmarks: [], bookmarkFolder: 'bar' });
   tabs.activate(barTab.id);
 
+  // ---------- The star's popover ----------
+  const popTab = tabs.order.map((id) => tabs.tabs.get(id)).find((tab) => tab.kind === 'web' && !tab.isPrivate);
+  settings.update({ bookmarks: { bar: { children: [{ type: 'folder', title: 'Work', children: [] }] }, other: { children: [] } }, bookmarkFolder: 'bar' });
+  tabs.activate(popTab.id);
+  await load(`${base}/star-page`, popTab);
+  const workFolderId = () => settings.data.bookmarks.bar.children.find((node) => node.type === 'folder' && node.title === 'Work')?.id;
+  const starLink = () => bookmarkTree.links(settings.data.bookmarks).find((link) => link.url === `${base}/star-page`) ?? null;
+  const popover = () => evalIn(ui, `(() => ({
+    open: !document.getElementById('starPopover').hidden,
+    title: document.getElementById('starTitle').textContent,
+    name: document.getElementById('starName').value,
+    folder: document.getElementById('starFolder').value,
+  }))()`);
+  const clickStar = async () => {
+    await evalIn(ui, "document.getElementById('star').click()");
+    await waitFor(async () => (await popover()).open, 'star popover open', 3000).catch(() => {});
+  };
+  const pressInPopover = (field, key) => evalIn(ui, `document.getElementById(${JSON.stringify(field)}).dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }))`);
+
+  await clickStar();
+  const opened = await popover();
+  check('☆ bookmarks the page and opens the popover', opened.open && opened.title === 'Bookmark added' && Boolean(starLink()) &&
+    opened.folder === 'bar' && ui.getBounds().height > 116, `${JSON.stringify(opened)}, toolbar ${ui.getBounds().height}`);
+  await evalIn(ui, `(() => {
+    document.getElementById('starName').value = 'Starred page';
+    const folder = document.getElementById('starFolder');
+    folder.value = ${JSON.stringify(workFolderId())};
+    folder.dispatchEvent(new Event('change'));
+    document.getElementById('starDone').click();
+  })()`);
+  await waitFor(() => starLink()?.title === 'Starred page', 'star saved', 3000).catch(() => {});
+  check('Done saves the name and the folder', starLink()?.title === 'Starred page' && starLink().folder === 'Bookmarks bar › Work' &&
+    settings.data.bookmarkFolder === workFolderId(), JSON.stringify(starLink()));
+  await waitFor(() => ui.getBounds().height === 116, 'popover room given back', 3000).catch(() => {});
+  check('the popover closes and the page gets its room back', ui.getBounds().height === 116 && !(await popover()).open);
+
+  await clickStar();
+  const editing = await popover();
+  check('★ on a bookmarked page opens it for editing', editing.title === 'Edit bookmark' && editing.name === 'Starred page' &&
+    editing.folder === workFolderId(), JSON.stringify(editing));
+  await evalIn(ui, "document.getElementById('starName').value = 'Not saved'");
+  await pressInPopover('starName', 'Escape');
+  await sleep(300);
+  check('Esc closes it without saving changes', !(await popover()).open && starLink()?.title === 'Starred page');
+
+  await clickStar();
+  await evalIn(ui, `(() => {
+    const folder = document.getElementById('starFolder');
+    folder.value = '__new__';
+    folder.dispatchEvent(new Event('change'));
+    document.getElementById('starNewFolder').value = 'Fresh';
+  })()`);
+  await pressInPopover('starNewFolder', 'Enter');
+  await waitFor(() => starLink()?.folder === 'Bookmarks bar › Fresh', 'new folder from the popover', 3000).catch(() => {});
+  check('a new folder can be made from the popover', starLink()?.folder === 'Bookmarks bar › Fresh', JSON.stringify(starLink()));
+
+  await clickStar();
+  await evalIn(ui, "document.getElementById('starRemove').click()");
+  await waitFor(() => !starLink(), 'removed from the popover', 3000).catch(() => {});
+  await waitFor(async () => (await evalIn(ui, "document.getElementById('star').textContent")) === '☆', 'star empty', 3000).catch(() => {});
+  check('Remove deletes the bookmark', !starLink() && (await evalIn(ui, "document.getElementById('star').textContent")) === '☆');
+
+  actions.openStar(); // Ctrl+D
+  await waitFor(async () => (await popover()).open, 'Ctrl+D popover', 3000).catch(() => {});
+  check('Ctrl+D bookmarks the page and opens the popover', (await popover()).open && Boolean(starLink()));
+  await pressInPopover('starName', 'Escape');
+  settings.update({ bookmarks: [], bookmarkFolder: 'bar' });
+  tabs.activate(popTab.id);
+
   // ---------- Ad and tracker blocking ----------
   const adTab = tabs.create({ url: `${base}/ad-page` });
   await waitFor(() => adTab.view.webContents.getURL().endsWith('/ad-page') && !adTab.view.webContents.isLoading(), 'ad page loaded');

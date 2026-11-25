@@ -40,7 +40,7 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
       host.setRevealed(true);
       ui.webContents.focus();
       ui.webContents.send('ui:focus-address');
-    } else if (ctrl && !input.shift && key === 'd') actions.toggleBookmark();
+    } else if (ctrl && !input.shift && key === 'd') actions.openStar();
     else if ((ctrl && !input.shift && key === 'r') || input.key === 'F5') tabs.reload();
     else if (input.alt && input.key === 'ArrowLeft') tabs.back();
     else if (input.alt && input.key === 'ArrowRight') tabs.forward();

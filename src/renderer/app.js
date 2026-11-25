@@ -9,6 +9,10 @@ let pointerInside = false;
 let noticeTimer;
 let hideTimer;
 
+function activeTabUrl(view) {
+  return view.tabs.find((tab) => tab.id === view.activeId)?.url ?? '';
+}
+
 function activeTab() {
   return state?.tabs.find((tab) => tab.id === state.activeId) ?? null;
 }
@@ -537,7 +541,8 @@ $('back').addEventListener('click', () => api.nav.back());
 $('forward').addEventListener('click', () => api.nav.forward());
 $('reload').addEventListener('click', () => (activeTab()?.loading ? api.nav.stop() : api.nav.reload()));
 $('home').addEventListener('click', () => api.nav.home());
-$('star').addEventListener('click', () => api.bookmarks.toggle());
+$('star').addEventListener('click', openStar);
+api.onStar(openStar);
 $('zoom').addEventListener('click', () => api.zoom.reset());
 $('shield').addEventListener('click', () => api.blocker.toggleSite());
 $('shot').addEventListener('click', () => api.screenshot());
@@ -547,6 +552,92 @@ $('recStop').addEventListener('click', stopRecording);
 $('recMark').addEventListener('click', () => api.recording.mark());
 $('fullscreen').addEventListener('click', () => api.window.toggleFullscreen());
 $('menu').addEventListener('click', () => api.window.showMenu());
+
+// ---------- Room below the bars ----------
+// The suggestion list and the star's popover hang below the bars, over the page; the toolbar's
+// view grows by the most either of them needs.
+const overlayHeights = { suggestions: 0, star: 0 };
+function requestOverlay(name, height) {
+  overlayHeights[name] = Math.max(0, Math.min(Math.ceil(height), 1000));
+  api.window.setSuggestionsHeight(Math.max(...Object.values(overlayHeights)));
+}
+
+// ---------- The star's popover ----------
+// ☆ or Ctrl+D bookmarks the page (into the folder used last) and opens this; ★ opens it to edit.
+// Done, Enter or a click elsewhere saves; Esc closes without saving changes; Remove deletes.
+let starBookmark = null;
+const NEW_FOLDER = '__new__';
+
+async function openStar() {
+  if (starBookmark) {
+    await closeStar(true);
+    return;
+  }
+  const info = await api.bookmarks.star();
+  if (!info) return;
+  starBookmark = info;
+  $('starTitle').textContent = info.added ? 'Bookmark added' : 'Edit bookmark';
+  $('starName').value = info.title;
+  const folders = $('starFolder');
+  folders.replaceChildren(...info.folders.map(({ id, label }) => {
+    const option = element('option', undefined, label);
+    option.value = id;
+    return option;
+  }), Object.assign(element('option', undefined, 'New folder…'), { value: NEW_FOLDER }));
+  folders.value = info.folderId;
+  $('starNewFolderField').hidden = true;
+  const popover = $('starPopover');
+  popover.hidden = false;
+  // Right edge under the star, never off the window's left edge.
+  const star = $('star').getBoundingClientRect();
+  popover.style.top = `${Math.round(star.bottom + 10)}px`;
+  popover.style.left = `${Math.max(8, Math.round(star.right + 12 - popover.offsetWidth))}px`;
+  requestOverlay('star', popover.getBoundingClientRect().bottom + 12 - document.querySelector('.chrome').offsetHeight);
+  $('starName').focus();
+  $('starName').select();
+}
+
+async function closeStar(save) {
+  const bookmark = starBookmark;
+  if (!bookmark) return;
+  starBookmark = null;
+  $('starPopover').hidden = true;
+  requestOverlay('star', 0);
+  if (!save) return;
+  const patch = { title: $('starName').value };
+  if ($('starFolder').value === NEW_FOLDER) patch.newFolder = $('starNewFolder').value;
+  else patch.folderId = $('starFolder').value;
+  await api.bookmarks.starSave(bookmark.id, patch);
+}
+
+$('starFolder').addEventListener('change', () => {
+  const making = $('starFolder').value === NEW_FOLDER;
+  $('starNewFolderField').hidden = !making;
+  requestOverlay('star', $('starPopover').getBoundingClientRect().bottom + 12 - document.querySelector('.chrome').offsetHeight);
+  if (making) {
+    $('starNewFolder').focus();
+    $('starNewFolder').select();
+  }
+});
+$('starDone').addEventListener('click', () => closeStar(true));
+$('starRemove').addEventListener('click', async () => {
+  const bookmark = starBookmark;
+  await closeStar(false);
+  if (bookmark) api.bookmarks.starRemove(bookmark.id);
+});
+$('starPopover').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+    event.preventDefault();
+    closeStar(true);
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    closeStar(false);
+  }
+});
+// A click anywhere else in the bars saves and closes it.
+document.addEventListener('mousedown', (event) => {
+  if (starBookmark && !$('starPopover').contains(event.target) && event.target !== $('star')) closeStar(true);
+});
 
 // ---------- Address-bar suggestions ----------
 // The first suggestion is what the typed text does on its own; the arrow keys move through
@@ -564,7 +655,7 @@ function closeSuggestions() {
   $('suggestions').hidden = true;
   $('suggestions').replaceChildren();
   $('address').setAttribute('aria-expanded', 'false');
-  api.window.setSuggestionsHeight(0);
+  requestOverlay('suggestions', 0);
 }
 
 function renderSuggestions() {
@@ -587,7 +678,7 @@ function renderSuggestions() {
   list.hidden = false;
   $('address').setAttribute('aria-expanded', 'true');
   const needed = Math.ceil(list.getBoundingClientRect().bottom + 8 - document.querySelector('.chrome').offsetHeight);
-  api.window.setSuggestionsHeight(Math.max(0, Math.min(needed, 1000)));
+  requestOverlay('suggestions', needed);
 }
 
 function querySuggestions() {
@@ -657,6 +748,8 @@ document.documentElement.addEventListener('mouseleave', () => {
 });
 
 api.onState((next) => {
+  // Moving to another tab (or page) saves and closes the star's popover.
+  if (starBookmark && state && (next.activeId !== state.activeId || activeTabUrl(next) !== activeTabUrl(state))) closeStar(true);
   state = next;
   // The main process ended the recording on its own (a write error, or the toolbar did not stop
   // in time): stop a capture that is still running, so it does not keep going unseen.
