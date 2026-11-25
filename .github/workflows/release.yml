@@ -34,6 +34,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Electron
+        run: node -e "console.log(require('electron'))"
+
       - name: Unit tests
         run: npm test
 

@@ -16,7 +16,7 @@ const { askRecordingConsent } = require('./recording/consent');
 const { publicQualities } = require('./recording/quality');
 const { RecordingIndex } = require('./recording/library');
 const { saveScreenshot } = require('./recording/storage');
-const { sanitizeBaseName } = require('./recording/library');
+const { pdfFileName } = require('./recording/library');
 const { registerMediaScheme, serveRecordings } = require('./recording/media-server');
 const { ContentBlocker, hostOf } = require('./blocker');
 const bookmarkTree = require('./bookmarks');
@@ -48,12 +48,6 @@ const BLOCK_MESSAGES = {
   'too-long': 'That address is too long.',
 };
 const EDIT_COMMANDS = new Set(['cut', 'copy', 'paste', 'selectAll']);
-
-// A file name from the page title, without characters Windows forbids ("Q3: sales" -> "Q3 sales.pdf");
-// pages without a usable title get "page.pdf".
-function pdfFileName(title) {
-  return `${sanitizeBaseName(title)?.replace(/\s+/g, ' ') ?? 'page'}.pdf`;
-}
 
 function cleanUserAgent(userAgent) {
   return userAgent.replace(/\s?Electron\/\S+/, '').replace(/\s?simple-browser\/\S+/i, '');
@@ -606,4 +600,4 @@ async function start(options = {}) {
   };
 }
 
-module.exports = { start, pdfFileName };
+module.exports = { start };

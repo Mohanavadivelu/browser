@@ -1,7 +1,5 @@
 'use strict';
 
-const { dialog } = require('electron');
-
 // What the consent dialog says; with narration on, it also says the microphone is recorded.
 function consentDialogOptions({ microphone = false } = {}) {
   return {
@@ -23,7 +21,9 @@ function consentDialogOptions({ microphone = false } = {}) {
 }
 
 // Native dialog, so web content can never fake or skip the consent step.
+// Electron is loaded here, not at the top, so the dialog text can be tested without it.
 async function askRecordingConsent(win, options) {
+  const { dialog } = require('electron');
   const { response, checkboxChecked } = await dialog.showMessageBox(win, consentDialogOptions(options));
   if (response !== 0) return { granted: false };
   return checkboxChecked ? { granted: true } : { granted: false, reason: 'unchecked' };

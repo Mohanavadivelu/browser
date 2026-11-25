@@ -368,7 +368,7 @@ test('history skips jumps within a page but keeps single-page app page changes',
 });
 
 test('a PDF is named after its page, without characters Windows forbids', () => {
-  const { pdfFileName } = require('../../src/main/app');
+  const { pdfFileName } = require('../../src/main/recording/library');
   assert.equal(pdfFileName('Q3: sales / plan'), 'Q3 sales plan.pdf');
   assert.equal(pdfFileName('  '), 'page.pdf');
   assert.equal(pdfFileName('CON'), 'page.pdf');

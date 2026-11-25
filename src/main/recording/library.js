@@ -15,6 +15,12 @@ function isSafeName(folder, name) {
   return path.dirname(path.resolve(folder, name)) === path.resolve(folder);
 }
 
+// A file name from a page title, without characters Windows forbids ("Q3: sales" -> "Q3 sales.pdf");
+// pages without a usable title get "page.pdf".
+function pdfFileName(title) {
+  return `${sanitizeBaseName(title)?.replace(/\s+/g, ' ') ?? 'page'}.pdf`;
+}
+
 function sanitizeBaseName(text) {
   const cleaned = String(text ?? '')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
@@ -239,6 +245,6 @@ async function joinRecording(folder, name, index, write) {
 }
 
 module.exports = {
-  isSafeName, sanitizeBaseName, RecordingIndex, listRecordings, renameRecording, deleteRecording,
+  isSafeName, sanitizeBaseName, pdfFileName, RecordingIndex, listRecordings, renameRecording, deleteRecording,
   freeName, partsOf, trimRecording, joinRecording,
 };

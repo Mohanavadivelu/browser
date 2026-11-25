@@ -30,6 +30,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron fetches its binary on first use; doing it once here keeps test files that run
+      # in parallel from racing to install it.
+      - name: Install Electron
+        run: node -e "console.log(require('electron'))"
+
       - name: Unit tests
         run: npm test
 
