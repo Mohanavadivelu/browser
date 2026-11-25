@@ -375,3 +375,11 @@ test('a PDF is named after its page, without characters Windows forbids', () => 
   assert.equal(pdfFileName(undefined), 'page.pdf');
   assert.ok(pdfFileName('x'.repeat(300)).length <= 104);
 });
+
+test('a recording can stop by itself after a chosen number of minutes, or never', () => {
+  const { sanitizeSettings, STOP_AFTER_CHOICES } = require('../../src/main/storage/settings');
+  assert.equal(sanitizeSettings({}).recordingStopAfter, 0);
+  assert.equal(sanitizeSettings({ recordingStopAfter: 30 }).recordingStopAfter, 30);
+  for (const bad of [7, -5, '30', 100000, null]) assert.equal(sanitizeSettings({ recordingStopAfter: bad }).recordingStopAfter, 0, String(bad));
+  assert.deepEqual(STOP_AFTER_CHOICES.slice(0, 3), [0, 5, 10]);
+});

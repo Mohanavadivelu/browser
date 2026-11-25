@@ -9,7 +9,7 @@ const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
 const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
-const { MAX_BOOKMARKS } = require('./storage/settings');
+const { MAX_BOOKMARKS, STOP_AFTER_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
@@ -44,6 +44,7 @@ function registerIpcHandlers(ipc, ctx) {
     recordingFolder: getRecordingFolder(),
     engines: Object.entries(SEARCH_ENGINES).map(([key, engine]) => ({ key, name: engine.name })),
     qualities: publicQualities(),
+    stopAfterChoices: STOP_AFTER_CHOICES,
   });
 
   // Tabs and navigation

@@ -9,10 +9,13 @@ function elapsedMs() {
 
 function render() {
   if (!recording?.active) return;
-  const seconds = Math.max(0, Math.floor(elapsedMs() / 1000));
   const pad = (value) => String(value).padStart(2, '0');
-  document.getElementById('time').textContent =
-    `${recording.paused ? 'PAUSED' : 'REC'} ${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+  const clock = (ms) => {
+    const seconds = Math.max(0, Math.floor(ms / 1000));
+    return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+  };
+  const limit = recording.limitMs ? ` / ${clock(recording.limitMs)}` : '';
+  document.getElementById('time').textContent = `${recording.paused ? 'PAUSED' : 'REC'} ${clock(elapsedMs())}${limit}`;
   document.getElementById('pause').textContent = recording.paused ? 'Resume' : 'Pause';
   document.getElementById('pill').classList.toggle('paused', recording.paused);
 }

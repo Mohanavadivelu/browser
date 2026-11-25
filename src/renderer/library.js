@@ -422,6 +422,10 @@ function renderSettings(settings) {
   fillSelect($('recordingQuality'), settings.qualities.map((quality) => ({ key: quality.key, label: quality.label })), settings.recordingQuality);
   $('qualityHint').textContent = settings.qualities.find((quality) => quality.key === settings.recordingQuality)?.description ?? '';
   $('recordingFollowTab').checked = settings.recordingFollowTab;
+  fillSelect($('recordingStopAfter'), settings.stopAfterChoices.map((minutes) => ({
+    key: String(minutes),
+    label: minutes === 0 ? 'Never' : minutes < 60 || minutes % 60 ? `${minutes} minutes` : `${minutes / 60} hour${minutes === 60 ? '' : 's'}`,
+  })), String(settings.recordingStopAfter));
   $('blockTrackers').checked = settings.blockTrackers;
   $('checkForUpdates').checked = settings.checkForUpdates;
   const sites = $('allowedSites');
@@ -464,6 +468,7 @@ function bindSettings() {
     $('updatesMessage').textContent = result.mode === 'off' ? 'Updates are not checked when running from source.' : messages[result.status] ?? '';
   });
   $('recordingQuality').addEventListener('change', () => saveSetting({ recordingQuality: $('recordingQuality').value }));
+  $('recordingStopAfter').addEventListener('change', () => saveSetting({ recordingStopAfter: Number($('recordingStopAfter').value) }));
   $('recordingFollowTab').addEventListener('change', () => saveSetting({ recordingFollowTab: $('recordingFollowTab').checked }));
   $('folderChange').addEventListener('click', async () => renderSettings(await api.settings.chooseFolder()));
   $('folderOpen').addEventListener('click', () => api.recordings.openFolder());

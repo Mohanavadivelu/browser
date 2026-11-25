@@ -176,9 +176,14 @@ function elapsedMs(recording) {
 }
 
 function formatElapsed(recording) {
-  const seconds = Math.max(0, Math.floor(elapsedMs(recording) / 1000));
   const pad = (value) => String(value).padStart(2, '0');
-  return `${recording.paused ? 'PAUSED' : 'REC'} ${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+  const clock = (ms) => {
+    const seconds = Math.max(0, Math.floor(ms / 1000));
+    return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+  };
+  // "REC 01:12 / 30:00" while a stop-after limit is set.
+  const limit = recording.limitMs ? ` / ${clock(recording.limitMs)}` : '';
+  return `${recording.paused ? 'PAUSED' : 'REC'} ${clock(elapsedMs(recording))}${limit}`;
 }
 
 function renderRecording() {

@@ -13,9 +13,11 @@ const ZOOM_RANGE = [0.25, 5];
 // Only these keys can be changed from the settings page.
 const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
-  'checkForUpdates',
+  'checkForUpdates', 'recordingStopAfter',
 ]);
 const MAX_ALLOWED_SITES = 500;
+// Minutes after which a recording stops by itself; 0 is never.
+const STOP_AFTER_CHOICES = Object.freeze([0, 5, 10, 15, 30, 45, 60, 90, 120, 180]);
 const HOST_NAME = /^[a-z0-9.-]{1,253}$/;
 
 // Sites where the user turned ad and tracker blocking off: plain lower-case host names.
@@ -64,6 +66,7 @@ function sanitizeSettings(raw) {
     restoreTabs: source.restoreTabs === true,
     recordingQuality: Object.hasOwn(QUALITY, source.recordingQuality) ? source.recordingQuality : DEFAULT_QUALITY,
     recordingFollowTab: source.recordingFollowTab !== false,
+    recordingStopAfter: STOP_AFTER_CHOICES.includes(source.recordingStopAfter) ? source.recordingStopAfter : 0,
     blockTrackers: source.blockTrackers !== false,
     checkForUpdates: source.checkForUpdates !== false,
     blockerAllowedSites: sanitizeSites(source.blockerAllowedSites),
@@ -108,4 +111,4 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, MAX_BOOKMARKS };
+module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, MAX_BOOKMARKS, STOP_AFTER_CHOICES };

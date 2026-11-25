@@ -99,6 +99,7 @@ async function main() {
     // The last check closes the window; keep the app running to report the results.
     quitOnClose: false,
     dialog: stubDialog(dialogTargets),
+    minuteMs: 600, // a "minute" of 0.6 s for the stop-after check
   });
   const { host, tabs, recorder, settings, history, ui, find, actions, recordingsIndex } = ctx;
   const bytes = trackBytes(recorder);
@@ -629,6 +630,23 @@ async function main() {
   const offFiles = fs.readdirSync(recordingsFolder).filter((f) => f.endsWith('.webm') && !beforeOff.has(f));
   check('with follow off, switching tabs keeps a single file', offFiles.length === 1, offFiles.join(', '));
   settings.update({ recordingFollowTab: true });
+
+  // ---------- Stop after a set time ----------
+  settings.update({ recordingStopAfter: 5 }); // 5 test "minutes" = 3 s
+  const beforeAutoStop = new Set(fs.readdirSync(recordingsFolder));
+  tabs.activate(tabA.id);
+  await startRecording();
+  await waitFor(() => recorder.active, 'recording started (stop after)');
+  await waitFor(async () => / \/ 00:03$/.test(await evalIn(ui, "document.getElementById('recTime').textContent")), 'limit on the badge', 3000).catch(() => {});
+  const limitBadge = await evalIn(ui, "document.getElementById('recTime').textContent");
+  await waitFor(() => !recorder.active, 'recording stopped by itself', 10000).catch(() => {});
+  await sleep(500);
+  const autoStoppedFile = fs.readdirSync(recordingsFolder).find((f) => f.endsWith('.webm') && !beforeAutoStop.has(f));
+  const autoStoppedLength = autoStoppedFile ? recordingsIndex.get(autoStoppedFile) : null;
+  check('a recording stops by itself after the time set in Settings', !recorder.active && autoStoppedLength > 500 && autoStoppedLength <= 3300 &&
+    noticeLike(/stopped after 5 min, as set in Settings, and saved/), `${limitBadge}; ${autoStoppedLength} ms`);
+  check('the REC badge shows the limit', / \/ 00:03$/.test(limitBadge), limitBadge);
+  settings.update({ recordingStopAfter: 0 });
 
   // ---------- Pause pressed while the recording moves to another tab ----------
   tabs.activate(tabA.id);

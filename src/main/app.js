@@ -35,6 +35,7 @@ const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
 const SESSION_SAVE_DELAY_MS = 1000;
 const DOWNLOAD_BROADCAST_MS = 200;
 const BLOCKER_FIRST_UPDATE_MS = 10_000;
+const AUTO_STOP_CHECK_MS = 250;
 const BLOCKER_CHECK_MS = 6 * 60 * 60 * 1000;
 // How long the toolbar gets to stop its capture and send the last chunks before the recording
 // is closed without them.
@@ -140,7 +141,7 @@ async function start(options = {}) {
     fullscreen: host.mode.fullscreen,
     htmlFullscreen: host.mode.htmlFullscreen,
     revealed: host.mode.revealed,
-    recording: recorder.info,
+    recording: { ...recorder.info, limitMs: recordingLimitMs() },
     recordingQuality: settings.data.recordingQuality,
     qualities: publicQualities(),
     bookmarks: settings.data.bookmarks,
@@ -190,7 +191,10 @@ async function start(options = {}) {
       recordingsIndex.set(path.basename(filePath), durationMs);
       recordingsIndex.setMarkers(path.basename(filePath), markers);
       // After a write error the error notice stays up instead of a "saved" message.
-      if (final && !failed) notify(`Recording saved: ${filePath}`);
+      if (final && !failed) {
+        notify(autoStopped ? `Recording stopped after ${autoStopped} min, as set in Settings, and saved: ${filePath}` : `Recording saved: ${filePath}`);
+      }
+      if (final) autoStopped = 0;
       broadcastToLibrary('recordings:changed');
     },
   });
@@ -208,6 +212,20 @@ async function start(options = {}) {
   });
   updates.on('change', () => pushState());
   updates.start();
+
+  // Stops a recording once it reaches the length chosen in Settings (paused time does not
+  // count). `options.minuteMs` shortens a "minute" in tests.
+  const minuteMs = options.minuteMs ?? 60_000;
+  function recordingLimitMs() {
+    return settings.data.recordingStopAfter * minuteMs;
+  }
+  let autoStopped = 0; // the limit in minutes, while a recording it stopped is being saved
+  setInterval(() => {
+    const limit = recordingLimitMs();
+    if (!limit || !recorder.active || autoStopped || recorder.clock.elapsed() < limit) return;
+    autoStopped = settings.data.recordingStopAfter;
+    stopCapture().catch((error) => console.error(`Could not stop the recording: ${error.message}`));
+  }, AUTO_STOP_CHECK_MS).unref?.();
 
   // Asks the toolbar to stop its capture, so the chunks it still holds are written, and makes
   // sure the recording ends even if the toolbar does not answer in time.
