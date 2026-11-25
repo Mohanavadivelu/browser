@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
+
+Bookmark menus that match the browser, dragging on the bookmarks bar, and a browser whose own pages no longer run as local files.
 
 ### New
 

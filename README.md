@@ -127,6 +127,8 @@ The Release workflow then runs all tests on Windows, builds the installer and po
 
 ## Status
 
+Version 0.8.0: dark bookmark menus with subfolders, dragging bookmarks along the bar, a ⋯ menu and a Move to… dialog on the Bookmarks page, Copy address; the browser's own pages are served from `app://` so the last Electron fuse is off. See [CHANGELOG.md](CHANGELOG.md).
+
 Version 0.7.0: bookmarks in folders, a new Bookmarks page (tree, search, drag and drop, bulk actions), a bookmarks bar with icons, folder menus and an overflow menu, and a star popover to name and file a bookmark. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.6.0: recordings you can work with: a player with thumbnails, trimming, joining parts, markers saved as chapters, stopping after a set time, and optional microphone narration.
