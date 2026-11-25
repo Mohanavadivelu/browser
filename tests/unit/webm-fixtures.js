@@ -29,14 +29,14 @@ function simpleBlock(track, relative, key, marker = 0, payload = 20) {
   return el(0xA3, head, Buffer.alloc(payload, marker));
 }
 
-function header({ videoCodec = 'V_VP9' } = {}) {
+function header({ videoCodec = 'V_VP9', video = 1, audio = 2 } = {}) {
   return Buffer.concat([
     el(0x1A45DFA3, uint(0x4286, 1), el(0x4282, 'webm')),
     Buffer.from([0x18, 0x53, 0x80, 0x67]), UNKNOWN,
     el(0x1549A966, uint(0x2AD7B1, 1000000), el(0x4D80, 'Chrome'), el(0x5741, 'Chrome')),
     el(0x1654AE6B,
-      el(0xAE, uint(0xD7, 1), uint(0x83, 1), el(0x86, videoCodec)),
-      el(0xAE, uint(0xD7, 2), uint(0x83, 2), el(0x86, 'A_OPUS'))),
+      el(0xAE, uint(0xD7, video), uint(0x83, 1), el(0x86, videoCodec)),
+      el(0xAE, uint(0xD7, audio), uint(0x83, 2), el(0x86, 'A_OPUS'))),
   ]);
 }
 

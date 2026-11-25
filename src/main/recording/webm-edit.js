@@ -150,6 +150,8 @@ function blockInfo(data, simple) {
   if (!track || track.invalid || data.length < track.length + 3) return null;
   return {
     track: track.value,
+    trackAt: 0,
+    trackLength: track.length,
     relativeAt: track.length,
     relative: data.readInt16BE(track.length),
     key: simple && Boolean(data[track.length + 2] & 0x80),
@@ -200,7 +202,11 @@ async function* readClusters(recording) {
       } else if (child.id === ID.BlockGroup) {
         const block = (children(data, 0, data.length) ?? []).find((part) => part.id === ID.Block);
         const info = block && blockInfo(data.subarray(block.dataStart, block.dataStart + block.size), false);
-        if (info) cluster.blocks.push({ id: ID.BlockGroup, data, ...info, relativeAt: block.dataStart + info.relativeAt, time: cluster.time + info.relative });
+        if (info) {
+          cluster.blocks.push({
+            id: ID.BlockGroup, data, ...info, trackAt: block.dataStart, relativeAt: block.dataStart + info.relativeAt, time: cluster.time + info.relative,
+          });
+        }
       } else {
         await reader.skip(child.size);
       }
@@ -227,9 +233,26 @@ async function keyframeTimes(filePath) {
   }
 }
 
-function sameFormat(a, b) {
-  const key = (tracks) => JSON.stringify(tracks.map(({ number, type, codec }) => [number, type, codec]).sort());
-  return key(a) === key(b);
+// How a part's track numbers map onto the first part's, matching tracks by kind and codec:
+// Chromium does not keep the order, so one part may number video 1 and audio 2, the next the
+// other way round. Null when a part has a track the first one does not (a different format).
+function trackMap(format, tracks) {
+  const map = new Map();
+  const used = new Set();
+  for (const track of tracks) {
+    const match = format.find((candidate) => !used.has(candidate.number) && candidate.type === track.type && candidate.codec === track.codec);
+    if (!match) return null;
+    used.add(match.number);
+    map.set(track.number, match.number);
+  }
+  return map;
+}
+
+// The block with its track number changed in place (same number of bytes).
+function renumberTrack(data, block, number) {
+  if (number === block.track) return;
+  const bytes = encodeSize(number, block.trackLength);
+  bytes.copy(data, block.trackAt);
 }
 
 // Writes `pieces` one after another into a new file at `outPath` (which must not exist):
@@ -267,9 +290,9 @@ async function writeRecording(outPath, pieces) {
         if (!format) {
           format = recording.trackList;
           await emit(Buffer.concat([recording.ebml, SEGMENT_UNKNOWN, recording.info, recording.tracks.bytes]));
-        } else if (!sameFormat(format, recording.trackList)) {
-          throw new Error('the parts were recorded in different formats');
         }
+        const tracks = trackMap(format, recording.trackList);
+        if (!tracks) throw new Error('the parts were recorded in different formats');
         let last = offset;
         for await (const cluster of readClusters(recording)) {
           if (cluster.time > to) break;
@@ -291,6 +314,7 @@ async function writeRecording(outPath, pieces) {
             }
             const data = Buffer.from(kept[i].data);
             data.writeInt16BE(time - clusterTime, kept[i].relativeAt);
+            renumberTrack(data, kept[i], tracks.get(kept[i].track) ?? kept[i].track);
             parts.push(element(kept[i].id, data));
             last = Math.max(last, time);
           }

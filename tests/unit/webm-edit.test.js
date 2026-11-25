@@ -76,6 +76,21 @@ test('joined parts follow one another in time', async () => {
   assert.deepEqual(file.cues.map((cue) => cue.time), [0, 2005, 3000, 3093, 5098, 6093]);
 });
 
+test('parts whose tracks are numbered the other way round are joined with one numbering', async () => {
+  const folder = temp();
+  const one = saveIndexed(folder, 'x.webm', recording());
+  // Chromium may number audio 1 and video 2 in the next part.
+  const swapped = Buffer.concat([
+    header({ video: 2, audio: 1 }),
+    cluster(0, simpleBlock(2, 0, true, 21), simpleBlock(1, 0, true, 22), simpleBlock(2, 40, false, 23)),
+  ]);
+  const two = saveIndexed(folder, 'x-part2.webm', swapped);
+  const out = path.join(folder, 'joined.webm');
+  await writeRecording(out, [{ path: one }, { path: two }]);
+  const blocks = inspect(fs.readFileSync(out)).blocks.slice(12);
+  assert.deepEqual(blocks.map((b) => [b.marker, b.track]), [[21, 1], [22, 2], [23, 1]], 'video stays track 1, audio track 2');
+});
+
 test('parts recorded in different formats are not joined, and nothing is left behind', async () => {
   const folder = temp();
   const vp9 = saveIndexed(folder, 'x.webm', recording());
