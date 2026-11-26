@@ -472,6 +472,45 @@ async function main() {
   await waitFor(() => Boolean(linkId('Renamed B')), 'bookmark edited', 3000).catch(() => {});
   check('a bookmark can be renamed and given a new address', bookmarkTree.links(settings.data.bookmarks).some((link) => link.title === 'Renamed B' && link.url === `${base}/bm-b2`));
 
+  // The folder tree: collapse a folder's subfolders, and drag folders to nest or reorder them.
+  const subFolder = () => {
+    const walk = (nodes) => {
+      for (const node of nodes.filter((item) => item.type === 'folder')) {
+        const found = node.title === 'Sub' ? node : walk(node.children);
+        if (found) return found;
+      }
+      return null;
+    };
+    return walk(settings.data.bookmarks.bar.children);
+  };
+  const treeIds = () => inBookmarks("[...document.querySelectorAll('#bookmarkFolders .tree-item')].map((item) => item.dataset.id).join(',')");
+  const twisty = (id) => `document.querySelector('#bookmarkFolders [data-id="${id}"]').previousElementSibling`;
+  await inBookmarks(`api.bookmarks.addFolder(${JSON.stringify(workFolder().id)}, 'Sub').then(() => loadBookmarks())`);
+  await waitFor(async () => Boolean(subFolder()) && (await treeIds()).includes(subFolder().id), 'subfolder in the tree', 3000).catch(() => {});
+  const workId = workFolder().id;
+  const subId = subFolder()?.id;
+  check('a subfolder shows in the tree under its folder', (await treeIds()) === `bar,${workId},${subId},other`, await treeIds());
+  await inBookmarks(`${twisty(workId)}.click()`);
+  check('▼ collapses a folder in the tree', (await treeIds()) === `bar,${workId},other` && (await inBookmarks(`${twisty(workId)}.getAttribute('aria-expanded')`)) === 'false', await treeIds());
+  await inBookmarks(`${twisty(workId)}.click()`);
+  check('▶ expands it again', (await treeIds()) === `bar,${workId},${subId},other`, await treeIds());
+  await dragBookmark(`#bookmarkFolders [data-id="${subId}"]`, '#bookmarkFolders [data-id="bar"]', 0.1);
+  await waitFor(() => titlesOf(settings.data.bookmarks.bar.children) === 'Work,Sub', 'folder dropped on the bar', 3000).catch(() => {});
+  check('a folder dragged onto a top folder in the tree moves into it', titlesOf(settings.data.bookmarks.bar.children) === 'Work,Sub', titlesOf(settings.data.bookmarks.bar.children));
+  await dragBookmark(`#bookmarkFolders [data-id="${subId}"]`, `#bookmarkFolders [data-id="${workId}"]`, 0.1);
+  await waitFor(() => titlesOf(settings.data.bookmarks.bar.children) === 'Sub,Work', 'folder dropped before another', 3000).catch(() => {});
+  check('a folder dropped on the top edge of another goes before it', titlesOf(settings.data.bookmarks.bar.children) === 'Sub,Work', titlesOf(settings.data.bookmarks.bar.children));
+  await dragBookmark(`#bookmarkFolders [data-id="${workId}"]`, `#bookmarkFolders [data-id="${subId}"]`, 0.5);
+  await waitFor(() => titlesOf(subFolder()?.children ?? []) === 'Work', 'folder nested', 3000).catch(() => {});
+  check('a folder dropped on the middle of another goes inside it', titlesOf(settings.data.bookmarks.bar.children) === 'Sub' && titlesOf(subFolder().children) === 'Work');
+  await dragBookmark(`#bookmarkFolders [data-id="${subId}"]`, `#bookmarkFolders [data-id="${workId}"]`, 0.5);
+  await sleep(300);
+  check('a folder cannot be dropped into a folder inside it', titlesOf(settings.data.bookmarks.bar.children) === 'Sub' && titlesOf(subFolder().children) === 'Work'
+    && (await inBookmarks("document.querySelectorAll('#bookmarkFolders .drop-into').length")) === 0);
+  // Back as it was: Work on the bar, no Sub.
+  await inBookmarks(`api.bookmarks.move(${JSON.stringify(workId)}, 'bar', 0).then(() => api.bookmarks.remove([${JSON.stringify(subId)}])).then(() => loadBookmarks())`);
+  await waitFor(() => titlesOf(settings.data.bookmarks.bar.children) === 'Work', 'tree restored', 3000).catch(() => {});
+
   // Search looks in every folder.
   await inBookmarks("(() => { const box = document.getElementById('bookmarksSearch'); box.value = 'renamed'; box.dispatchEvent(new Event('input')); })()");
   const searchMeta = await inBookmarks("[...document.querySelectorAll('#bookmarkList .bm-row .meta')].map((m) => m.textContent).join('|')");

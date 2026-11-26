@@ -6,6 +6,7 @@
 
 - **The shield shows what it blocked**: a click on the shield in the address bar opens a panel listing the ads and trackers blocked on the page, grouped by the site they came from and marked **Ad** (EasyList) or **Tracker** (EasyPrivacy). Open a site to see the addresses. The panel's switch turns blocking off or on for the site (the shield used to do that at once), and **Allowed sites** opens Settings.
 - **The address bar completes sites as you type**: typing the start of a site you have bookmarked or visited fills in the rest after the cursor, selected, so typing on replaces it ("doc" → "docs.example.dev/"). Tab or → accepts it, Backspace or Delete removes it, Esc removes it and closes the list, Enter opens the completed site. A space means search, so nothing is completed. Past the site's name it completes to a page you visited. Visited pages count only while history is on.
+- **Bookmarks page folder tree**: ▼ and ▶ collapse and expand a folder's subfolders, and folders can be dragged in the tree to reorder them (drop on a folder's top or bottom edge) or nest them (drop on its middle). A folder cannot be dropped into a folder inside it.
 
 ## 0.8.0
 

@@ -72,9 +72,19 @@ code { padding: 5px 9px; border-radius: 6px; background: var(--bg); font-size: 1
 /* Bookmarks: folder tree, open folder, dragging */
 .bm-layout { display: flex; gap: 20px; align-items: flex-start; }
 .bm-tree { width: 250px; flex: none; padding: 8px; border-radius: 10px; background: var(--panel); display: flex; flex-direction: column; gap: 2px; }
-.tree-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border-radius: 6px; background: none; text-align: left; font-size: 13px; }
-.tree-item:hover { background: var(--hover); }
-.tree-item.active { background: #24406e; color: #fff; }
+.tree-row { display: flex; align-items: center; border-radius: 6px; }
+.tree-row:hover { background: var(--hover); }
+.tree-row.active { background: #24406e; color: #fff; }
+.tree-row.dragging { opacity: .5; }
+.tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.tree-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.twisty { flex: none; width: 20px; height: 32px; padding: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 9px; }
+.twisty:not(:disabled):hover { background: none; color: var(--text); }
+.twisty:disabled { cursor: default; }
+.tree-row.active .twisty { color: #cfe0ff; }
+.tree-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 2px; border-radius: 6px; background: none; color: inherit; text-align: left; font-size: 13px; }
+.tree-item:hover { background: none; }
+.tree-note { margin: 10px 8px 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .tree-item .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-item .count { color: var(--muted); font-size: 11px; }
 .tree-item.active .count { color: #cfe0ff; }

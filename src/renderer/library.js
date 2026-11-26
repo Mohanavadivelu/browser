@@ -75,6 +75,7 @@ let pageIcons = {}; // site icons of bookmarks, by address
 let openFolderId = 'bar';
 const selectedBookmarks = new Set();
 let draggedBookmark = null;
+const collapsedFolders = new Set(); // folders whose subfolders the tree hides, for this visit
 const BOOKMARK_DRAG_TYPE = 'application/x-simple-browser-bookmark';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -218,15 +219,53 @@ function rowDropPlace(row, node, index) {
   };
 }
 
+// A drop on a folder in the tree: into it over its middle (or anywhere on a top folder), else
+// before or after it among its parent's items. Never into the dragged folder or one inside it.
+function treeDropPlace(row, folder) {
+  return (event) => {
+    if (!draggedBookmark || draggedBookmark === folder.id) return null;
+    const target = findBookmark(folder.id);
+    if (!target || target.path.some((part) => part.id === draggedBookmark)) return null;
+    const box = row.getBoundingClientRect();
+    const at = (event.clientY - box.top) / box.height;
+    if (!target.parent || (at > 0.25 && at < 0.75)) return { parentId: folder.id, index: 10000, mark: 'drop-into' };
+    const dragged = findBookmark(draggedBookmark);
+    const sameParent = dragged?.parent?.id === target.parent.id && dragged.index < target.index;
+    const before = at <= 0.5;
+    return { parentId: target.parent.id, index: target.index + (before ? 0 : 1) - (sameParent ? 1 : 0), mark: before ? 'drop-before' : 'drop-after' };
+  };
+}
+
 // ---------- Drawing ----------
 function renderFolderTree() {
   const box = $('bookmarkFolders');
   box.replaceChildren();
+  // The open folder is always shown: the folders around it are expanded.
+  for (const part of findBookmark(openFolderId)?.path ?? []) collapsedFolders.delete(part.id);
   const add = (folder, depth) => {
+    const subfolders = folder.children.filter((node) => node.type === 'folder');
+    const collapsed = collapsedFolders.has(folder.id);
+    const row = element('div', `tree-row${folder.id === openFolderId ? ' active' : ''}`);
+    row.style.paddingLeft = `${4 + depth * 16}px`;
+    const twisty = element('button', 'twisty', subfolders.length ? (collapsed ? '▶' : '▼') : '');
+    twisty.type = 'button';
+    if (subfolders.length) {
+      twisty.setAttribute('aria-expanded', String(!collapsed));
+      twisty.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${folder.title}`);
+      twisty.addEventListener('click', () => {
+        if (collapsed) collapsedFolders.delete(folder.id);
+        else collapsedFolders.add(folder.id);
+        renderFolderTree();
+      });
+    } else {
+      twisty.disabled = true;
+      twisty.setAttribute('aria-hidden', 'true');
+      twisty.tabIndex = -1;
+    }
     const item = element('button', `tree-item${folder.id === openFolderId ? ' active' : ''}`);
     item.type = 'button';
     item.dataset.id = folder.id;
-    item.style.paddingLeft = `${8 + depth * 16}px`;
+    if (folder.id === openFolderId) item.setAttribute('aria-current', 'true');
     item.append(folderSvg(folder.id === 'other'), element('span', 'label', folder.title), element('span', 'count', String(folder.children.length)));
     item.addEventListener('click', () => {
       openFolderId = folder.id;
@@ -234,11 +273,15 @@ function renderFolderTree() {
       $('bookmarksSearch').value = '';
       renderBookmarkPage();
     });
-    acceptBookmarkDrop(item, () => (draggedBookmark && draggedBookmark !== folder.id ? { parentId: folder.id, index: 10000, mark: 'drop-into' } : null));
-    box.append(item);
-    for (const node of folder.children) if (node.type === 'folder') add(node, depth + 1);
+    // Folders (not the two top ones) can be dragged in the tree to nest or reorder them.
+    if (findBookmark(folder.id)?.parent) startBookmarkDrag(row, folder.id);
+    acceptBookmarkDrop(row, treeDropPlace(row, folder));
+    row.append(twisty, item);
+    box.append(row);
+    if (!collapsed) for (const node of subfolders) add(node, depth + 1);
   };
   bookmarkRoots().forEach((root) => add(root, 0));
+  box.append(element('p', 'tree-note', 'Drop a bookmark on a folder to move it there. Drag folders to nest or reorder them.'));
 }
 
 function startBookmarkEdit(row, node) {
