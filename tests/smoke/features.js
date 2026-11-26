@@ -214,6 +214,58 @@ async function main() {
   await waitFor(() => tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/text`, 'suggestion opened', 5000).catch(() => {});
   check('choosing a suggestion opens it', tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/text`);
   await waitFor(() => ui.getBounds().height === 116, 'suggestion list closed', 3000).catch(() => {});
+
+  // ---------- Inline completion ----------
+  // Every page so far is on 127.0.0.1:<port>, so typing "127.0" completes to that site.
+  const site = `${new URL(base).host}/`;
+  const addressBar = () => evalIn(ui, `(() => { const a = document.getElementById('address');
+    return { value: a.value, start: a.selectionStart, end: a.selectionEnd, hint: !document.getElementById('completeHint').hidden,
+      first: document.querySelector('#suggestions .suggestion')?.textContent ?? '' }; })()`);
+  const press = (keyCode) => ui.webContents.sendInputEvent({ type: 'keyDown', keyCode });
+  const typeText = (text) => ui.webContents.insertText(text);
+  const startTyping = async () => {
+    ui.webContents.focus();
+    await evalIn(ui, "(() => { const a = document.getElementById('address'); a.focus(); a.value = ''; })()");
+  };
+  await startTyping();
+  await typeText('127.0');
+  await waitFor(async () => (await addressBar()).value === site, 'completion shown', 5000).catch(() => {});
+  let bar = await addressBar();
+  check('typing the start of a visited site fills in the rest, selected', bar.value === site && bar.start === 5 && bar.end === site.length && bar.hint,
+    JSON.stringify(bar));
+  check('the completed site is the first suggestion', bar.first.includes(site), bar.first);
+  await typeText('.');
+  bar = await addressBar();
+  check('typing the next letter of the completion keeps it', bar.value === site && bar.start === 6 && bar.end === site.length, JSON.stringify(bar));
+  press('Backspace');
+  await sleep(400);
+  bar = await addressBar();
+  check('Backspace removes the completion and does not bring it back', bar.value === '127.0.' && bar.start === 6 && !bar.hint && !bar.first.includes(site),
+    JSON.stringify(bar));
+  await typeText('0');
+  await waitFor(async () => (await addressBar()).value === site, 'completion again', 5000).catch(() => {});
+  press('Tab');
+  await sleep(100);
+  bar = await addressBar();
+  check('Tab accepts the completion', bar.value === site && bar.start === site.length && bar.end === site.length && !bar.hint, JSON.stringify(bar));
+  await evalIn(ui, "document.getElementById('addressForm').requestSubmit()"); // what Enter does
+  await waitFor(() => tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/`, 'completed site opened', 5000).catch(() => {});
+  check('Enter opens the completed site', tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/`,
+    tabs.snapshot().find((tab) => tab.id === tabs.activeId).url);
+
+  await startTyping();
+  await typeText('127');
+  await waitFor(async () => (await addressBar()).value === site, 'completion before Esc', 5000).catch(() => {});
+  press('Escape');
+  await sleep(100);
+  bar = await addressBar();
+  check('Esc removes the completion and closes the list', bar.value === '127' && !bar.hint && bar.first === '', JSON.stringify(bar));
+  await typeText(' x');
+  await sleep(400);
+  bar = await addressBar();
+  check('a space means search: nothing is completed', bar.value === '127 x' && !bar.hint && /Search Google/.test(bar.first), JSON.stringify(bar));
+  await evalIn(ui, "document.getElementById('address').blur()");
+  await waitFor(() => ui.getBounds().height === 116, 'list closed after completion tests', 3000).catch(() => {});
   check('the toolbar view shrinks back when the list closes', ui.getBounds().height === 116, `${ui.getBounds().height}px`);
   const before = history.entries.length;
   const privateTab2 = tabs.create({ url: `${base}/anim-private`, isPrivate: true });

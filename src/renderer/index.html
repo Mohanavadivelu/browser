@@ -22,7 +22,8 @@
 
       <form class="address" id="addressForm" autocomplete="off">
         <span class="security" id="security"></span>
-        <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address" role="combobox" aria-controls="suggestions" aria-expanded="false" aria-autocomplete="list">
+        <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address" role="combobox" aria-controls="suggestions" aria-expanded="false" aria-autocomplete="both">
+        <span class="complete-hint" id="completeHint" hidden>Tab to accept</span>
         <button class="zoom-chip" id="zoom" type="button" title="Reset zoom"></button>
         <button class="shield" id="shield" type="button" hidden></button>
         <button class="star" id="star" type="button" title="Bookmark (Ctrl+D)">☆</button>

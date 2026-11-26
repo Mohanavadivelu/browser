@@ -40,7 +40,7 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
   const {
-    none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels,
+    none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
   } = validators;
 
@@ -79,8 +79,9 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('zoom:reset', TOOLBAR, none, () => actions.zoom(0));
 
   // Address-bar suggestions: visited pages only while history is on.
-  ipc.handle('suggest:query', TOOLBAR, text, (_e, input) => suggest({
+  ipc.handle('suggest:query', TOOLBAR, suggestQuery, (_e, input, complete) => suggest({
     text: input,
+    complete,
     history: settings.data.historyEnabled ? history.entries : [],
     bookmarks: bookmarkList.links(settings.data.bookmarks),
     engine: settings.data.searchEngine,

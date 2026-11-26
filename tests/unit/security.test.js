@@ -280,6 +280,10 @@ test('bookmark menus name a bookmark by id and one of a fixed set of actions', (
   assert.equal(validators.bookmarkId('bar'), true);
   assert.equal(validators.bookmarkId('../x'), false);
   assert.equal(validators.bookmarkId('a', 'b'), false);
+  assert.equal(validators.suggestQuery('doc', true), true);
+  assert.equal(validators.suggestQuery('doc'), false);
+  assert.equal(validators.suggestQuery('doc', 'yes'), false);
+  assert.equal(validators.suggestQuery('x'.repeat(2049), false), false);
   assert.equal(validators.pixels(4000), true);
   assert.equal(validators.pixels(4001), false);
 });

@@ -54,3 +54,44 @@ test('at most six suggestions are offered', () => {
   const history = Array.from({ length: 20 }, (_, i) => visit(`https://site${i}.example/`, `Site ${i}`, i));
   assert.equal(suggest({ text: 'site', history, now: NOW }).length, 6);
 });
+
+const DOCS = [
+  visit('https://docs.example.dev/', 'Example Docs'),
+  visit('https://docs.example.dev/', 'Example Docs'),
+  visit('https://docs.example.dev/guide/install', 'Install guide'),
+  visit('https://documents.example.org/team/release', 'Release checklist'),
+  visit('http://www.dogs.example/', 'Dogs'),
+];
+const completed = (text, options = {}) => suggest({ text, history: DOCS, now: NOW, complete: true, ...options })[0]?.completion ?? null;
+
+test('typing the start of a site completes it to the site visited most', () => {
+  const first = suggest({ text: 'doc', history: DOCS, now: NOW, complete: true });
+  assert.deepEqual(first[0], { kind: 'address', url: 'https://docs.example.dev/', title: 'docs.example.dev/', note: 'Example Docs', completion: 'docs.example.dev/' });
+  assert.equal(first.at(-1).kind, 'search', 'what the typed text does on its own comes last');
+  assert.equal(first.filter((row) => row.url === 'https://docs.example.dev/').length, 1);
+  assert.equal(completed('docs.ex'), 'docs.example.dev/');
+  assert.equal(completed('Do'), 'Docs.example.dev/', 'what was typed keeps its case');
+  assert.equal(completed('www.do'), 'www.docs.example.dev/');
+  assert.equal(completed('https://dog'), 'https://dogs.example/');
+  assert.equal(suggest({ text: 'dog', history: DOCS, now: NOW, complete: true })[0].url, 'http://www.dogs.example/', 'a site only seen over http stays http');
+});
+
+test('past the host it completes to a page, unless the typed address is visited more', () => {
+  assert.equal(completed('docs.example.dev/g'), 'docs.example.dev/guide/install');
+  assert.equal(completed('docs.example.dev/'), null, 'the site itself is visited more than the page under it');
+  assert.equal(completed('docs.example.dev'), 'docs.example.dev/');
+});
+
+test('nothing is completed for a search, an unknown start, or without asking', () => {
+  assert.equal(completed('doc lists'), null, 'a space means search');
+  assert.equal(completed('zebra'), null);
+  assert.equal(completed('doc '), null);
+  assert.equal(suggest({ text: 'doc', history: DOCS, now: NOW })[0].kind, 'search');
+  assert.equal(completed('ftp', { history: [visit('ftp://ftp.example/', 'FTP')] }), null, 'only http(s) addresses');
+});
+
+test('bookmarks count towards completion as well as visits', () => {
+  const bookmarks = [{ url: 'https://dogfood.example/', title: 'Dog food' }];
+  assert.equal(completed('dog', { bookmarks }), 'dogfood.example/', 'a bookmark outweighs one visit');
+  assert.equal(completed('dog', { bookmarks, history: [...DOCS, ...Array.from({ length: 5 }, () => visit('https://dogs.example/', 'Dogs'))] }), 'dogs.example/');
+});

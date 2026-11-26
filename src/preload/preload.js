@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('browserApi', {
     stop: () => invoke('nav:stop'),
     home: () => invoke('nav:home'),
   },
-  suggest: (input) => invoke('suggest:query', input),
+  suggest: (input, complete) => invoke('suggest:query', input, complete === true),
   blocker: {
     toggleSite: () => invoke('blocker:toggle-site'),
     details: () => invoke('blocker:details'),

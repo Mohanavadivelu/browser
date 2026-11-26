@@ -14,6 +14,9 @@ const validators = {
   optionalText: (...args) => args.length === 0 || (args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048),
   twoTexts: (...args) => args.length === 2 && args.every((value) => typeof value === 'string' && value.length <= 2048),
   bool: (...args) => args.length === 1 && typeof args[0] === 'boolean',
+  // What is typed in the address bar, and whether to complete it inline.
+  suggestQuery: (...args) => args.length === 2 && typeof args[0] === 'string' && args[0].length <= 2048 &&
+    typeof args[1] === 'boolean',
   tabMove: (...args) => args.length === 2 && Number.isInteger(args[0]) && args[0] > 0 &&
     Number.isInteger(args[1]) && args[1] >= 0 && args[1] < 1000,
   textAndIndex: (...args) => args.length === 2 && typeof args[0] === 'string' && args[0].length <= 2048 &&

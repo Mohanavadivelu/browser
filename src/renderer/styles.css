@@ -81,6 +81,10 @@ button:disabled { color: #5f6368; cursor: default; }
 .suggestion.selected, .suggestion:hover { background: var(--hover); }
 .suggestion .kind { flex: none; width: 18px; text-align: center; color: var(--muted); }
 .suggestion .title { flex: none; max-width: 60%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.suggestion .note { flex: none; max-width: 30%; overflow: hidden; color: #bdc1c6; white-space: nowrap; text-overflow: ellipsis; }
+.complete-hint { flex: none; color: var(--muted); font-size: 11px; }
+.complete-hint[hidden] { display: none; }
+.address input::selection { background: #2f4b80; color: var(--text); }
 .suggestion .url { flex: 1; min-width: 0; overflow: hidden; color: #8ab4f8; white-space: nowrap; text-overflow: ellipsis; }
 
 /* The star's popover */
