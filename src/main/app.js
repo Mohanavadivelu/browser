@@ -400,9 +400,10 @@ async function start(options = {}) {
   win.on('closed', () => {
     // A closed window leaves the pages of its views running; close them, so a toolbar or tab of a
     // closed window cannot keep calling in (the tests open several windows in one process).
+    tabs.shutdown();
     const pages = [ui, indicator, find, ...[...tabs.tabs.values()].map((tab) => tab.view)].map((view) => view.webContents);
     for (const contents of pages) {
-      if (!contents.isDestroyed()) contents.close();
+      if (contents && !contents.isDestroyed()) contents.close();
     }
     if (options.quitOnClose !== false) app.quit();
   });

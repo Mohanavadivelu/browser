@@ -104,6 +104,11 @@ class TabManager extends EventEmitter {
     const contents = tab.view.webContents;
     const changed = () => this.emit('change');
     this.onInput(contents);
+    // A page can close its own tab (window.close() in a sign-in popup, say): the tab goes too,
+    // or it would stay listed with no page behind it. Not while the window itself is closing.
+    contents.once('destroyed', () => {
+      if (!this.shuttingDown && this.tabs.get(tab.id) === tab) this.close(tab.id);
+    });
 
     contents.on('did-start-loading', () => { tab.loading = true; changed(); });
     contents.on('did-stop-loading', () => { tab.loading = false; changed(); });
@@ -170,6 +175,11 @@ class TabManager extends EventEmitter {
     contents.on('found-in-page', (_event, result) => this.emit('found', tab, result));
   }
 
+  // The window is closing: its pages are closed with it, and their tabs are no longer replaced.
+  shutdown() {
+    this.shuttingDown = true;
+  }
+
   get active() {
     return this.tabs.get(this.activeId) ?? null;
   }
@@ -200,7 +210,9 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab) return;
     const index = this.order.indexOf(id);
-    const url = tab.view.webContents.getURL();
+    const contents = tab.view.webContents;
+    const alive = Boolean(contents) && !contents.isDestroyed();
+    const url = alive ? contents.getURL() : '';
     if (tab.kind === 'web' && !tab.isPrivate && isAllowedUrl(url)) {
       this.closed.push({ url, index });
       if (this.closed.length > MAX_CLOSED) this.closed.shift();
@@ -208,7 +220,7 @@ class TabManager extends EventEmitter {
     this.order.splice(index, 1);
     this.tabs.delete(id);
     this.host.removeContentView(tab.view);
-    tab.view.webContents.close();
+    if (alive) contents.close();
     if (tab.isPrivate) this.sessions.releasePrivate(id).catch((error) => console.error(error));
     this.emit('closed', tab);
 
@@ -241,7 +253,8 @@ class TabManager extends EventEmitter {
   // resourceType, kind) goes into the tab's list for the shield's panel.
   countBlocked(contentsId, request) {
     for (const tab of this.tabs.values()) {
-      if (tab.view.webContents.id !== contentsId) continue;
+      const contents = tab.view.webContents;
+      if (!contents || contents.isDestroyed() || contents.id !== contentsId) continue;
       tab.blocked = (tab.blocked ?? 0) + 1;
       if (request) (tab.blockedLog ??= new BlockedLog()).add(request);
       this.emit('change');

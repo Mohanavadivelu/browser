@@ -163,8 +163,15 @@ class ContentBlocker {
       } catch {
         kind = null;
       }
-      if (kind) onBlocked(details.webContentsId, { url: details.url, resourceType: details.resourceType, kind });
       callback({ cancel: kind !== null });
+      // Counting it for the tab's shield must never get in the way of blocking it.
+      if (kind) {
+        try {
+          onBlocked(details.webContentsId, { url: details.url, resourceType: details.resourceType, kind });
+        } catch (error) {
+          console.error(`Could not count a blocked request: ${error.message}`);
+        }
+      }
     });
   }
 }

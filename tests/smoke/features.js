@@ -43,6 +43,11 @@ async function main() {
       res.end('MZ-not-a-real-program');
       return;
     }
+    if (req.url === '/closes-itself') {
+      res.setHeader('content-type', 'text/html');
+      res.end('<!doctype html><title>Closing</title><script>setTimeout(() => window.close(), 200);</script>');
+      return;
+    }
     if (req.url === '/ad-page') {
       res.setHeader('content-type', 'text/html');
       // The second pixel comes from another host, so the shield's panel lists two.
@@ -769,6 +774,11 @@ async function main() {
   tabs.activate(popTab.id);
 
   // ---------- Ad and tracker blocking ----------
+  // A page that closes itself (a sign-in popup, say) takes its tab with it; the tab used to stay
+  // listed with no page, and the next blocked request anywhere crashed the main process.
+  const closesItself = tabs.create({ url: `${base}/closes-itself` });
+  await waitFor(() => !tabs.tabs.has(closesItself.id), 'self-closing tab gone', 5000).catch(() => {});
+  check('a page that closes itself takes its tab with it', !tabs.tabs.has(closesItself.id) && !tabs.order.includes(closesItself.id));
   const adTab = tabs.create({ url: `${base}/ad-page` });
   await waitFor(() => adTab.view.webContents.getURL().endsWith('/ad-page') && !adTab.view.webContents.isLoading(), 'ad page loaded');
   const adState = (tab = adTab) => tab.view.webContents.executeJavaScript('JSON.stringify([window.adLoaded === true, window.appLoaded === true])');
