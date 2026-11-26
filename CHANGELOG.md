@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
+
+A shield that shows what it blocked, an address bar that completes sites as you type, and a folder tree that folds and drags.
 
 ### New
 

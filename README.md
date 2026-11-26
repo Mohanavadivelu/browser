@@ -5,10 +5,10 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 ## Features
 
 - Tabs, address bar (URL or search, **Google** by default), back/forward/reload/home, bookmarks.
-- **Address-bar suggestions** as you type: the search or address itself, then matching bookmarks and visited pages (visited pages only while history is on). Use the arrow keys and Enter, or click.
+- **Address-bar suggestions** as you type: the search or address itself, then matching bookmarks and visited pages (visited pages only while history is on). Use the arrow keys and Enter, or click. Typing the start of a site you know fills in the rest after the cursor: Tab or → accepts it, Backspace removes it.
 - **Tabs**: drag to reorder, reopen a closed tab with Ctrl+Shift+T (private tabs are never kept), and a 🔊 icon on tabs playing sound that mutes the tab when clicked.
 - **Private tabs**: each one has its own in-memory session that is wiped when the tab closes.
-- **Ad and tracker blocking** (on by default): requests on the EasyList and EasyPrivacy lists are blocked in every tab. The 🛡 in the address bar shows how many were blocked on the page; click it to allow them on that site. Turn it off, or see the allowed sites, in Settings.
+- **Ad and tracker blocking** (on by default): requests on the EasyList and EasyPrivacy lists are blocked in every tab. The shield in the address bar shows how many were blocked on the page; click it to see them by site, marked Ad or Tracker, and to allow them on that site. Turn it off, or see the allowed sites, in Settings.
 - **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload.
 - **Print** (Ctrl+P) and **Save page as PDF** (⋮ menu).
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
@@ -126,6 +126,8 @@ The build is **not code-signed**, so Windows SmartScreen may show an "unknown pu
 The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums. It also uploads `latest.yml` and the installer's `.blockmap`, which installed copies use to find and download the update.
 
 ## Status
+
+Version 0.9.0: the shield opens a panel listing what was blocked on the page, the address bar completes sites inline, and the Bookmarks page's folder tree collapses and lets you drag folders. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.8.0: dark bookmark menus with subfolders, dragging bookmarks along the bar, a ⋯ menu and a Move to… dialog on the Bookmarks page, Copy address; the browser's own pages are served from `app://` so the last Electron fuse is off. See [CHANGELOG.md](CHANGELOG.md).
 
