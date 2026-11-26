@@ -14,8 +14,8 @@ function trimSeparators(items) {
   return result;
 }
 
-// Builds the right-click menu for a page. `actions` does the work; only http(s) links and
-// images are ever offered, so a page cannot place a dangerous address in the menu.
+// Builds the right-click menu for a page. `actions` does the work; only http(s) links, images,
+// videos and sounds are ever offered, so a page cannot place a dangerous address in the menu.
 function buildContextMenuTemplate(params, actions) {
   const items = [];
   const separator = () => items.push({ type: 'separator' });
@@ -36,6 +36,19 @@ function buildContextMenuTemplate(params, actions) {
       { label: 'Save image as…', click: () => actions.saveImage(image) },
       { label: 'Copy image', click: () => actions.copyImage(params.x, params.y) },
       { label: 'Copy image address', click: () => actions.copyText(image) },
+    );
+    separator();
+  }
+
+  // Only a plain file can be saved: a video played from pieces (a blob: address, as streaming
+  // sites use) or protected by the site is never offered.
+  const mediaKind = params.mediaType === 'video' || params.mediaType === 'audio' ? params.mediaType : '';
+  const media = mediaKind && params.srcURL && isAllowedUrl(params.srcURL) && actions.saveMedia ? params.srcURL : '';
+  if (media) {
+    items.push(
+      { label: `Save ${mediaKind} as…`, click: () => actions.saveMedia(media, mediaKind) },
+      { label: `Copy ${mediaKind} address`, click: () => actions.copyText(media) },
+      { label: `Open ${mediaKind} in new tab`, click: () => actions.openInNewTab(media) },
     );
     separator();
   }

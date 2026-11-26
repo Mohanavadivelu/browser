@@ -573,44 +573,7 @@ async function exportBookmarks() {
 }
 
 // ---------- Downloads ----------
-function renderDownloads(items) {
-  const list = $('downloadList');
-  list.replaceChildren();
-  if (items.length === 0) {
-    list.append(element('p', 'empty', 'No downloads in this session.'));
-    return;
-  }
-  for (const item of items) {
-    const row = element('div', 'row');
-    row.append(element('div', 'icon', item.state === 'completed' ? '✅' : item.state === 'progressing' ? '⬇️' : '⚠️'));
-    const main = element('div', 'main');
-    main.append(element('div', 'name', item.filename));
-    const total = item.total > 0 ? formatBytes(item.total) : 'unknown size';
-    const status = {
-      progressing: `${formatBytes(item.received)} of ${total}`,
-      paused: `Paused · ${formatBytes(item.received)} of ${total}`,
-      completed: `Completed · ${formatBytes(item.received)}`,
-      cancelled: 'Cancelled',
-      interrupted: 'Failed',
-      blocked: 'Blocked: this file type is not allowed',
-    }[item.state] ?? item.state;
-    main.append(element('div', 'meta', status));
-    if (item.state === 'progressing' && item.total > 0) {
-      const bar = element('progress');
-      bar.max = item.total;
-      bar.value = item.received;
-      main.append(bar);
-    }
-    const actions = element('div', 'actions');
-    if (item.state === 'progressing' || item.state === 'paused') {
-      actions.append(button('Cancel', () => api.downloads.cancel(item.id)));
-    } else if (item.state === 'completed') {
-      actions.append(button('Show in folder', () => api.downloads.show(item.id)));
-    }
-    row.append(main, actions);
-    list.append(row);
-  }
-}
+// The Downloads page is in library-downloads.js.
 
 // ---------- Recordings ----------
 function showRecordingMessage(text) {
@@ -860,6 +823,8 @@ function renderSettings(settings) {
   })), String(settings.recordingStopAfter));
   $('blockTrackers').checked = settings.blockTrackers;
   $('checkForUpdates').checked = settings.checkForUpdates;
+  fillSelect($('downloadsAtOnce'), settings.downloadsAtOnceChoices.map((count) => ({ key: String(count), label: String(count) })), String(settings.downloadsAtOnce));
+  $('resumeDownloads').checked = settings.resumeDownloads;
   const sites = $('allowedSites');
   sites.replaceChildren();
   if (settings.blockerAllowedSites.length === 0) sites.append(element('p', 'empty', 'None.'));
@@ -887,6 +852,8 @@ function bindSettings() {
   $('historyEnabled').addEventListener('change', () => saveSetting({ historyEnabled: $('historyEnabled').checked }));
   $('blockTrackers').addEventListener('change', () => saveSetting({ blockTrackers: $('blockTrackers').checked }));
   $('checkForUpdates').addEventListener('change', () => saveSetting({ checkForUpdates: $('checkForUpdates').checked }));
+  $('downloadsAtOnce').addEventListener('change', () => saveSetting({ downloadsAtOnce: Number($('downloadsAtOnce').value) }));
+  $('resumeDownloads').addEventListener('change', () => saveSetting({ resumeDownloads: $('resumeDownloads').checked }));
   $('updatesCheck').addEventListener('click', async () => {
     $('updatesMessage').textContent = 'Checking…';
     const result = await api.updates.check();
@@ -917,7 +884,7 @@ function bindSettings() {
 const loaders = {
   history: loadHistory,
   bookmarks: () => { showBookmarksMessage(''); return loadBookmarks(); },
-  downloads: async () => renderDownloads(await api.downloads.list()),
+  downloads: loadDownloads,
   recordings: loadRecordings,
   settings: async () => renderSettings(await api.settings.get()),
 };
@@ -960,6 +927,7 @@ $('bookmarksMove').addEventListener('click', openMoveDialog);
 $('bookmarksDelete').addEventListener('click', deleteSelectedBookmarks);
 $('bookmarksClear').addEventListener('click', () => { selectedBookmarks.clear(); renderBookmarkPage(); });
 bindSettings();
+bindDownloads();
 
 api.onLibraryShow(show);
 api.onDownloads((items) => { if (current === 'downloads') renderDownloads(items); });

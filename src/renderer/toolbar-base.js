@@ -31,7 +31,7 @@ function element(tag, className, text) {
 // The suggestion list, the star's popover and the shield's panel hang below the bars, over the
 // page; the toolbar's view grows by the most any of them needs.
 // Resolves to the window's height, so a menu knows how far down it can reach.
-const overlayHeights = { suggestions: 0, star: 0, shield: 0, menu: 0 };
+const overlayHeights = { suggestions: 0, star: 0, shield: 0, downloads: 0, videos: 0, menu: 0 };
 function requestOverlay(name, height) {
   overlayHeights[name] = Math.max(0, Math.min(Math.ceil(height), 4000));
   return api.window.setSuggestionsHeight(Math.max(...Object.values(overlayHeights)));

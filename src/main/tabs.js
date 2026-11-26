@@ -44,7 +44,7 @@ class TabManager extends EventEmitter {
   create({ url, isPrivate = false, activate = true, index } = {}) {
     const id = this.nextId++;
     const partition = this.sessions.partitionFor(id, isPrivate);
-    this.sessions.ensure(partition);
+    this.sessions.ensure(partition, isPrivate ? 'private' : 'web');
     const view = new WebContentsView({ webPreferences: contentPreferences(partition) });
     view.setBackgroundColor('#ffffff');
     view.setVisible(false);

@@ -25,12 +25,14 @@
         <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address" role="combobox" aria-controls="suggestions" aria-expanded="false" aria-autocomplete="both">
         <span class="complete-hint" id="completeHint" hidden>Tab to accept</span>
         <button class="zoom-chip" id="zoom" type="button" title="Reset zoom"></button>
+        <button class="videos-chip" id="videos" type="button" aria-haspopup="dialog" hidden></button>
         <button class="shield" id="shield" type="button" hidden></button>
         <button class="star" id="star" type="button" title="Bookmark (Ctrl+D)">☆</button>
         <div class="notice" id="notice" role="status"></div>
         <div class="suggestions" id="suggestions" role="listbox" aria-label="Suggestions" hidden></div>
       </form>
 
+      <button class="icon-btn downloads-btn" id="downloads" type="button" aria-haspopup="dialog" hidden></button>
       <div class="rec-badge" id="recBadge">
         <span class="dot"></span><span id="recTime">REC 00:00</span>
         <button id="recMark" type="button" title="Add a marker here (Ctrl+Shift+M)">Mark</button>
@@ -78,6 +80,24 @@
       <button id="shieldAllowed" type="button">Allowed sites</button>
     </div>
   </section>
+  <section id="downloadsPanel" class="downloads-panel" role="dialog" aria-labelledby="downloadsTitle" hidden>
+    <div class="panel-head">
+      <h2 id="downloadsTitle">Downloads</h2>
+      <span id="downloadsSummary"></span>
+    </div>
+    <ul id="downloadsItems" class="dl-items"></ul>
+    <div class="panel-foot">
+      <button id="downloadsAll" type="button" class="link">Show all downloads</button>
+      <span>Ctrl+J</span>
+    </div>
+  </section>
+  <section id="videosPanel" class="videos-panel" role="dialog" aria-labelledby="videosTitle" hidden>
+    <div class="panel-head column">
+      <h2 id="videosTitle">Videos on this page</h2>
+      <p id="videosNote"></p>
+    </div>
+    <ul id="videosItems" class="video-items"></ul>
+  </section>
   <!-- The toolbar's scripts share one scope: helpers first, app.js (the wiring) last. -->
   <script src="menu.js"></script>
   <script src="toolbar-base.js"></script>
@@ -86,6 +106,7 @@
   <script src="toolbar-recording.js"></script>
   <script src="toolbar-star.js"></script>
   <script src="toolbar-shield.js"></script>
+  <script src="toolbar-downloads.js"></script>
   <script src="toolbar-suggestions.js"></script>
   <script src="app.js"></script>
 </body>

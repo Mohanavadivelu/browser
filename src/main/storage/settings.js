@@ -13,11 +13,14 @@ const ZOOM_RANGE = [0.25, 5];
 // Only these keys can be changed from the settings page.
 const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
-  'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone', 'showBookmarksBar',
+  'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone', 'showBookmarksBar', 'downloadsAtOnce', 'resumeDownloads',
 ]);
 const MAX_ALLOWED_SITES = 500;
 // Minutes after which a recording stops by itself; 0 is never.
 const STOP_AFTER_CHOICES = Object.freeze([0, 5, 10, 15, 30, 45, 60, 90, 120, 180]);
+// How many downloads run at once; the rest wait their turn.
+const DOWNLOADS_AT_ONCE_CHOICES = Object.freeze([1, 2, 3, 5, 10]);
+const DEFAULT_DOWNLOADS_AT_ONCE = 3;
 const HOST_NAME = /^[a-z0-9.-]{1,253}$/;
 
 // Sites where the user turned ad and tracker blocking off: plain lower-case host names.
@@ -72,6 +75,8 @@ function sanitizeSettings(raw) {
     recordingStopAfter: STOP_AFTER_CHOICES.includes(source.recordingStopAfter) ? source.recordingStopAfter : 0,
     blockTrackers: source.blockTrackers !== false,
     checkForUpdates: source.checkForUpdates !== false,
+    downloadsAtOnce: DOWNLOADS_AT_ONCE_CHOICES.includes(source.downloadsAtOnce) ? source.downloadsAtOnce : DEFAULT_DOWNLOADS_AT_ONCE,
+    resumeDownloads: source.resumeDownloads !== false,
     blockerAllowedSites: sanitizeSites(source.blockerAllowedSites),
     zoom: sanitizeZoom(source.zoom),
     session: sanitizeSession(source.session),
@@ -130,4 +135,4 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES };
+module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES };

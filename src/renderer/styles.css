@@ -178,3 +178,53 @@ body.fs:not(.reveal) .toolbar { display: none; }
 .shield-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding: 10px 18px 0; border-top: 1px solid var(--border); color: #bdc1c6; font-size: 12px; }
 .shield-foot button { color: #8ab4f8; font-size: 12px; }
 .shield-foot button:hover { color: #aecbfa; text-decoration: underline; }
+
+/* The downloads button: a ring for how far the running downloads have got */
+.downloads-btn { position: relative; display: flex; align-items: center; justify-content: center; color: var(--text); }
+.downloads-btn[hidden] { display: none; }
+.downloads-btn > svg:not(.ring) { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.downloads-btn.busy { color: #8ab4ff; }
+.downloads-btn[aria-expanded="true"] { background: var(--hover); }
+.downloads-btn .ring { position: absolute; inset: 1px; width: 30px; height: 30px; fill: none; stroke-width: 2.5; }
+.downloads-btn .ring .track { stroke: #4a4c52; }
+.downloads-btn .ring .done { stroke: #8ab4ff; stroke-linecap: round; }
+.downloads-btn .ring .done.unknown { animation: dl-spin 1.2s linear infinite; transform-origin: 15px 15px; }
+@keyframes dl-spin { to { transform: rotate(360deg); } }
+.downloads-btn .badge { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: #3a6fd8; color: #fff; font-size: 10px; font-weight: 600; line-height: 15px; text-align: center; }
+.downloads-btn .badge.failed { background: #c5221f; }
+
+.videos-chip { flex: none; display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 12px; background: #3a2e4d; color: #d3b8ff; font-size: 11px; font-weight: 600; }
+.videos-chip[hidden] { display: none; }
+.videos-chip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.videos-chip:hover, .videos-chip[aria-expanded="true"] { background: #4a3b63; }
+
+/* The downloads and videos panels */
+.downloads-panel, .videos-panel { position: fixed; z-index: 20; width: 380px; max-width: calc(100vw - 16px); padding: 14px 0 6px; border: 1px solid var(--border); border-radius: 12px; background: #292a2d; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font-size: 13px; }
+.videos-panel { width: 400px; padding-bottom: 10px; }
+.downloads-panel[hidden], .videos-panel[hidden] { display: none; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 16px 8px; }
+.panel-head.column { flex-direction: column; gap: 4px; }
+.panel-head h2 { font-size: 15px; font-weight: 600; }
+.panel-head span, .panel-head p { color: #bdc1c6; font-size: 12px; }
+.dl-items, .video-items { max-height: 340px; overflow-y: auto; list-style: none; }
+.dl-item, .video-item { display: flex; align-items: center; gap: 10px; padding: 8px 16px; }
+.dl-main, .video-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dl-name, .video-name { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.video-name.muted { color: #c4c7cc; }
+.dl-line, .video-line { color: #bdc1c6; font-size: 12px; }
+.dl-item.paused .dl-line, .dl-item.queued .dl-line { color: #fdd663; }
+.dl-item.interrupted .dl-line { color: #ffb4ae; }
+.dl-bar { height: 4px; overflow: hidden; border-radius: 2px; background: #3c3d42; }
+.dl-fill { height: 100%; background: #8ab4ff; }
+.dl-item.paused .dl-fill, .dl-item.queued .dl-fill { background: var(--muted); }
+.dl-act { flex: none; display: flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 10px; border-radius: 6px; background: var(--hover); font-size: 13px; }
+.dl-act svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.dl-act svg.filled { fill: currentColor; stroke: none; }
+.dl-act.primary, .video-item .primary { background: #2f4b80; color: #fff; }
+.dl-empty { padding: 10px 16px; color: #bdc1c6; }
+.video-item .primary { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 6px; font-size: 13px; }
+.video-item .primary svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.video-item .primary:disabled { opacity: .7; }
+.panel-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; padding: 8px 16px 4px; border-top: 1px solid var(--border); color: #bdc1c6; font-size: 12px; }
+.panel-foot .link { padding: 4px 0; background: none; color: #8ab4ff; font-size: 13px; }
+.panel-foot .link:hover { text-decoration: underline; }

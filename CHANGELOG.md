@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Downloads can be paused, resumed and retried.** The Downloads page groups them into Downloading, Waiting, Failed and Done, with filters, search, speed and time left. Each row opens to show where the file came from and where it is saved, with **Open when done** and **Copy link**. A failed download shows why, and **Retry** picks up where it stopped when the server allows it, or starts over in the same file. **Download again** fetches a file that was moved or deleted. **Pause all** and **Clear finished** act on the whole list.
+- **Downloads wait their turn**: 3 run at once by default (1 to 10 in Settings), and the rest start in order as others finish. **Start now** runs one at once.
+- **Unfinished downloads survive a restart.** The list is kept in the profile, and a download that was running when the browser closed picks up from the bytes it already had (the server is asked for the rest). Turn this off in Settings. Downloads from private tabs are listed while the browser runs, and never kept.
+- **The downloads button** appears in the toolbar once something downloads. Its ring shows the progress of what is running, and its panel lists the latest downloads with pause, resume and open, and **Show all downloads**.
+- **Save videos and sounds**: right-click a video or sound to **Save video as…** (or audio), copy its address or open it in a new tab. A video button in the address bar counts the videos on the page; its panel saves the plain video files and says why the others can't be saved (streamed in pieces, or protected by the site). Saved videos are marked as such on the Downloads page.
+
 ## 0.9.0
 
 A shield that shows what it blocked, an address bar that completes sites as you type, and a folder tree that folds and drags.

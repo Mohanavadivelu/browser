@@ -31,15 +31,20 @@ const removeFile = (filePath) => fs.rmSync(filePath, { force: true });
 // Applies the policy to one download. Returns false if it was refused at once.
 // The user can change the name in the Save dialog, so the chosen path is checked again while
 // the download runs and once more when it finishes. A blocked item emits 'blocked'.
+// A download resumed from an earlier session already has its file, and `presetPath(item)` can
+// name one (a retry goes back into its own file); neither gets a dialog, but both are checked.
 // `autoSaveDir` and `saveName` skip the dialog and are only used by automated tests.
-function guardDownload(item, { onBlocked, onStart, autoSaveDir, saveName, defaultDir, remove = removeFile }) {
+function guardDownload(item, { onBlocked, onStart, autoSaveDir, saveName, defaultDir, presetPath, remove = removeFile }) {
   const filename = item.getFilename();
-  if (isDangerousFile(filename)) {
+  const preset = item.getSavePath() || presetPath?.(item) || '';
+  if (isDangerousFile(filename) || (preset && isDangerousFile(preset))) {
     item.cancel();
-    onBlocked?.(filename);
+    onBlocked?.(preset ? path.win32.basename(preset) : filename);
     return false;
   }
-  if (autoSaveDir) {
+  if (preset) {
+    if (item.getSavePath() !== preset) item.setSavePath(preset);
+  } else if (autoSaveDir) {
     item.setSavePath(path.join(autoSaveDir, saveName?.(filename) ?? path.basename(filename)));
   } else {
     item.setSaveDialogOptions({ title: 'Save download', defaultPath: path.join(defaultDir, filename) });
@@ -74,10 +79,10 @@ function guardDownload(item, { onBlocked, onStart, autoSaveDir, saveName, defaul
   return true;
 }
 
-function attachDownloadPolicy(ses, { onBlocked, onStart, autoSaveDir, saveName }) {
+function attachDownloadPolicy(ses, { onBlocked, onStart, autoSaveDir, saveName, presetPath }) {
   const { app } = require('electron');
   ses.on('will-download', (_event, item) => {
-    guardDownload(item, { onBlocked, onStart, autoSaveDir, saveName, defaultDir: app.getPath('downloads') });
+    guardDownload(item, { onBlocked, onStart, autoSaveDir, saveName, presetPath, defaultDir: app.getPath('downloads') });
   });
 }
 

@@ -13,7 +13,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Print** (Ctrl+P) and **Save page as PDF** (⋮ menu).
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
 - **Bookmarks** in folders (folders can hold folders): the bar shows its bookmarks with their site icons and its folders, a folder opens as a menu with its subfolders and "Open all", bookmarks that do not fit go under », and "Other bookmarks" holds the rest. Right-click a bookmark to open it in a new or private tab, edit or delete it; Ctrl+Shift+B shows or hides the bar. The Bookmarks page (Ctrl+Shift+O) has the folder tree, search across all folders, drag to reorder or to drop into a folder, ↑ ↓, edit name and address, select several to move or delete, "Open all", and import or export as the bookmarks file Chrome, Edge and Firefox use (folders kept). The star (☆, Ctrl+D) bookmarks the page into the folder you used last and opens a small popover to change its name or folder (or make a new folder), or remove it; ★ on a bookmarked page opens the same popover.
-- **History** (off by default; never saved from private tabs), **Downloads** (progress, cancel, show in folder) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `bookmarks`, `downloads`, `recordings` or `settings` in the address bar.
+- **History** (off by default; never saved from private tabs), **Downloads** (pause, resume, retry, a queue, and downloads that pick up where they stopped after a restart) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `bookmarks`, `downloads`, `recordings` or `settings` in the address bar.
 - **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, recording quality, keep recording across tabs, and the folder for recordings and screenshots.
 - **Full screen** (F11 or the ⛶ button): only the page is shown. Move the mouse to the top edge to bring the toolbar back. After **5 seconds without mouse or keyboard activity**, the top bar and the mouse pointer hide automatically; move the mouse or press a key to bring them back. Pages can also take the whole window for their own video full screen.
 - **Record** (● button, Ctrl+Shift+E or menu): captures the current tab's page **and its sound** (not the browser bars, other windows or other apps) to a `.webm` file in `Videos\Simple Browser`. A native consent dialog comes first, and a REC indicator with **Pause/Resume** and **Stop** stays visible while recording, including in full screen. Paused time is not counted. Quality is Low (720p, 15 fps), Medium (1080p, 30 fps) or High (1440p, 60 fps).
@@ -45,7 +45,7 @@ npm start
 |---|---|
 | `npm start` | Launch the browser |
 | `npm test` | Unit tests (security rules, settings, history, zoom, downloads, recordings, shortcuts) |
-| `npm run smoke` | End-to-end tests: launch the app against a local server and check sandboxing, navigation blocking, tabs, full screen, find, zoom, history, the library pages, downloads, screenshots, restoring tabs, and real recordings (audio, pause, quality, following tabs) |
+| `npm run smoke` | End-to-end tests: launch the app against a local server and check sandboxing, navigation blocking, tabs, full screen, find, zoom, history, the library pages, downloads (pause, queue, retry, resuming after a restart, saving videos), screenshots, restoring tabs, and real recordings (audio, pause, quality, following tabs) |
 | `npm run test:packaged` | After a build: start the packaged app (`dist\win-unpacked`) with a temporary profile and check it works from its `app.asar` |
 | `npm run audit:prod` | Check production dependencies for known vulnerabilities |
 | `npm run dist` | Build the Windows installer and portable `.exe` into `dist\` |
@@ -89,7 +89,8 @@ src/
     tabs.js            One sandboxed view per tab, plus the internal pages tab
     shortcuts.js       Keyboard shortcuts
     zoom.js            Per-site zoom
-    download-manager.js  Tracks downloads for the Downloads page
+    download-manager.js  Downloads: queue, pause and resume, retry, the list kept across restarts
+    page-videos.js     Finds the videos on a page, for the address bar's video button
     idle-tracker.js, fullscreen-idle.js  Hide the top bar and pointer after 5 s idle in full screen
     sandbox/           Locked-down web preferences, per-tab session manager
     security/          Navigation, permissions, certificates, downloads, IPC validation

@@ -58,9 +58,24 @@
     </section>
 
     <section id="page-downloads" hidden>
-      <header><h2>Downloads</h2></header>
-      <p class="note">Downloads from this session. Programs and scripts (.exe, .bat, .ps1 and similar) are blocked.</p>
-      <div id="downloadList" class="list"></div>
+      <header>
+        <h2>Downloads</h2>
+        <input id="downloadSearch" type="search" placeholder="Search downloads" aria-label="Search downloads" autocomplete="off">
+        <button id="downloadsPauseAll" type="button" hidden>Pause all</button>
+        <button id="downloadsClear" type="button">Clear finished</button>
+      </header>
+      <p class="note">Programs, scripts and disk images (.exe, .msi, .bat, .ps1, .iso and similar) are blocked. Downloads from private tabs are not kept after the browser closes.</p>
+      <div class="dl-bar">
+        <div id="downloadFilters" class="dl-filters" role="group" aria-label="Show">
+          <button type="button" data-filter="all" data-label="All" aria-pressed="true">All</button>
+          <button type="button" data-filter="active" data-label="Downloading" aria-pressed="false">Downloading</button>
+          <button type="button" data-filter="waiting" data-label="Waiting" aria-pressed="false">Waiting</button>
+          <button type="button" data-filter="failed" data-label="Failed" aria-pressed="false">Failed</button>
+          <button type="button" data-filter="done" data-label="Done" aria-pressed="false">Done</button>
+        </div>
+        <span id="downloadSpeed" class="dl-speed"></span>
+      </div>
+      <div id="downloadList" class="list dl-list"></div>
     </section>
 
     <section id="page-recordings" hidden>
@@ -123,6 +138,16 @@
       </div>
 
       <div class="group">
+        <h3>Downloads</h3>
+        <label class="field">
+          <span>Downloads at the same time</span>
+          <select id="downloadsAtOnce"></select>
+          <small>Others wait their turn on the Downloads page; Start now runs one at once.</small>
+        </label>
+        <label class="check"><input id="resumeDownloads" type="checkbox"> Pick up unfinished downloads where they stopped when the browser starts again (not those from private tabs)</label>
+      </div>
+
+      <div class="group">
         <h3>Updates</h3>
         <label class="check"><input id="checkForUpdates" type="checkbox"> Check for new versions on GitHub every few hours (installed copies update themselves when the browser closes)</label>
         <div class="inline">
@@ -166,6 +191,7 @@
     </div>
   </dialog>
   <script src="menu.js"></script>
+  <script src="library-downloads.js"></script>
   <script src="library.js"></script>
 </body>
 </html>

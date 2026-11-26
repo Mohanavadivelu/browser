@@ -12,6 +12,8 @@ async function openStar() {
     return;
   }
   closeShield();
+  closeDownloads();
+  closeVideos();
   const info = await api.bookmarks.star();
   if (!info) return;
   starBookmark = info;

@@ -9,7 +9,7 @@ const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
 const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
-const { STOP_AFTER_CHOICES } = require('./storage/settings');
+const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
@@ -38,10 +38,12 @@ function registerIpcHandlers(ipc, ctx) {
     app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, blocker, refreshBlockerLists, updates,
     bookmarkIcons, keepBookmarkIcons,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
+    videoFinder, openDownload, saveMedia, clipboard,
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
+    entryIdAndBool, listIndex,
   } = validators;
 
   const settingsPayload = () => ({
@@ -51,6 +53,7 @@ function registerIpcHandlers(ipc, ctx) {
     engines: Object.entries(SEARCH_ENGINES).map(([key, engine]) => ({ key, name: engine.name })),
     qualities: publicQualities(),
     stopAfterChoices: STOP_AFTER_CHOICES,
+    downloadsAtOnceChoices: DOWNLOADS_AT_ONCE_CHOICES,
   });
 
   // Tabs and navigation
@@ -109,6 +112,8 @@ function registerIpcHandlers(ipc, ctx) {
     if (patch.blockTrackers === true) refreshBlockerLists?.();
     host.setBookmarksBar(settings.data.showBookmarksBar);
     if (!settings.data.restoreTabs) settings.update({ session: { urls: [], active: 0 } });
+    // A higher limit lets waiting downloads start.
+    if (patch.downloadsAtOnce !== undefined) downloads.pump();
     pushState();
     return settingsPayload();
   });
@@ -236,12 +241,44 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('history:remove', LIBRARY, entryId, (_e, id) => history.remove(id));
   ipc.handle('history:clear', LIBRARY, none, () => { history.clear(); });
 
-  // Downloads
+  // Downloads. The toolbar's panel sees names and progress only (no addresses or folders), and
+  // can pause, resume and open a finished download; everything else is on the Downloads page.
   ipc.handle('downloads:list', LIBRARY, none, () => downloads.list());
+  ipc.handle('downloads:brief', TOOLBAR, none, () => downloads.brief());
+  ipc.handle('downloads:pause', TOOLBAR_AND_LIBRARY, entryId, (_e, id) => downloads.pause(id));
+  ipc.handle('downloads:resume', TOOLBAR_AND_LIBRARY, entryId, (_e, id) => downloads.resume(id));
+  ipc.handle('downloads:open', TOOLBAR_AND_LIBRARY, entryId, (_e, id) => openDownload(id));
+  ipc.handle('downloads:open-page', TOOLBAR, none, () => { actions.openLibrary('downloads'); });
   ipc.handle('downloads:cancel', LIBRARY, entryId, (_e, id) => downloads.cancel(id));
+  ipc.handle('downloads:retry', LIBRARY, entryId, (_e, id) => downloads.retry(id));
+  ipc.handle('downloads:remove', LIBRARY, entryId, (_e, id) => downloads.remove(id));
+  ipc.handle('downloads:clear', LIBRARY, none, () => downloads.clearFinished());
+  ipc.handle('downloads:pause-all', LIBRARY, none, () => downloads.pauseAll());
+  ipc.handle('downloads:resume-all', LIBRARY, none, () => downloads.resumeAll());
+  ipc.handle('downloads:open-when-done', LIBRARY, entryIdAndBool, (_e, id, open) => downloads.setOpenWhenDone(id, open));
+  ipc.handle('downloads:copy-link', LIBRARY, entryId, (_e, id) => {
+    const url = downloads.entry(id)?.url;
+    if (url && isAllowedUrl(url)) clipboard.writeText(url);
+  });
   ipc.handle('downloads:show', LIBRARY, entryId, (_e, id) => {
     const filePath = downloads.pathOf(id);
     if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
+  });
+
+  // The videos on the active tab's page, for the address bar's video panel. The panel names one
+  // by its place in the list; the address comes from the main process's own scan of the page.
+  ipc.handle('videos:list', TOOLBAR, none, async () => {
+    const tab = tabs.active;
+    if (tab?.kind !== 'web') return [];
+    const videos = await videoFinder.scan(tab).catch(() => videoFinder.list(tab.id));
+    return videos.map(({ kind, name, title, width, height, duration }, index) => ({ index, kind, name, title, width, height, duration }));
+  });
+  ipc.handle('videos:save', TOOLBAR, listIndex, (_e, index) => {
+    const tab = tabs.active;
+    const video = tab?.kind === 'web' ? videoFinder.list(tab.id)[index] : null;
+    if (video?.kind !== 'file' || !isAllowedUrl(video.url)) return false;
+    saveMedia(tab.view.webContents, video.url, 'video');
+    return true;
   });
 
   // Recordings and screenshots

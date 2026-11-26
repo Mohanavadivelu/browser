@@ -10,6 +10,10 @@ const validators = {
   tabId: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] > 0,
   // A history entry or a download, by its number.
   entryId: (...args) => args.length === 1 && Number.isSafeInteger(args[0]) && args[0] > 0,
+  // A download, and whether to open it when it finishes.
+  entryIdAndBool: (...args) => args.length === 2 && Number.isSafeInteger(args[0]) && args[0] > 0 && typeof args[1] === 'boolean',
+  // A place in a short list (the videos on a page).
+  listIndex: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] < 100,
   text: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048,
   optionalText: (...args) => args.length === 0 || (args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048),
   twoTexts: (...args) => args.length === 2 && args.every((value) => typeof value === 'string' && value.length <= 2048),

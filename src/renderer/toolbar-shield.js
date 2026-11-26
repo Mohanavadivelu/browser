@@ -129,6 +129,8 @@ async function openShield() {
     return;
   }
   if (starBookmark) await closeStar(true);
+  closeDownloads();
+  closeVideos();
   shieldOpen = true;
   openHosts.clear();
   $('shield').setAttribute('aria-expanded', 'true');

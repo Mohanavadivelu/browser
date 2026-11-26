@@ -24,6 +24,7 @@ function renderToolbar() {
   $('star').classList.toggle('on', bookmarked);
 
   renderShield(tab);
+  renderVideosButton(state.videos);
 
   const update = state.update ?? {};
   const updateWaiting = update.status === 'ready' || update.status === 'available';
@@ -105,6 +106,7 @@ api.onState((next) => {
   const before = activeTab();
   state = next;
   followShield(before, activeTab());
+  followVideos(before, activeTab());
   // The main process ended the recording on its own (a write error, or the toolbar did not stop
   // in time): stop a capture that is still running, so it does not keep going unseen.
   if (!state.recording.active && capture && !retargeting) stopRecording();

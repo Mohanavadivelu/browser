@@ -41,9 +41,12 @@ function createSessionSetup(ctx) {
       isActive: blockingActiveFor,
       onBlocked: (contentsId, request) => getTabs().countBlocked(contentsId, request),
     });
+    // Downloads from private tabs are listed while the browser runs, but never saved.
+    const isPrivate = kind === 'private';
     attachDownloadPolicy(ses, {
       onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
-      onStart: (item) => downloads.track(item),
+      onStart: (item) => downloads.track(item, { isPrivate }),
+      presetPath: (item) => downloads.presetPath(item),
       autoSaveDir: ctx.downloadDir,
       saveName: ctx.downloadSaveName,
     });
