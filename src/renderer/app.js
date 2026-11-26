@@ -35,27 +35,6 @@ function renderToolbar() {
   $('zoom').textContent = `${percent}%`;
 }
 
-// The shield in the address bar: how many ads and trackers were blocked on this page, and a
-// switch to allow them on this site.
-function renderShield(tab) {
-  const shield = $('shield');
-  const blocker = state.blocker;
-  let site = '';
-  try {
-    if (tab && /^https?:/.test(tab.url)) site = new URL(tab.url).hostname;
-  } catch {
-    site = '';
-  }
-  shield.hidden = !site || !blocker?.enabled;
-  if (shield.hidden) return;
-  const allowed = blocker.allowedSites.includes(site);
-  shield.classList.toggle('off', allowed);
-  shield.textContent = allowed ? '🛡 off' : `🛡 ${tab.blocked}`;
-  if (allowed) shield.title = `Ads and trackers are allowed on ${site}. Click to block them again.`;
-  else if (!blocker.ready) shield.title = 'The ad and tracker lists are still downloading.';
-  else shield.title = `${tab.blocked} ads and trackers blocked on this page. Click to allow them on ${site}.`;
-}
-
 function render() {
   document.body.classList.toggle('fs', state.fullscreen || state.htmlFullscreen);
   document.body.classList.toggle('reveal', state.revealed);
@@ -94,7 +73,6 @@ $('home').addEventListener('click', () => api.nav.home());
 $('star').addEventListener('click', openStar);
 api.onStar(openStar);
 $('zoom').addEventListener('click', () => api.zoom.reset());
-$('shield').addEventListener('click', () => api.blocker.toggleSite());
 $('shot').addEventListener('click', () => api.screenshot());
 $('record').addEventListener('click', toggleRecording);
 $('recPause').addEventListener('click', togglePause);
@@ -124,7 +102,9 @@ document.documentElement.addEventListener('mouseleave', () => {
 api.onState((next) => {
   // Moving to another tab (or page) saves and closes the star's popover.
   if (starBookmark && state && (next.activeId !== state.activeId || activeTabUrl(next) !== activeTabUrl(state))) closeStar(true);
+  const before = activeTab();
   state = next;
+  followShield(before, activeTab());
   // The main process ended the recording on its own (a write error, or the toolbar did not stop
   // in time): stop a capture that is still running, so it does not keep going unseen.
   if (!state.recording.active && capture && !retargeting) stopRecording();

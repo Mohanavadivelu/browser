@@ -61,6 +61,22 @@
       <button id="starDone" type="button" class="primary">Done</button>
     </div>
   </section>
+  <section id="shieldPanel" class="shield-panel" role="dialog" aria-labelledby="shieldTitle" hidden>
+    <div class="shield-head">
+      <svg class="shield-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"></path><path class="tick" d="M9 12l2 2 4-4"></path></svg>
+      <div>
+        <h2 id="shieldTitle"></h2>
+        <p id="shieldNote"></p>
+      </div>
+    </div>
+    <label class="shield-switch"><span>Block on this site</span><input id="shieldSwitch" type="checkbox" role="switch"></label>
+    <div class="shield-cols" id="shieldCols"><span>Blocked from</span><span>Requests</span></div>
+    <ul class="shield-hosts" id="shieldHosts"></ul>
+    <div class="shield-foot">
+      <span id="shieldLists"></span>
+      <button id="shieldAllowed" type="button">Allowed sites</button>
+    </div>
+  </section>
   <!-- The toolbar's scripts share one scope: helpers first, app.js (the wiring) last. -->
   <script src="menu.js"></script>
   <script src="toolbar-base.js"></script>
@@ -68,6 +84,7 @@
   <script src="toolbar-bookmarks.js"></script>
   <script src="toolbar-recording.js"></script>
   <script src="toolbar-star.js"></script>
+  <script src="toolbar-shield.js"></script>
   <script src="toolbar-suggestions.js"></script>
   <script src="app.js"></script>
 </body>

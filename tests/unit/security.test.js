@@ -207,7 +207,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   const channels = [...ipcMain.handlers.keys()];
   const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
 
-  assert.equal(channels.length, 68);
+  assert.equal(channels.length, 70);
   assert.deepEqual(allowed('indicator'), ['recording:mark', 'recording:request-pause', 'recording:request-stop', 'ui:get-state']);
   assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
   // The library tab shows text from websites: no recording, navigation or tab controls.
@@ -217,6 +217,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   assert.ok(allowed('toolbar').every((channel) => !/^(history|downloads|recordings|settings):/.test(channel)), allowed('toolbar').join());
   assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('bookmarks:')), ['bookmarks:action', 'bookmarks:folder', 'bookmarks:icons', 'bookmarks:move', 'bookmarks:star', 'bookmarks:star-remove', 'bookmarks:star-save']);
   assert.ok(allowed('toolbar').includes('recording:chunk'));
+  assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('blocker:')), ['blocker:details', 'blocker:open-settings', 'blocker:toggle-site']);
   // Every channel is open to exactly the pages listed, and to at least one of them.
   for (const channel of channels) {
     assert.ok(['toolbar', 'indicator', 'find', 'library'].some((role) => !refused(role, channel)), channel);

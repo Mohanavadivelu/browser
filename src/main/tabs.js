@@ -8,6 +8,7 @@ const {
 } = require('./security/navigation');
 const { isCertificateError } = require('./security/certificates');
 const { appUrl, isAppUrl } = require('./app-scheme');
+const { BlockedLog } = require('./blocker');
 
 const MAX_CLOSED = 25;
 
@@ -144,7 +145,8 @@ class TabManager extends EventEmitter {
       onBlocked: this.onBlocked,
     });
     contents.on('did-navigate', (_event, url) => {
-      tab.blocked = 0; // a new page: count its own blocked requests
+      tab.blocked = 0; // a new page: count and list its own blocked requests
+      tab.blockedLog?.clear();
       this.zoom?.apply(tab);
       this.emit('navigated', tab, url);
       changed();
@@ -235,11 +237,13 @@ class TabManager extends EventEmitter {
     return true;
   }
 
-  // One more ad or tracker request blocked in the tab showing `contentsId`.
-  countBlocked(contentsId) {
+  // One more ad or tracker request blocked in the tab showing `contentsId`; `request` (url,
+  // resourceType, kind) goes into the tab's list for the shield's panel.
+  countBlocked(contentsId, request) {
     for (const tab of this.tabs.values()) {
       if (tab.view.webContents.id !== contentsId) continue;
       tab.blocked = (tab.blocked ?? 0) + 1;
+      if (request) (tab.blockedLog ??= new BlockedLog()).add(request);
       this.emit('change');
       return;
     }

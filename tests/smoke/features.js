@@ -45,7 +45,8 @@ async function main() {
     }
     if (req.url === '/ad-page') {
       res.setHeader('content-type', 'text/html');
-      res.end('<!doctype html><title>Ad Page</title><script src="/adserver/ad.js"></script><img src="/tracker/pixel.gif"><script src="/app.js"></script><p>article</p>');
+      // The second pixel comes from another host, so the shield's panel lists two.
+      res.end(`<!doctype html><title>Ad Page</title><script src="/adserver/ad.js"></script><img src="/tracker/pixel.gif"><img src="http://localhost:${server.address().port}/tracker/other.gif"><script src="/app.js"></script><p>article</p>`);
       return;
     }
     if (req.url.startsWith('/adserver/') || req.url.startsWith('/tracker/')) {
@@ -93,7 +94,7 @@ async function main() {
     userDataDir: path.join(work, 'profile'),
     skipSingleInstanceLock: true,
     // Test filters instead of downloading the real ad and tracker lists.
-    blockerFilters: ['/adserver/*', '/tracker/*'].join('\n'),
+    blockerFilters: { ad: '/adserver/*', tracker: '/tracker/*' },
     autoConsent: true,
     idleMs: 60_000,
     downloadDir: path.join(work, 'downloads'),
@@ -683,15 +684,60 @@ async function main() {
   check("ads and trackers are blocked while the page's own script runs", (await adState()) === '[false,true]' && adRequests.length === 0,
     `${await adState()}, server saw ${adRequests.join(', ') || 'nothing'}`);
   const shieldText = () => evalIn(ui, "document.getElementById('shield').hidden ? '' : document.getElementById('shield').textContent");
-  await waitFor(async () => (await shieldText()) === '🛡 2', 'shield count', 3000).catch(() => {});
-  check('the shield in the address bar counts what was blocked', adTab.blocked === 2 && (await shieldText()) === '🛡 2', `${adTab.blocked}, ${await shieldText()}`);
+  await waitFor(async () => (await shieldText()) === '3', 'shield count', 3000).catch(() => {});
+  check('the shield in the address bar counts what was blocked', adTab.blocked === 3 && (await shieldText()) === '3', `${adTab.blocked}, ${await shieldText()}`);
+
+  const shieldPanel = () => evalIn(ui, `(() => {
+    const panel = document.getElementById('shieldPanel');
+    return {
+      open: !panel.hidden,
+      title: document.getElementById('shieldTitle').textContent,
+      on: document.getElementById('shieldSwitch').checked,
+      hosts: [...panel.querySelectorAll('.shield-host')].map((row) => [...row.querySelectorAll('.host, .tag, .count')].map((part) => part.textContent).join(' ')),
+      addresses: [...panel.querySelectorAll('.shield-addresses span')].map((line) => line.textContent),
+      expanded: document.getElementById('shield').getAttribute('aria-expanded'),
+    };
+  })()`);
   await evalIn(ui, "document.getElementById('shield').click()");
-  await waitFor(async () => (await adState()) === '[true,true]', 'ads allowed after the shield click', 8000).catch(() => {});
-  check('the shield allows ads and trackers on this site', settings.data.blockerAllowedSites.includes('127.0.0.1') && (await adState()) === '[true,true]' && (await shieldText()) === '🛡 off',
-    `${settings.data.blockerAllowedSites.join(',')}, ${await adState()}, ${await shieldText()}`);
-  await evalIn(ui, "document.getElementById('shield').click()");
+  await waitFor(async () => (await shieldPanel()).hosts.length === 2, 'shield panel', 3000).catch(() => {});
+  let panel = await shieldPanel();
+  check('the shield opens a panel instead of turning blocking off', panel.open && panel.on && panel.expanded === 'true' && settings.data.blockerAllowedSites.length === 0, JSON.stringify(panel));
+  check('the panel lists what was blocked by host, as Ad or Tracker', panel.title === '3 blocked on 127.0.0.1'
+    && panel.hosts[0] === '127.0.0.1 Ad 2' && panel.hosts[1] === 'localhost Tracker 1', JSON.stringify(panel.hosts));
+  check('the panel gets room below the bars', ui.getBounds().height > 300, `toolbar view ${ui.getBounds().height}px`);
+  await evalIn(ui, "document.querySelector('#shieldHosts .shield-host').click()");
+  await waitFor(async () => (await shieldPanel()).addresses.length === 2, 'host opened', 3000).catch(() => {});
+  panel = await shieldPanel();
+  check('opening a host shows the addresses it blocked', panel.addresses.join('|') === '/adserver/ad.js · script|/tracker/pixel.gif · image', JSON.stringify(panel.addresses));
+
+  await evalIn(ui, "document.getElementById('shieldSwitch').click()");
+  await waitFor(async () => (await adState()) === '[true,true]', 'ads allowed after the switch', 8000).catch(() => {});
+  await waitFor(async () => /^Blocking is off/.test((await shieldPanel()).title), 'panel shows off', 3000).catch(() => {});
+  panel = await shieldPanel();
+  check('the switch allows ads and trackers on this site', settings.data.blockerAllowedSites.includes('127.0.0.1') && (await adState()) === '[true,true]'
+    && (await shieldText()) === 'off' && panel.open && !panel.on && panel.title === 'Blocking is off on 127.0.0.1' && panel.hosts.length === 0,
+  `${settings.data.blockerAllowedSites.join(',')}, ${await adState()}, ${await shieldText()}, ${JSON.stringify(panel)}`);
+  await evalIn(ui, "document.getElementById('shieldSwitch').click()");
   await waitFor(async () => !settings.data.blockerAllowedSites.length && (await adState()) === '[false,true]', 'blocked again', 8000).catch(() => {});
-  check('clicking the shield again blocks them again', settings.data.blockerAllowedSites.length === 0 && (await adState()) === '[false,true]');
+  await waitFor(async () => (await shieldPanel()).hosts.length === 2, 'panel refilled', 3000).catch(() => {});
+  panel = await shieldPanel();
+  check('turning the switch on again blocks them again and lists them', settings.data.blockerAllowedSites.length === 0 && (await adState()) === '[false,true]'
+    && panel.on && panel.hosts.length === 2, JSON.stringify(panel));
+
+  await evalIn(ui, "document.getElementById('shieldSwitch').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  await waitFor(() => ui.getBounds().height === 116, 'shield panel closed', 3000).catch(() => {});
+  panel = await shieldPanel();
+  check('Esc closes the panel and gives the room back', !panel.open && panel.expanded === 'false' && ui.getBounds().height === 116, `${JSON.stringify(panel)}, ${ui.getBounds().height}px`);
+
+  await evalIn(ui, "document.getElementById('shield').click()");
+  await waitFor(async () => (await shieldPanel()).open, 'shield panel again', 3000).catch(() => {});
+  const hadLibraryTab = tabs.internalContents().length > 0;
+  await evalIn(ui, "document.getElementById('shieldAllowed').click()");
+  await waitFor(() => tabs.active?.kind === 'internal' && tabs.active.page === 'settings', 'settings opened', 5000).catch(() => {});
+  check('Allowed sites opens Settings and closes the panel', tabs.active?.kind === 'internal' && tabs.active.page === 'settings' && !(await shieldPanel()).open,
+    `${tabs.active?.kind} ${tabs.active?.page}`);
+  if (!hadLibraryTab) tabs.close(tabs.active.id);
+  tabs.activate(adTab.id);
   const privateAdTab = tabs.create({ url: `${base}/ad-page`, isPrivate: true });
   await waitFor(() => privateAdTab.view.webContents.getURL().endsWith('/ad-page') && !privateAdTab.view.webContents.isLoading(), 'private ad page loaded');
   check('blocking also works in private tabs', (await adState(privateAdTab)) === '[false,true]');

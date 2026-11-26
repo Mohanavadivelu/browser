@@ -35,7 +35,7 @@ const indicatorState = (state) => ({ recording: state.recording });
 // arguments are checked by `ipc.handle` before any handler runs.
 function registerIpcHandlers(ipc, ctx) {
   const {
-    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, refreshBlockerLists, updates,
+    app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, blocker, refreshBlockerLists, updates,
     bookmarkIcons, keepBookmarkIcons,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
   } = ctx;
@@ -125,8 +125,26 @@ function registerIpcHandlers(ipc, ctx) {
     return settingsPayload();
   });
 
-  // Ad and tracker blocking: the toolbar's shield turns it off or on again for the current site,
-  // and the settings page can remove sites from that list.
+  // Ad and tracker blocking: the toolbar's shield opens a panel listing what was blocked on the
+  // current page, with a switch that turns blocking off or on again for the site and a link to
+  // the allowed sites in Settings; the settings page can remove sites from that list.
+  ipc.handle('blocker:details', TOOLBAR, none, () => {
+    const tab = tabs.active;
+    const site = tab?.kind === 'web' ? hostOf(tab.view.webContents.getURL()) : '';
+    if (!site) return null;
+    // On an allowed site nothing is blocked, whatever the page asked for before it reloaded.
+    const allowed = settings.data.blockerAllowedSites.includes(site);
+    return {
+      site,
+      enabled: settings.data.blockTrackers,
+      ready: blocker.ready,
+      updatedAt: blocker.updatedAt,
+      allowed,
+      total: allowed ? 0 : tab.blocked ?? 0,
+      hosts: allowed ? [] : tab.blockedLog?.summary() ?? [],
+    };
+  });
+  ipc.handle('blocker:open-settings', TOOLBAR, none, () => { actions.openLibrary('settings'); });
   ipc.handle('blocker:toggle-site', TOOLBAR, none, () => {
     const tab = tabs.active;
     const site = tab?.kind === 'web' ? hostOf(tab.view.webContents.getURL()) : '';

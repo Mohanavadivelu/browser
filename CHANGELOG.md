@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **The shield shows what it blocked**: a click on the shield in the address bar opens a panel listing the ads and trackers blocked on the page, grouped by the site they came from and marked **Ad** (EasyList) or **Tracker** (EasyPrivacy). Open a site to see the addresses. The panel's switch turns blocking off or on for the site (the shield used to do that at once), and **Allowed sites** opens Settings.
+
 ## 0.8.0
 
 Bookmark menus that match the browser, dragging on the bookmarks bar, and a browser whose own pages no longer run as local files.

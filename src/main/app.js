@@ -90,7 +90,7 @@ async function start(options = {}) {
     },
   });
   let refreshBlockerLists = () => {};
-  if (typeof options.blockerFilters === 'string') {
+  if (options.blockerFilters != null) {
     blocker.useFilters(options.blockerFilters);
   } else {
     blocker.loadCache();

@@ -39,7 +39,7 @@ function createSessionSetup(ctx) {
         return contents && !contents.isDestroyed() ? contents.getURL() : '';
       },
       isActive: blockingActiveFor,
-      onBlocked: (contentsId) => getTabs().countBlocked(contentsId),
+      onBlocked: (contentsId, request) => getTabs().countBlocked(contentsId, request),
     });
     attachDownloadPolicy(ses, {
       onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
