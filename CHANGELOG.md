@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
+
+A download manager: pause, resume and retry, a queue, downloads that survive a restart, a downloads button in the toolbar, and saving videos.
 
 ### New
 
