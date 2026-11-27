@@ -3,12 +3,16 @@
 // Starts a packaged build (dist\win-unpacked\Simple Browser.exe by default) with a temporary
 // profile and drives it over the DevTools protocol. It catches what the tests from source cannot:
 // the app starting from its app.asar, with its fuses, its packed dependencies and the package.json
-// electron-builder writes. Nothing here uses the network.
+// electron-builder writes. It also takes a screenshot and makes a short recording, answering the
+// native consent dialog through Windows UI Automation (consent.ps1), and checks both are saved
+// and shown on the Recordings page. Nothing here uses the network (the page recorded comes from a
+// server on this computer).
 // Run with: npm run test:packaged   (after building, e.g. npx electron-builder --win dir --x64)
-const { spawn, spawnSync } = require('node:child_process');
+const { spawn, spawnSync, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const http = require('node:http');
 
 const exe = process.argv[2] ?? path.join(__dirname, '..', '..', 'dist', 'win-unpacked', 'Simple Browser.exe');
 const PORT = 9360;
@@ -76,9 +80,13 @@ async function main() {
   if (!fs.existsSync(exe)) throw new Error(`No packaged app at ${exe}; build it first.`);
   await checkFuses();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-packaged-'));
+  const recordings = path.join(profile, 'recordings');
   // blockTrackers off: the check must not download the filter lists.
-  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ blockTrackers: false, checkForUpdates: false }));
-  const app = spawn(exe, [`--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`], { stdio: 'ignore' });
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ blockTrackers: false, checkForUpdates: false, recordingFolder: recordings }));
+  // Windows covered by others (or in the background) are not drawn; the screenshot and the
+  // recording need this one drawn, whatever else is open on the desktop.
+  const app = spawn(exe, [`--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--disable-features=CalculateNativeWinOcclusion',
+    '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'], { stdio: 'ignore' });
   try {
     const toolbar = await findTarget((t) => t.url === 'app://browser/index.html', 'the toolbar (the app did not start)', 60000);
     check('the browser pages are served as app://browser/', Boolean(toolbar));
@@ -102,12 +110,79 @@ async function main() {
     check('the bookmarks page loads', /No bookmarks yet/.test(bookmarks), String(bookmarks).slice(0, 80));
     const refused = String(await evaluate(library, "window.browserApi.recording.requestStart().then(() => 'allowed', (e) => e.message)"));
     check('a browser page cannot call what it is not allowed', /from the library page/.test(refused));
+    await checkRecording(toolbar, recordings, profile);
   } finally {
     // The portable .exe unpacks and starts the app as a child: stop the whole process tree.
     if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(app.pid), '/T', '/F'], { stdio: 'ignore' });
     else app.kill();
     await sleep(1500);
   }
+}
+
+// A page that keeps moving: tab capture only sends a frame when the page changes.
+const ANIMATED = '<!doctype html><title>Moving</title><style>@keyframes m{from{left:0}to{left:70vw}}body{margin:0}' +
+  '#b{position:absolute;top:80px;width:120px;height:120px;background:#06c;animation:m 1s linear infinite alternate}</style><div id=b></div>';
+
+// A screenshot, then a few seconds' recording of a moving page: both saved in the recordings
+// folder, and listed on the Recordings page with a picture loaded through the sb-media scheme.
+async function checkRecording(toolbar, folder, profile) {
+  const files = (ext) => (fs.existsSync(folder) ? fs.readdirSync(folder).filter((name) => name.endsWith(ext)) : []);
+  const server = http.createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end(ANIMATED); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await recordPage(toolbar, folder, profile, files, `http://127.0.0.1:${server.address().port}/moving`);
+  } finally {
+    server.close();
+  }
+}
+
+async function recordPage(toolbar, folder, profile, files, url) {
+  await evaluate(toolbar, "window.browserApi.tabs.create()");
+  await sleep(1000);
+  await evaluate(toolbar, `window.browserApi.nav.go(${JSON.stringify(url)})`);
+  await findTarget((t) => t.url === url, 'the moving page');
+  await sleep(1000);
+  const shot = await evaluate(toolbar, 'window.browserApi.screenshot()');
+  check('a screenshot is saved as a PNG in the recordings folder', typeof shot === 'string' && files('.png').length === 1 &&
+    fs.readFileSync(path.join(folder, files('.png')[0])).subarray(1, 4).toString() === 'PNG', String(shot));
+
+  // Start through the toolbar, as its button does; the consent dialog then waits for an answer.
+  const consent = new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'consent.ps1'), '-Profile', profile],
+      { windowsHide: true, timeout: 60000 }, (error, stdout) => resolve(!error && /consent given/.test(stdout)));
+  });
+  await evaluate(toolbar, 'startRecording(), true');
+  check('the consent dialog appears, and is answered as a person would', await consent);
+  const recording = await waitFor(async () => evaluate(toolbar, 'state?.recording?.active === true'), 'recording started', 20000).catch(() => false);
+  check('recording starts once consent is given', recording, recording ? '' : String(await evaluate(toolbar, "document.getElementById('notice').textContent")));
+  await sleep(3000);
+  await evaluate(toolbar, 'stopRecording(), true');
+  const webm = await waitFor(async () => {
+    const [name] = files('.webm');
+    if (!name || (await evaluate(toolbar, 'state?.recording?.active === true'))) return null;
+    const data = fs.readFileSync(path.join(folder, name));
+    return data.length > 1000 ? data : null;
+  }, 'recording saved', 20000).catch(() => null);
+  // Tab capture only sends frames while the window is drawn on screen. On a desktop in use the
+  // window can be behind others, and the app then says the recording was empty: that is not the
+  // build's fault, so outside CI it is skipped with the reason. CI (nothing else on screen) fails.
+  const notice = String(await evaluate(toolbar, "document.getElementById('notice').textContent"));
+  if (!webm && /recording was empty/.test(notice) && !process.env.CI) {
+    console.log('SKIP  the recording is saved as a WebM file  (the test window was behind other windows, so nothing was drawn to record; CI checks this)');
+  } else {
+    check('the recording is saved as a WebM file', webm && webm.readUInt32BE(0) === 0x1a45dfa3,
+      webm ? `${webm.length} bytes` : `no file; the app said: ${notice}`);
+  }
+
+  await evaluate(toolbar, "window.browserApi.nav.go('simple-browser://recordings')");
+  const page = await findTarget((t) => t.url.startsWith('app://browser/library.html'), 'recordings page');
+  const listed = await waitFor(async () => {
+    const count = await evaluate(page, "document.querySelectorAll('#recList .row').length");
+    return count >= (webm ? 2 : 1) ? count : null;
+  }, 'recordings listed', 10000).catch(() => 0);
+  const picture = await waitFor(async () => evaluate(page, `(() => { const img = document.querySelector('#recList .thumb img');
+    img?.scrollIntoView(); return img && img.complete && img.naturalWidth > 0; })()`), 'screenshot thumbnail', 10000).catch(() => false);
+  check('the Recordings page lists them, and shows the screenshot from the sb-media scheme', listed >= (webm ? 2 : 1) && picture, `${listed} listed`);
 }
 
 main()

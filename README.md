@@ -47,7 +47,7 @@ npm start
 | `npm test` | Unit tests (security rules, settings, history, zoom, downloads, recordings, shortcuts, and that the pages, the preload bridge and the main process agree on every IPC channel) |
 | `npm run typecheck` | Type-check the files marked `// @ts-check` (the IPC code) with TypeScript; nothing is compiled |
 | `npm run smoke` | End-to-end tests: launch the app against a local server and check sandboxing, navigation blocking, tabs, full screen, find, zoom, history, the library pages, downloads (pause, queue, retry, resuming after a restart, saving videos), screenshots, restoring tabs, and real recordings (audio, pause, quality, following tabs) |
-| `npm run test:packaged` | After a build: start the packaged app (`dist\win-unpacked`) with a temporary profile and check it works from its `app.asar` |
+| `npm run test:packaged` | After a build: start the packaged app (`dist\win-unpacked`) with a temporary profile and check it works from its `app.asar`, including a screenshot and a short recording (it answers the consent dialog by sending the dialog's own button messages to it, never by clicking) |
 | `npm run audit:prod` | Check production dependencies for known vulnerabilities |
 | `npm run dist` | Build the Windows installer and portable `.exe` into `dist\` |
 
