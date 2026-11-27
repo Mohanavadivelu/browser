@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
+
+Faster downloads over several connections, a speed limit, and downloads marked as coming from the internet.
 
 ### New
 
@@ -8,6 +10,10 @@
 - **A speed limit** for all downloads together, set in Settings (or from **Speed limit** on the Downloads page). Downloads over several connections keep to it exactly. One-connection downloads are paused and resumed to keep to it, so a MB or two already on its way can still arrive at the start.
 - **Downloads are marked as coming from the internet** (the Windows "mark of the web"), so SmartScreen and Office check them before they open. This includes the files the browser writes itself. It can be turned off in Settings.
 - A download split over several connections also picks up after a restart: each part goes on from where it stopped.
+
+### Fixes
+
+- **Quitting while something downloads** no longer shows "A JavaScript error occurred in the main process … reading 'isDestroyed'".
 
 ## 0.10.0
 

@@ -129,6 +129,8 @@ The Release workflow then runs all tests on Windows, builds the installer and po
 
 ## Status
 
+Version 0.11.0: big downloads use several connections at once, there is a speed limit for all downloads, and downloaded files are marked as coming from the internet so Windows checks them before they open. See [CHANGELOG.md](CHANGELOG.md).
+
 Version 0.10.0: a download manager. Downloads can be paused, resumed and retried, wait their turn in a queue, and pick up where they stopped after a restart; a toolbar button shows their progress; plain videos on a page can be saved. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.9.0: the shield opens a panel listing what was blocked on the page, the address bar completes sites inline, and the Bookmarks page's folder tree collapses and lets you drag folders. See [CHANGELOG.md](CHANGELOG.md).
