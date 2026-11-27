@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
+
+Add links in bulk, downloads at a set time or at night, a queue you can reorder, SHA-256 checks, and sleep or shut down when downloads finish.
 
 ### New
 
