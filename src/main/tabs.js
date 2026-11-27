@@ -9,6 +9,7 @@ const {
 const { isCertificateError } = require('./security/certificates');
 const { appUrl, isAppUrl } = require('./app-scheme');
 const { BlockedLog } = require('./blocker');
+const { isLive } = require('./live');
 
 const MAX_CLOSED = 25;
 
@@ -127,7 +128,7 @@ class TabManager extends EventEmitter {
         return;
       }
       this.fetchFavicon(contents.session, source).then((dataUrl) => {
-        if (tab.faviconSource !== source || contents.isDestroyed()) return;
+        if (tab.faviconSource !== source || !isLive(contents)) return;
         tab.favicon = dataUrl;
         if (dataUrl) this.emit('favicon', tab, contents.getURL(), dataUrl);
         changed();
@@ -186,7 +187,7 @@ class TabManager extends EventEmitter {
 
   internalContents() {
     return [...this.tabs.values()]
-      .filter((tab) => tab.kind === 'internal' && !tab.view.webContents.isDestroyed())
+      .filter((tab) => tab.kind === 'internal' && isLive(tab.view.webContents))
       .map((tab) => tab.view.webContents);
   }
 

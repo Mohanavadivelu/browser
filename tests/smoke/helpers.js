@@ -37,6 +37,10 @@ function createChecker() {
       console.log(`${uncaught.length ? 'FAIL' : 'PASS'}  no uncaught errors in the main process${uncaught.length ? `  (${uncaught.length})` : ''}`);
       const failed = results.filter((result) => !result.pass);
       console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+      // Tells the runner the suite got to the end (one that quits early reports nothing).
+      if (process.env.SMOKE_RESULT_FILE) {
+        fs.writeFileSync(process.env.SMOKE_RESULT_FILE, JSON.stringify({ passed: results.length - failed.length, total: results.length }));
+      }
       return failed.length === 0;
     },
   };

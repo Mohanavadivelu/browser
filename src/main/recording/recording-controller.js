@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const { Recorder } = require('./recorder');
+const { isLive } = require('../live');
 
 const AUTO_STOP_CHECK_MS = 250;
 // How long the toolbar gets to stop its capture and send the last chunks before the recording
@@ -64,7 +65,7 @@ function createRecordingController(ctx) {
   // sure the recording ends even if the toolbar does not answer in time.
   const stopCapture = async () => {
     if (!recorder.active) return;
-    if (!ui.webContents.isDestroyed()) ui.webContents.send('recording:command', 'stop');
+    if (isLive(ui.webContents)) ui.webContents.send('recording:command', 'stop');
     if (!(await recorder.whenIdle(CAPTURE_STOP_TIMEOUT_MS))) await recorder.finish();
   };
 

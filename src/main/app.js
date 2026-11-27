@@ -34,6 +34,7 @@ const { FullscreenIdle } = require('./fullscreen-idle');
 const { attachContextMenu } = require('./context-menu');
 const { registerIpcHandlers, indicatorState } = require('./ipc-handlers');
 const { showMainMenu } = require('./menus');
+const { isLive } = require('./live');
 
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const PRELOAD_PATH = path.join(__dirname, '..', 'preload', 'preload.js');
@@ -181,12 +182,12 @@ async function start(options = {}) {
       pushScheduled = false;
       if (win.isDestroyed()) return;
       const state = buildState();
-      if (!ui.webContents.isDestroyed()) ui.webContents.send('ui:state', state);
-      if (!indicator.webContents.isDestroyed()) indicator.webContents.send('ui:state', indicatorState(state));
+      if (isLive(ui.webContents)) ui.webContents.send('ui:state', state);
+      if (isLive(indicator.webContents)) indicator.webContents.send('ui:state', indicatorState(state));
     });
   };
   const notify = (text, kind = 'info') => {
-    if (!ui.webContents.isDestroyed()) ui.webContents.send('ui:notice', { text, kind });
+    if (isLive(ui.webContents)) ui.webContents.send('ui:notice', { text, kind });
   };
   // A failed settings save is shown once a minute at most, not on every change.
   let settingsErrorShownAt = 0;
@@ -344,7 +345,7 @@ async function start(options = {}) {
     downloadTimer = setTimeout(() => {
       downloadTimer = null;
       broadcastToLibrary('downloads:changed', downloads.list());
-      if (!ui.webContents.isDestroyed()) ui.webContents.send('downloads:brief', downloads.brief());
+      if (isLive(ui.webContents)) ui.webContents.send('downloads:brief', downloads.brief());
     }, DOWNLOAD_BROADCAST_MS);
   });
 

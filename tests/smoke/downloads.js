@@ -60,6 +60,8 @@ async function quitMidDownload([profile, downloadDir, base]) {
 
 async function main() {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+  // The last check closes the window; the app must stay up to report the results.
+  app.on('window-all-closed', () => {});
   const { check, finish } = createChecker();
   const work = makeTempDir('sb-dl-smoke-');
   const downloadDir = path.join(work, 'downloads');
@@ -333,7 +335,14 @@ async function main() {
   await waitFor(() => downloads.list().length === 0, 'cleared');
   check('Clear finished empties the list', /No downloads yet/.test(await evalIn(page, "new Promise((r) => setTimeout(() => r(document.getElementById('downloadList').textContent), 400))")));
 
+  // Downloads go on reporting while the browser quits, after its window and views are gone;
+  // that must not throw (it showed an error box as the browser closed). Checked by "no uncaught
+  // errors" below.
   ctx.win.destroy();
+  await waitFor(() => ctx.win.isDestroyed(), 'window closed');
+  downloads.emit('change');
+  downloads.emit('completed', { id: 0, filename: 'late.txt', path: '' });
+  await sleep(500);
   server.close();
   const ok = finish();
   app.exit(ok ? 0 : 1);

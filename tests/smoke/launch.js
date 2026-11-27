@@ -4,6 +4,8 @@
 // failure. ELECTRON_RUN_AS_NODE is removed first: terminals inside VS Code (itself an Electron
 // app) set it, and with it Electron starts as plain Node and every test fails at once.
 // Run with: npm run smoke   (or one suite: npm run smoke -- features.js)
+const fs = require('node:fs');
+const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const electron = require('electron'); // the path to the Electron binary when run from Node
@@ -27,8 +29,13 @@ for (const name of [...ALL, 'helpers.js']) {
 
 for (const name of TESTS) {
   console.log(`\n=== ${name}`);
-  // A suite that hangs fails after 15 minutes instead of using up the CI job.
-  const result = spawnSync(electron, [path.join(__dirname, name)], { stdio: 'inherit', env, timeout: SUITE_TIMEOUT_MS });
+  // A suite that hangs fails after 15 minutes instead of using up the CI job, and one that ends
+  // without reporting its checks (Electron quitting when its last window closes, say) fails too.
+  const resultFile = path.join(os.tmpdir(), `sb-smoke-${process.pid}-${name}.json`);
+  fs.rmSync(resultFile, { force: true });
+  const result = spawnSync(electron, [path.join(__dirname, name)], {
+    stdio: 'inherit', env: { ...env, SMOKE_RESULT_FILE: resultFile }, timeout: SUITE_TIMEOUT_MS,
+  });
   if (result.error?.code === 'ETIMEDOUT') {
     console.error(`${name} did not finish in ${SUITE_TIMEOUT_MS / 60000} minutes`);
     process.exit(1);
@@ -41,4 +48,9 @@ for (const name of TESTS) {
     console.error(`${name} failed (exit code ${result.status ?? result.signal})`);
     process.exit(result.status || 1);
   }
+  if (!fs.existsSync(resultFile)) {
+    console.error(`${name} ended without reporting its checks`);
+    process.exit(1);
+  }
+  fs.rmSync(resultFile, { force: true });
 }
