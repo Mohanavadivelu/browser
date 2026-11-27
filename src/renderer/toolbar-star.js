@@ -14,6 +14,8 @@ async function openStar() {
   closeShield();
   closeDownloads();
   closeVideos();
+  closeSite();
+  closeTabSearch();
   const info = await api.bookmarks.star();
   if (!info) return;
   starBookmark = info;

@@ -55,8 +55,6 @@ button:disabled { color: #5f6368; cursor: default; }
 .address { position: relative; flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; height: 34px; margin: 0 8px; padding: 0 12px; border: 1px solid transparent; border-radius: 17px; background: var(--bg); }
 .address:focus-within { border-color: var(--accent); }
 .address input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: 14px "Segoe UI", sans-serif; user-select: text; }
-.security { flex: none; font-size: 12px; color: #81c995; }
-.security.warn { color: #fdd663; }
 .star { flex: none; color: var(--muted); font-size: 16px; }
 .star.on { color: #fdd663; }
 .zoom-chip { display: none; flex: none; padding: 2px 8px; border-radius: 10px; background: var(--hover); color: var(--text); font-size: 11px; }
@@ -228,3 +226,75 @@ body.fs:not(.reveal) .toolbar { display: none; }
 .panel-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; padding: 8px 16px 4px; border-top: 1px solid var(--border); color: #bdc1c6; font-size: 12px; }
 .panel-foot .link { padding: 4px 0; background: none; color: #8ab4ff; font-size: 13px; }
 .panel-foot .link:hover { text-decoration: underline; }
+
+/* A tab whose page crashed */
+.tab svg.fav.crashed { background: none; fill: none; stroke: #ffb4ae; stroke-width: 2.2; stroke-linecap: round; }
+
+/* The site info button (the lock at the start of the address bar) and its panel */
+.security { flex: none; display: flex; align-items: center; gap: 4px; height: 26px; min-width: 26px; padding: 0 6px; border-radius: 13px; color: #9aa0a6; }
+.security[hidden] { display: none; }
+.security svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.security:hover, .security[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.security.warn { padding: 0 9px; background: #4a3d1e; color: #fdd663; font-size: 12px; font-weight: 600; }
+.security.warn:hover, .security.warn[aria-expanded="true"] { background: #5c4b20; color: #fdd663; }
+.site-panel { position: fixed; z-index: 20; width: 400px; max-width: calc(100vw - 16px); max-height: 640px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: #292a2d; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font-size: 13px; }
+.site-panel[hidden] { display: none; }
+.site-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 10px; }
+.site-head h2 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.site-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.site-status svg, .site-close svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.site-status.ok { color: #81c995; }
+.site-status.warn { color: #fdd663; }
+.site-close { flex: none; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; }
+.site-close:hover { background: var(--hover); }
+.site-about { padding: 0 18px 12px; color: #c4c7cc; line-height: 1.5; }
+.site-cert, .site-https { margin: 0 18px 12px; border-radius: 8px; background: var(--bg); }
+.site-cert summary { padding: 10px 12px; cursor: pointer; }
+.site-cert dl { display: grid; grid-template-columns: 100px 1fr; gap: 6px 10px; padding: 0 12px 12px; color: #c4c7cc; }
+.site-cert dt { color: #9aa0a6; }
+.site-cert dd { overflow-wrap: anywhere; }
+.site-cert .site-note { padding: 0 12px 12px; }
+.site-https { padding: 10px 12px; color: #c4c7cc; line-height: 1.5; }
+.site-section { padding: 10px 18px 12px; border-top: 1px solid var(--border); }
+.site-section h3 { margin-bottom: 8px; color: #bdc1c6; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.site-perms { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; list-style: none; }
+.site-perms li { display: flex; justify-content: space-between; gap: 12px; }
+.site-perms .no { color: #ffb4ae; }
+.site-perms .yes { color: #81c995; }
+.site-note { color: #bdc1c6; font-size: 12px; line-height: 1.45; }
+.site-row { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.site-row > div:first-child, .site-grow { flex: 1; min-width: 0; }
+.site-row button { flex: none; padding: 7px 12px; border-radius: 6px; background: var(--hover); font-size: 13px; }
+.site-row button.danger { color: #ffb4ae; }
+.site-row button:disabled { opacity: .6; }
+.site-panel button.link { padding: 0; background: none; color: #8ab4f8; font-size: 13px; }
+.site-panel button.link:hover { text-decoration: underline; }
+.site-private { padding: 10px 18px 14px; border-top: 1px solid var(--border); }
+
+/* Tab search */
+.tab-search-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: 0 0 4px auto; -webkit-app-region: no-drag; }
+.tab-search-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.tab-search-btn[aria-expanded="true"] { background: var(--hover); }
+.tab-search { position: fixed; z-index: 25; width: 560px; max-width: calc(100vw - 16px); border: 1px solid var(--border); border-radius: 12px; background: #292a2d; box-shadow: 0 16px 40px rgba(0, 0, 0, .55); font-size: 13px; }
+.tab-search[hidden] { display: none; }
+.ts-box { display: flex; align-items: center; gap: 10px; height: 44px; margin: 12px; padding: 0 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--bg); }
+.ts-box svg { width: 17px; height: 17px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.ts-box input { flex: 1; min-width: 0; border: none; background: none; color: var(--text); font: 15px "Segoe UI", system-ui, sans-serif; outline: none; }
+.ts-count { flex: none; color: #bdc1c6; font-size: 12px; }
+.ts-list { max-height: 380px; overflow-y: auto; padding: 0 6px 8px; list-style: none; }
+.ts-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.ts-row:hover { background: var(--hover); }
+.ts-row[aria-selected="true"] { background: #2f4b80; }
+.ts-icon { flex: none; width: 16px; height: 16px; border-radius: 4px; background: #5f6368; object-fit: contain; }
+img.ts-icon { background: none; }
+.ts-main { flex: 1; min-width: 0; }
+.ts-title, .ts-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-url { color: #bdc1c6; font-size: 12px; }
+.ts-row[aria-selected="true"] .ts-url { color: #d6e3ff; }
+.ts-row mark { background: none; color: #fff; font-weight: 700; }
+.ts-tag { flex: none; padding: 2px 8px; border-radius: 10px; background: var(--hover); color: #c4c7cc; font-size: 11px; }
+.ts-tag.private { background: #3a2e4d; color: #d3b8ff; }
+.ts-tag.crashed { background: #4a2a2a; color: #ffb4ae; }
+.ts-empty { padding: 10px; color: #bdc1c6; }
+.ts-keys { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 16px 12px; border-top: 1px solid var(--border); color: #bdc1c6; font-size: 12px; }
+.ts-keys kbd { display: inline-block; min-width: 18px; padding: 1px 6px; border: 1px solid #5f6368; border-bottom-width: 2px; border-radius: 4px; font: 11px "Segoe UI", system-ui, sans-serif; color: #c4c7cc; text-align: center; }

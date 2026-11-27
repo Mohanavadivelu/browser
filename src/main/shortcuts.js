@@ -19,6 +19,12 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
     else if (input.key === 'Escape' && host.mode.suggestionsHeight > 0 && !inPage) handled = false;
     else if (input.key === 'Escape' && host.mode.fullscreen && !host.mode.htmlFullscreen && escapeLeavesFullscreen) host.exitFullscreen();
     else if (ctrl && input.shift && key === 'n') tabs.create({ isPrivate: true });
+    else if (ctrl && input.shift && key === 'a') {
+      // Search the open tabs: a list in the toolbar, which takes the keyboard.
+      host.setRevealed(true);
+      ui.webContents.focus();
+      ui.webContents.send('ui:tab-search');
+    }
     else if (ctrl && input.shift && key === 't') tabs.reopenClosed();
     else if (ctrl && input.shift && key === 'o') actions.openLibrary('bookmarks');
     else if (ctrl && input.shift && key === 'b') actions.toggleBookmarksBar();

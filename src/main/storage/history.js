@@ -97,6 +97,24 @@ class History {
     return this.entries.length !== before;
   }
 
+  // Visits since a time (0: all of them), for clearing browsing data over a time range.
+  countSince(since) {
+    return this.entries.filter((entry) => entry.time >= since).length;
+  }
+
+  removeSince(since) {
+    if (since <= 0) {
+      const count = this.entries.length;
+      this.clear();
+      return count;
+    }
+    const before = this.entries.length;
+    this.entries = this.entries.filter((entry) => entry.time < since);
+    const removed = before - this.entries.length;
+    if (removed) this.flush();
+    return removed;
+  }
+
   clear() {
     this.entries = [];
     this.nextId = 1;

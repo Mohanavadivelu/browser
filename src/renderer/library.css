@@ -210,3 +210,18 @@ code { padding: 5px 9px; border-radius: 6px; background: var(--bg); font-size: 1
 .add-checksum.off summary { opacity: .6; }
 .add-checksum .field { margin: 10px 0 0; }
 .add-checksum input { font: 12px Consolas, "Cascadia Mono", monospace; }
+
+/* Clear browsing data */
+.clear-dialog { width: 520px; max-width: calc(100vw - 32px); padding: 20px 22px 18px; border: 1px solid var(--border); border-radius: 12px; background: #292a2d; color: var(--text); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+.clear-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.clear-dialog h2 { margin: 0 0 14px; font-size: 18px; font-weight: 600; }
+.clear-range { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.clear-kinds { display: flex; flex-direction: column; margin-bottom: 12px; border-radius: 8px; background: var(--bg); }
+.clear-kinds label { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.clear-kinds label:last-child { border-bottom: none; }
+.clear-kinds input { width: 17px; height: 17px; margin-top: 2px; accent-color: var(--accent); }
+.clear-kinds label > span { display: flex; flex-direction: column; gap: 2px; }
+.clear-kinds small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.clear-dialog .note { margin: 0 0 4px; font-size: 12px; }
+.clear-go { background: #c5221f; color: #fff; font-weight: 500; }
+.clear-go:hover { background: #a50e0e; }

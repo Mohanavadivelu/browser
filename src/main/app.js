@@ -29,6 +29,8 @@ const { VideoFinder } = require('./page-videos');
 const { isDangerousFile, setInternetMark } = require('./security/downloads');
 const { SegmentedDownload, probeRanges } = require('./segmented-download');
 const { WhenDone } = require('./when-done');
+const { PermissionLog, CertificateLog } = require('./site-info');
+const { CookieClock } = require('./privacy');
 const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
@@ -112,6 +114,11 @@ async function start(options = {}) {
   const defaultDownloadDir = options.downloadDir ?? app.getPath('downloads');
   const downloadFolders = new Set([path.resolve(defaultDownloadDir).toLowerCase()]);
   const savedDownloads = downloads.load();
+  // For the site info panel and clearing browsing data.
+  const permissionLog = new PermissionLog();
+  const certificates = new CertificateLog();
+  const cookieClock = new CookieClock({ filePath: path.join(userData, 'cookie-times.json') });
+  cookieClock.load();
   const zoom = new ZoomController({ settings });
 
   // ---------- Ad and tracker blocking ----------
@@ -252,6 +259,9 @@ async function start(options = {}) {
     notify,
     downloadDir: options.downloadDir,
     downloadSaveName: options.downloadSaveName,
+    permissionLog,
+    certificates,
+    cookieClock,
   }));
   sessions.ensure(UI_PARTITION, 'ui');
 
@@ -317,6 +327,8 @@ async function start(options = {}) {
   const shouldRecordHistory = (tab) => settings.data.historyEnabled && !tab.isPrivate && tab.kind === 'web';
   tabs.on('navigated', (tab, url, { inPage = false } = {}) => {
     if (shouldRecordHistory(tab)) history.add({ url, title: tab.title, inPage });
+    // A new page: what it asks for is its own.
+    if (!inPage) permissionLog.clear(tab.view.webContents.id);
   });
   tabs.on('titled', (tab, url, title) => {
     if (shouldRecordHistory(tab)) history.updateTitle(url, title);
@@ -425,7 +437,8 @@ async function start(options = {}) {
   const context = {
     app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, bookmarkIcons, keepBookmarkIcons, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, videoFinder, openDownload, saveMedia, clipboard,
-    whenDone, defaultDownloadDir, downloadFolders, fetchIn,
+    whenDone, defaultDownloadDir, downloadFolders, fetchIn, permissionLog, certificates, cookieClock, blockingActiveFor,
+    regularSession: () => sessions.ensure(REGULAR_PARTITION),
     showMenu: () => showMainMenu(context),
   };
   registerIpcHandlers(ipc, context);
@@ -450,6 +463,7 @@ async function start(options = {}) {
     history.flush();
     bookmarkIcons.flush();
     downloads.shutdown();
+    cookieClock.save();
     if (!recorder.active) return;
     event.preventDefault();
     if (closing) return;
@@ -506,6 +520,7 @@ async function start(options = {}) {
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates, bookmarkIcons, videoFinder, whenDone,
+    permissionLog, certificates, cookieClock, sessions,
   };
 }
 

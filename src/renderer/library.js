@@ -52,9 +52,11 @@ $('bookmarksDelete').addEventListener('click', deleteSelectedBookmarks);
 $('bookmarksClear').addEventListener('click', () => { selectedBookmarks.clear(); renderBookmarkPage(); });
 bindSettings();
 bindDownloads();
+bindClearData();
 
 api.onLibraryShow(show);
 api.onDownloads((items) => { if (current === 'downloads') renderDownloads(items); });
+api.onHistoryChanged(() => { if (current === 'history') loadHistory(); });
 api.onRecordingsChanged(() => { if (current === 'recordings') loadRecordings(); });
 api.onBookmarksChanged(() => { if (current === 'bookmarks') loadBookmarks(); });
 api.onBookmarkReveal(revealBookmark);

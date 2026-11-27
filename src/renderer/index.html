@@ -12,6 +12,9 @@
     <div class="tabbar">
       <div class="tabs" id="tabs"></div>
       <button class="icon-btn new-tab" id="newTab" title="New tab (Ctrl+T)">＋</button>
+      <button class="icon-btn tab-search-btn" id="tabSearchButton" type="button" title="Search tabs (Ctrl+Shift+A)" aria-label="Search tabs (Ctrl+Shift+A)" aria-haspopup="dialog" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
     </div>
 
     <div class="toolbar">
@@ -21,7 +24,7 @@
       <button class="icon-btn" id="home" title="Home">⌂</button>
 
       <form class="address" id="addressForm" autocomplete="off">
-        <span class="security" id="security"></span>
+        <button class="security" id="security" type="button" aria-haspopup="dialog" aria-expanded="false" hidden></button>
         <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address" role="combobox" aria-controls="suggestions" aria-expanded="false" aria-autocomplete="both">
         <span class="complete-hint" id="completeHint" hidden>Tab to accept</span>
         <button class="zoom-chip" id="zoom" type="button" title="Reset zoom"></button>
@@ -91,6 +94,17 @@
       <span>Ctrl+J</span>
     </div>
   </section>
+  <section id="sitePanel" class="site-panel" role="dialog" aria-labelledby="siteTitle" hidden></section>
+  <section id="tabSearchPanel" class="tab-search" role="dialog" aria-label="Search open tabs" hidden>
+    <label class="ts-box">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z"></path><path d="M20 20l-4-4"></path></svg>
+      <input id="tabSearchInput" type="text" spellcheck="false" autocomplete="off" placeholder="Search open tabs" aria-label="Search open tabs"
+        role="combobox" aria-controls="tabSearchList" aria-expanded="true" aria-autocomplete="list">
+      <span id="tabSearchCount" class="ts-count"></span>
+    </label>
+    <ul id="tabSearchList" class="ts-list" role="listbox" aria-label="Open tabs"></ul>
+    <div class="ts-keys"><span><kbd>↑</kbd> <kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> go to the tab</span><span><kbd>Ctrl</kbd>+<kbd>Del</kbd> close it</span><span><kbd>Esc</kbd> close</span></div>
+  </section>
   <section id="videosPanel" class="videos-panel" role="dialog" aria-labelledby="videosTitle" hidden>
     <div class="panel-head column">
       <h2 id="videosTitle">Videos on this page</h2>
@@ -107,6 +121,8 @@
   <script src="toolbar-star.js"></script>
   <script src="toolbar-shield.js"></script>
   <script src="toolbar-downloads.js"></script>
+  <script src="toolbar-site.js"></script>
+  <script src="toolbar-tabsearch.js"></script>
   <script src="toolbar-suggestions.js"></script>
   <script src="app.js"></script>
 </body>

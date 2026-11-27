@@ -10,7 +10,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const electron = require('electron'); // the path to the Electron binary when run from Node
 
-const ALL = ['run.js', 'features.js', 'restore.js', 'downloads.js'];
+const ALL = ['run.js', 'features.js', 'restore.js', 'downloads.js', 'everyday.js'];
 const SUITE_TIMEOUT_MS = 15 * 60 * 1000;
 const chosen = process.argv.slice(2);
 const TESTS = chosen.length ? ALL.filter((name) => chosen.includes(name)) : ALL;

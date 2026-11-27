@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0
+
+A page for crashed tabs, a site info panel, tab search, and clearing browsing data over a time range.
+
+### New
+
+- **Crashed tabs**: when a page crashes, its tab shows "This page crashed", which site, and why in plain words (it ran out of memory, say), with **Reload** and **Close tab**. The address bar keeps the page's address and the tab shows a warning mark. Only the crash page itself can use those buttons; a web page can't close its own tab that way. The browser's own pages (History, Settings...) just load again.
+- **Site info**: the lock at the start of the address bar (or **Not secure** for plain http) opens a panel: whether the connection is secure and, for https, the certificate (issued to, issued by, valid until, fingerprint); what the page asked for (location, notifications...) and whether it got it; the site's cookies and stored data, with **Clear data** for that site only (after a confirmation; other sites are not touched); the ads and trackers blocked; and its zoom. For plain http it explains the risk and links to the https version.
+- **Tab search**: Ctrl+Shift+A, or the button at the end of the tab strip, lists the open tabs to search by title or address, matched part in bold, with Private, Playing, Muted and Crashed marked. Arrow keys choose, Enter goes to the tab, Ctrl+Delete closes it, Esc closes the list.
+- **Clear browsing data** (Settings › Privacy) replaces *Clear history now*: choose the last hour, 24 hours, 7 days, 4 weeks or all time, and what to clear (history, cookies and site data, the cache, the downloads list), each with what it would remove. Cookies are cleared by when they were set (the browser now notes that, as Electron doesn't), along with what the sites that set them stored; the cache can only be emptied whole, and the dialog says so. Bookmarks, settings and recordings are never touched.
+
 ## 0.12.0
 
 Add links in bulk, downloads at a set time or at night, a queue you can reorder, SHA-256 checks, and sleep or shut down when downloads finish.

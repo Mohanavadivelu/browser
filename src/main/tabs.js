@@ -17,7 +17,7 @@ const MAX_CLOSED = 25;
 // "Internal" tabs show the app's own History / Downloads / Recordings / Settings pages.
 class TabManager extends EventEmitter {
   constructor({
-    host, sessions, newTabPage, warningPage, libraryPage, preloadPath, zoom,
+    host, sessions, newTabPage, warningPage, crashedPage = 'crashed.html', libraryPage, preloadPath, zoom,
     getEngine, getHome, onBlocked, onInput, fetchFavicon = require('./favicons').fetchFavicon,
   }) {
     super();
@@ -26,6 +26,7 @@ class TabManager extends EventEmitter {
     this.sessions = sessions;
     this.newTabPage = newTabPage;
     this.warningPage = warningPage;
+    this.crashedPage = crashedPage;
     this.libraryPage = libraryPage;
     this.preloadPath = preloadPath;
     this.zoom = zoom;
@@ -139,7 +140,29 @@ class TabManager extends EventEmitter {
     contents.on('leave-html-full-screen', () => this.host.setHtmlFullscreen(false));
     contents.on('render-process-gone', (_event, details) => {
       console.error(`Tab ${tab.id} renderer gone: ${details.reason}`);
+      // The browser's own pages (History, Settings...) simply load again.
+      if (tab.kind === 'internal' && details.reason !== 'clean-exit' && !this.shuttingDown && isLive(contents)) contents.reload();
     });
+  }
+
+  // A web page that crashed shows the crash page in its tab, with the page's own address kept in
+  // the address bar. Reload and Close tab on it set the crash page's #hash (it has no bridge to
+  // the browser); only the crash page itself can do that, so no web page can close a tab this way.
+  isCrashPage(url) {
+    return isAppUrl(url) && new URL(url).pathname === `/${this.crashedPage}`;
+  }
+
+  showCrash(tab, reason) {
+    const contents = tab.view.webContents;
+    if (this.shuttingDown || !isLive(contents)) return;
+    const current = contents.getURL();
+    // A crash of the crash page (or of a page not loaded yet) keeps what is known already.
+    const url = this.isCrashPage(current) ? tab.crashed?.url ?? '' : current;
+    tab.crashed = { url: isAllowedUrl(url) ? url : '', reason };
+    tab.loading = false;
+    contents.loadURL(appUrl(this.crashedPage, { query: { url: tab.crashed.url, reason } })).catch(() => {});
+    this.emit('crashed', tab, tab.crashed);
+    this.emit('change');
   }
 
   wireWeb(tab) {
@@ -150,7 +173,11 @@ class TabManager extends EventEmitter {
       openInNewTab: (url) => this.create({ url, isPrivate: tab.isPrivate }),
       onBlocked: this.onBlocked,
     });
+    contents.on('render-process-gone', (_event, details) => {
+      if (details.reason !== 'clean-exit') this.showCrash(tab, details.reason);
+    });
     contents.on('did-navigate', (_event, url) => {
+      if (!this.isCrashPage(url)) tab.crashed = null;
       tab.blocked = 0; // a new page: count and list its own blocked requests
       tab.blockedLog?.clear();
       this.zoom?.apply(tab);
@@ -158,6 +185,12 @@ class TabManager extends EventEmitter {
       changed();
     });
     contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+      if (isMainFrame && tab.crashed && this.isCrashPage(url)) {
+        const action = new URL(url).hash;
+        if (action === '#close') setImmediate(() => this.close(tab.id));
+        else if (action === '#reload' && tab.crashed.url) contents.loadURL(tab.crashed.url).catch(() => {});
+        return;
+      }
       if (isMainFrame) {
         this.zoom?.apply(tab);
         this.emit('navigated', tab, url, { inPage: true });
@@ -330,11 +363,14 @@ class TabManager extends EventEmitter {
       const contents = tab.view.webContents;
       const url = contents.getURL();
       const internal = tab.kind === 'internal';
+      // A crashed page's tab shows the page's address, not the crash page's.
+      const crashed = Boolean(tab.crashed) && this.isCrashPage(url);
       return {
         id,
         kind: tab.kind,
         title: tab.title || (internal ? 'Simple Browser' : isAppUrl(url) ? 'New tab' : url),
-        url: internal ? internalUrl(tab.page) : isAppUrl(url) ? '' : url,
+        url: internal ? internalUrl(tab.page) : crashed ? tab.crashed.url : isAppUrl(url) ? '' : url,
+        crashed,
         favicon: tab.favicon,
         loading: tab.loading,
         isPrivate: tab.isPrivate,

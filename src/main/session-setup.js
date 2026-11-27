@@ -13,9 +13,10 @@ function cleanUserAgent(userAgent) {
 // How each session is set up the first time it is used (see SessionManager): the browser's own
 // session ('ui') and the web sessions (the regular profile and each private tab's).
 // `ctx`: rendererDir, recording (the recording controller), getFolder(), blocker,
-// blockingActiveFor(url), getTabs(), downloads, notify, downloadDir, downloadSaveName.
+// blockingActiveFor(url), getTabs(), downloads, notify, downloadDir, downloadSaveName,
+// permissionLog, certificates, cookieClock.
 function createSessionSetup(ctx) {
-  const { rendererDir, recording, getFolder, blocker, blockingActiveFor, getTabs, downloads, notify } = ctx;
+  const { rendererDir, recording, getFolder, blocker, blockingActiveFor, getTabs, downloads, notify, permissionLog, certificates, cookieClock } = ctx;
 
   return (ses, kind) => {
     if (kind === 'ui') {
@@ -30,8 +31,17 @@ function createSessionSetup(ctx) {
       }, { useSystemPicker: false });
       return;
     }
-    applyPermissionPolicy(ses);
-    // Web tabs show the new tab page and the certificate warning, and nothing else of the app.
+    applyPermissionPolicy(ses, undefined, { onRequest: (contents, permission, granted) => permissionLog?.record(contents.id, permission, granted) });
+    // The certificate each site presents, for the site info panel; Chromium still decides (-3).
+    ses.setCertificateVerifyProc((request, callback) => {
+      certificates?.record(ses, request);
+      callback(-3);
+    });
+    // When each cookie of the regular profile was set, for clearing a time range (never kept
+    // for private tabs, which keep nothing).
+    if (kind === 'web') cookieClock?.attach(ses);
+    // Web tabs show the new tab page, the certificate warning and the crash page, and nothing
+    // else of the app.
     serveAppPages(ses, rendererDir, WEB_FILES);
     blocker.attach(ses, {
       pageUrlOf: (details) => {

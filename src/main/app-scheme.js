@@ -22,7 +22,7 @@ const CONTENT_TYPES = Object.freeze({
 const PLAIN_NAME = /^[a-z0-9][a-z0-9-]*\.[a-z]+$/i;
 
 // What a web tab may load: the new tab page, the certificate warning and what they use.
-const WEB_FILES = Object.freeze(new Set(['newtab.html', 'newtab.js', 'warning.html', 'warning.js', 'pages.css']));
+const WEB_FILES = Object.freeze(new Set(['newtab.html', 'newtab.js', 'warning.html', 'warning.js', 'crashed.html', 'crashed.js', 'pages.css']));
 
 // app://browser/newtab.html?engine=google, from a file name and an optional query and hash.
 function appUrl(file, { query, hash } = {}) {

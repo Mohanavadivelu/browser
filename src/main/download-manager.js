@@ -894,6 +894,27 @@ class DownloadManager extends EventEmitter {
     return true;
   }
 
+  // Finished downloads started since a time (0: all of them), for clearing browsing data over a
+  // time range. Only the list: the files stay. Running and waiting downloads are kept.
+  countFinishedSince(since) {
+    return [...this.records.values()].filter(({ entry }) => !UNFINISHED.has(entry.state) && entry.startedAt >= since).length;
+  }
+
+  removeFinishedSince(since) {
+    let removed = 0;
+    for (const [id, record] of [...this.records]) {
+      const { entry, item } = record;
+      if (UNFINISHED.has(entry.state) || entry.startedAt < since) continue;
+      record.item = null;
+      this.records.delete(id);
+      // A failed download Chromium could still resume is cancelled, which deletes its partial file.
+      if (item) item.cancel();
+      removed += 1;
+    }
+    if (removed) this.changed();
+    return removed;
+  }
+
   // Completed, cancelled and blocked downloads; failed ones stay, to be retried.
   clearFinished() {
     let removed = 0;

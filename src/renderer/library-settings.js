@@ -107,9 +107,4 @@ function bindSettings() {
   $('recordingFollowTab').addEventListener('change', () => saveSetting({ recordingFollowTab: $('recordingFollowTab').checked }));
   $('folderChange').addEventListener('click', async () => renderSettings(await api.settings.chooseFolder()));
   $('folderOpen').addEventListener('click', () => api.recordings.openFolder());
-  $('settingsClearHistory').addEventListener('click', async () => {
-    await api.history.clear();
-    $('settingsHistoryMsg').textContent = 'History cleared.';
-    $('settingsHistoryMsg').hidden = false;
-  });
 }

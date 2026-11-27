@@ -14,3 +14,19 @@ body.warning h1 { font-size: 30px; font-weight: 600; }
 body.warning p { margin-bottom: 14px; line-height: 1.5; }
 body.warning .code { font-size: 12px; opacity: .75; }
 body.warning button { padding: 10px 24px; border: none; border-radius: 6px; background: #fff; color: #7a1c1c; font: 600 14px "Segoe UI", sans-serif; cursor: pointer; }
+
+body.crashed { background: #202124; color: #e8eaed; }
+body.crashed main { text-align: left; }
+body.crashed .crash-mark { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 18px; border-radius: 14px; background: #4a2a2a; color: #ffb4ae; }
+body.crashed .crash-mark svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+body.crashed h1 { margin-bottom: 14px; font-size: 26px; font-weight: 600; }
+body.crashed p { margin-bottom: 18px; line-height: 1.55; color: #c4c7cc; }
+body.crashed strong { color: #e8eaed; }
+body.crashed .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
+body.crashed button { height: 40px; padding: 0 18px; border: none; border-radius: 8px; background: #3a3b40; color: #e8eaed; font: 14px "Segoe UI", sans-serif; cursor: pointer; }
+body.crashed button.primary { background: #3a6fd8; color: #fff; font-weight: 500; }
+body.crashed button:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 2px; }
+body.crashed details { padding-top: 14px; border-top: 1px solid #3c3d42; color: #9aa0a6; font-size: 13px; }
+body.crashed summary { cursor: pointer; }
+body.crashed details p { margin: 10px 0 0; color: #9aa0a6; }
+body.crashed code { padding: 2px 6px; border-radius: 4px; background: #2b2c30; color: #c4c7cc; }

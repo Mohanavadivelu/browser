@@ -207,11 +207,11 @@ test('each of the browser pages can call only the channels it needs', () => {
   const channels = [...ipcMain.handlers.keys()];
   const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
 
-  assert.equal(channels.length, 93);
+  assert.equal(channels.length, 97);
   assert.deepEqual(allowed('indicator'), ['recording:mark', 'recording:request-pause', 'recording:request-stop', 'ui:get-state']);
   assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
   // The library tab shows text from websites: no recording, navigation or tab controls.
-  assert.ok(allowed('library').every((channel) => /^(history|bookmarks|downloads|recordings|settings):|^tabs:open$|^blocker:remove-site$|^updates:check$/.test(channel)), allowed('library').join());
+  assert.ok(allowed('library').every((channel) => /^(history|bookmarks|downloads|recordings|settings|privacy):|^tabs:open$|^blocker:remove-site$|^updates:check$/.test(channel)), allowed('library').join());
   assert.ok(!allowed('library').includes('bookmarks:toggle'));
   // The toolbar has no access to files, settings or history. Its downloads panel sees names and
   // progress, and can pause, resume and open a finished download by its number.
@@ -219,6 +219,10 @@ test('each of the browser pages can call only the channels it needs', () => {
   assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('downloads:')), ['downloads:brief', 'downloads:open', 'downloads:open-page', 'downloads:pause', 'downloads:resume']);
   assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('videos:')), ['videos:list', 'videos:save']);
   assert.ok(!allowed('library').some((channel) => channel.startsWith('videos:')));
+  // The site info panel is the toolbar's; clearing browsing data is the Settings page's.
+  assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('site:')), ['site:clear-data', 'site:info']);
+  assert.ok(!allowed('toolbar').some((channel) => channel.startsWith('privacy:')));
+  assert.ok(!allowed('library').some((channel) => channel.startsWith('site:')));
   assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('bookmarks:')), ['bookmarks:action', 'bookmarks:folder', 'bookmarks:icons', 'bookmarks:move', 'bookmarks:star', 'bookmarks:star-remove', 'bookmarks:star-save']);
   assert.ok(allowed('toolbar').includes('recording:chunk'));
   assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('blocker:')), ['blocker:details', 'blocker:open-settings', 'blocker:toggle-site']);

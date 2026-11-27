@@ -14,7 +14,19 @@ function renderTabs() {
     const node = element('div', `tab${tab.id === state.activeId ? ' active' : ''}${tab.isPrivate ? ' private' : ''}`);
     node.dataset.id = String(tab.id);
     node.draggable = true;
-    if (tab.favicon) {
+    if (tab.crashed) {
+      // The page in this tab crashed: a warning mark instead of the site's icon.
+      const mark = document.createElementNS(SVG, 'svg');
+      mark.setAttribute('viewBox', '0 0 24 24');
+      mark.setAttribute('class', 'fav crashed');
+      mark.setAttribute('aria-hidden', 'true');
+      for (const d of ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', 'M12 7.5v5.5', 'M12 16.5v.01']) {
+        const path = document.createElementNS(SVG, 'path');
+        path.setAttribute('d', d);
+        mark.append(path);
+      }
+      node.append(mark);
+    } else if (tab.favicon) {
       const icon = element('img', 'fav');
       icon.src = tab.favicon;
       icon.alt = '';

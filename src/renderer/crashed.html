@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Page crashed</title>
+  <link rel="stylesheet" href="pages.css">
+</head>
+<body class="crashed">
+  <main>
+    <div class="crash-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path><path d="M9.5 12.5l5 5M14.5 12.5l-5 5"></path></svg>
+    </div>
+    <h1>This page crashed</h1>
+    <p>The page at <strong id="host">this site</strong> stopped working: <span id="reason">it stopped unexpectedly</span>. Your other tabs are fine.</p>
+    <div class="actions">
+      <button id="reload" type="button" class="primary">Reload</button>
+      <button id="close" type="button">Close tab</button>
+    </div>
+    <details>
+      <summary>What happened</summary>
+      <p>Each tab runs on its own, so one page crashing can't take others with it. If it keeps crashing, the problem is likely the site itself: try again later, or open it in a private tab.</p>
+      <p>Reason given by the browser: <code id="code">unknown</code></p>
+    </details>
+  </main>
+  <script src="crashed.js"></script>
+</body>
+</html>

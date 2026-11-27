@@ -13,6 +13,8 @@ const bookmarkList = require('./bookmarks');
 const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
 const { checkLinks } = require('./link-check');
+const { siteCookies, storageUsage, clearSiteData } = require('./site-info');
+const { clearSummary, clearBrowsingData } = require('./privacy');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const {
@@ -41,11 +43,12 @@ function registerIpcHandlers(ipc, ctx) {
     bookmarkIcons, keepBookmarkIcons,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
     videoFinder, openDownload, saveMedia, clipboard, whenDone, defaultDownloadDir, downloadFolders, fetchIn,
+    permissionLog, certificates, cookieClock, regularSession, blockingActiveFor,
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
-    entryIdAndBool, listIndex, longText, addLinks, entryAndTarget, entryIdAndText,
+    entryIdAndBool, listIndex, longText, addLinks, entryAndTarget, entryIdAndText, clearRange, clearRequest,
   } = validators;
 
   const settingsPayload = () => ({
@@ -295,6 +298,66 @@ function registerIpcHandlers(ipc, ctx) {
     }
     const ids = downloads.addLinks({ ...request, saveDir: folder });
     return { ok: ids.length > 0, added: ids.length };
+  });
+
+  // The site info panel (the lock in the address bar): about the active tab's page only. The
+  // site is always the tab's own address, never one the toolbar names.
+  const activeSite = () => {
+    const tab = tabs.active;
+    if (tab?.kind !== 'web' || tab.crashed) return null;
+    const contents = tab.view.webContents;
+    const url = contents.getURL();
+    return /^https?:\/\//i.test(url) ? { tab, contents, url } : null;
+  };
+  ipc.handle('site:info', TOOLBAR, none, async () => {
+    const site = activeSite();
+    if (!site) return null;
+    const { tab, contents, url } = site;
+    const { protocol, hostname, host: siteName } = new URL(url);
+    const secure = protocol === 'https:';
+    return {
+      site: siteName,
+      secure,
+      certificate: secure ? certificates.get(contents.session, hostname) : null,
+      permissions: permissionLog.list(contents.id),
+      cookies: (await siteCookies(contents.session, hostname)).length,
+      storageBytes: await storageUsage(contents),
+      blocked: tab.blocked ?? 0,
+      blocking: blockingActiveFor(url),
+      zoom: Math.round(contents.getZoomFactor() * 100),
+      httpsUrl: secure ? '' : url.replace(/^http:/i, 'https:'),
+      isPrivate: tab.isPrivate,
+    };
+  });
+  ipc.handle('site:clear-data', TOOLBAR, none, async () => {
+    const site = activeSite();
+    if (!site) return { ok: false };
+    const { contents, url } = site;
+    const { hostname } = new URL(url);
+    const count = (await siteCookies(contents.session, hostname)).length;
+    const { response } = await dialog.showMessageBox(host.win, {
+      type: 'warning',
+      title: 'Clear site data',
+      message: `Clear cookies and site data for ${hostname}?`,
+      detail: `${count} cookie${count === 1 ? '' : 's'} and everything ${hostname} stored in this browser will be removed. You'll be signed out of this site. Other sites are not touched.`,
+      buttons: ['Clear data', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response !== 0 || contents.isDestroyed()) return { ok: false };
+    const result = await clearSiteData(contents.session, url);
+    notify(`Cookies and stored data for ${hostname} cleared. You may need to sign in again.`);
+    return { ok: true, cookies: result.cookies };
+  });
+
+  // Clear browsing data (Settings): the regular profile only; private tabs keep nothing.
+  const privacyContext = () => ({ history, downloads, session: regularSession(), clock: cookieClock });
+  ipc.handle('privacy:summary', LIBRARY, clearRange, (_e, range) => clearSummary({ range, ...privacyContext() }));
+  ipc.handle('privacy:clear', LIBRARY, clearRequest, async (_e, range, what) => {
+    const done = await clearBrowsingData({ range, what, ...privacyContext() });
+    if (what.history) broadcastToLibrary('history:changed');
+    return done;
   });
 
   // When all downloads finish: nothing, sleep or shut down (for this session; with a countdown).

@@ -131,6 +131,8 @@ async function openShield() {
   if (starBookmark) await closeStar(true);
   closeDownloads();
   closeVideos();
+  closeSite();
+  closeTabSearch();
   shieldOpen = true;
   openHosts.clear();
   $('shield').setAttribute('aria-expanded', 'true');

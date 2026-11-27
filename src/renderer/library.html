@@ -148,8 +148,8 @@
           <span>Sites where ads and trackers are allowed (turn this on from the 🛡 in the address bar)</span>
           <div id="allowedSites" class="list"></div>
         </div>
-        <button id="settingsClearHistory" type="button" class="danger">Clear history now</button>
-        <p id="settingsHistoryMsg" class="note" hidden></p>
+        <button id="clearDataOpen" type="button">Clear browsing data…</button>
+        <p id="clearDataMessage" class="note" role="status" hidden></p>
       </div>
 
       <div class="group">
@@ -221,6 +221,30 @@
       </div>
     </section>
   </main>
+  <dialog id="clearDialog" class="clear-dialog" aria-labelledby="clearDialogTitle">
+    <h2 id="clearDialogTitle">Clear browsing data</h2>
+    <label class="clear-range">
+      <span>From</span>
+      <select id="clearRange">
+        <option value="hour">The last hour</option>
+        <option value="day">The last 24 hours</option>
+        <option value="week">The last 7 days</option>
+        <option value="month">The last 4 weeks</option>
+        <option value="all">All time</option>
+      </select>
+    </label>
+    <div class="clear-kinds">
+      <label><input id="clearHistory" type="checkbox" checked><span><span>Browsing history</span><small id="clearHistoryNote"></small></span></label>
+      <label><input id="clearCookies" type="checkbox" checked><span><span>Cookies and site data</span><small id="clearCookiesNote"></small></span></label>
+      <label><input id="clearCache" type="checkbox" checked><span><span>Cached pictures and files</span><small id="clearCacheNote"></small></span></label>
+      <label><input id="clearDownloads" type="checkbox"><span><span>The downloads list</span><small id="clearDownloadsNote"></small></span></label>
+    </div>
+    <p class="note">Bookmarks, settings and recordings are never cleared here. Private tabs keep nothing to clear.</p>
+    <div class="move-actions">
+      <button id="clearCancel" type="button">Cancel</button>
+      <button id="clearConfirm" type="button" class="clear-go">Clear data</button>
+    </div>
+  </dialog>
   <dialog id="addDialog" class="add-dialog" aria-labelledby="addDialogTitle">
     <h2 id="addDialogTitle">Add downloads</h2>
     <label class="field">
@@ -273,6 +297,7 @@
   <script src="library-bookmark-move.js"></script>
   <script src="library-recordings.js"></script>
   <script src="library-settings.js"></script>
+  <script src="library-clear.js"></script>
   <script src="library-downloads.js"></script>
   <script src="library-add-links.js"></script>
   <script src="library.js"></script>

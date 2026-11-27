@@ -110,6 +110,14 @@ contextBridge.exposeInMainWorld('browserApi', {
     list: () => invoke('videos:list'),
     save: (index) => invoke('videos:save', index),
   },
+  site: {
+    info: () => invoke('site:info'),
+    clearData: () => invoke('site:clear-data'),
+  },
+  privacy: {
+    summary: (range) => invoke('privacy:summary', range),
+    clear: (range, what) => invoke('privacy:clear', range, what),
+  },
   recordings: {
     list: () => invoke('recordings:list'),
     open: (name) => invoke('recordings:open', name),
@@ -145,6 +153,8 @@ contextBridge.exposeInMainWorld('browserApi', {
   onDownloads: (callback) => subscribe('downloads:changed', callback),
   onDownloadsBrief: (callback) => subscribe('downloads:brief', callback),
   onWhenDone: (callback) => subscribe('downloads:when-done', callback),
+  onTabSearch: (callback) => subscribe('ui:tab-search', callback),
+  onHistoryChanged: (callback) => subscribe('history:changed', callback),
   onRecordingsChanged: (callback) => subscribe('recordings:changed', callback),
   onLibraryShow: (callback) => subscribe('library:show', callback),
   onBookmarksChanged: (callback) => subscribe('bookmarks:changed', callback),

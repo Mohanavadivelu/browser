@@ -13,11 +13,7 @@ function renderToolbar() {
   $('loading').classList.toggle('show', Boolean(tab?.loading));
 
   if (!addressFocused) $('address').value = tab?.url ?? '';
-  const security = $('security');
-  const secure = tab?.url.startsWith('https:');
-  const insecure = tab?.url.startsWith('http:');
-  security.textContent = secure ? '🔒' : insecure ? 'Not secure' : '';
-  security.classList.toggle('warn', Boolean(insecure));
+  renderSecurity(tab);
 
   const bookmarked = Boolean(tab && state.bookmarked);
   $('star').textContent = bookmarked ? '★' : '☆';
@@ -107,10 +103,12 @@ api.onState((next) => {
   state = next;
   followShield(before, activeTab());
   followVideos(before, activeTab());
+  followSite(before, activeTab());
   // The main process ended the recording on its own (a write error, or the toolbar did not stop
   // in time): stop a capture that is still running, so it does not keep going unseen.
   if (!state.recording.active && capture && !retargeting) stopRecording();
   render();
+  renderTabSearch();
 });
 api.onNotice(showNotice);
 api.onFocusAddress(() => $('address').focus());

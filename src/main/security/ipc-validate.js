@@ -4,6 +4,8 @@
 const MAX_CHUNK_BYTES = 32 * 1024 * 1024;
 
 const BOOKMARK_ACTIONS = new Set(['open', 'tab', 'private', 'copy', 'edit', 'delete', 'open-all']);
+const CLEAR_RANGES = new Set(['hour', 'day', 'week', 'month', 'all']);
+const CLEAR_KINDS = new Set(['history', 'cookies', 'cache', 'downloads']);
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
 
 const validators = {
@@ -35,6 +37,11 @@ const validators = {
       (request.startAt === undefined || (Number.isSafeInteger(request.startAt) && request.startAt >= 0)) &&
       (request.checksum === undefined || (typeof request.checksum === 'string' && request.checksum.length <= 200));
   },
+  // A time range for clearing browsing data, and what to clear over it.
+  clearRange: (...args) => args.length === 1 && CLEAR_RANGES.has(args[0]),
+  clearRequest: (...args) => args.length === 2 && CLEAR_RANGES.has(args[0]) && args[1] !== null && typeof args[1] === 'object' &&
+    !Array.isArray(args[1]) && Object.keys(args[1]).length > 0 &&
+    Object.entries(args[1]).every(([key, value]) => CLEAR_KINDS.has(key) && typeof value === 'boolean'),
   // A place in a short list (the videos on a page).
   listIndex: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] < 100,
   text: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048,

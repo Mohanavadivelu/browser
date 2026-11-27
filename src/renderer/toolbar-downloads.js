@@ -153,6 +153,8 @@ async function openDownloads() {
   if (starBookmark) await closeStar(true);
   closeShield();
   closeVideos();
+  closeSite();
+  closeTabSearch();
   downloadsOpen = true;
   $('downloadsPanel').hidden = false;
   $('downloads').setAttribute('aria-expanded', 'true');
@@ -254,6 +256,8 @@ async function openVideos() {
   if (starBookmark) await closeStar(true);
   closeShield();
   closeDownloads();
+  closeSite();
+  closeTabSearch();
   videosOpen = true;
   $('videosPanel').hidden = false;
   $('videos').setAttribute('aria-expanded', 'true');

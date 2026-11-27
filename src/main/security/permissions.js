@@ -16,11 +16,21 @@ function isMicrophoneOnly(permission, details = {}) {
 
 // `allowMicrophone(contents)` may grant the microphone (audio only) to particular pages: the
 // browser's own toolbar, while a recording with narration is running. Web sessions never pass it.
-function applyPermissionPolicy(ses, allowed = WEB_ALLOWED, { allowMicrophone = () => false } = {}) {
+// `onRequest(contents, permission, granted)` hears each request a page makes, and the answer (the
+// site info panel lists them).
+function applyPermissionPolicy(ses, allowed = WEB_ALLOWED, { allowMicrophone = () => false, onRequest = null } = {}) {
   const decide = (contents, permission, details) => isPermissionAllowed(permission, allowed) ||
     (isMicrophoneOnly(permission, details) && Boolean(allowMicrophone(contents)));
   ses.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(decide(contents, permission, details));
+    const granted = decide(contents, permission, details);
+    callback(granted);
+    if (contents && onRequest) {
+      try {
+        onRequest(contents, permission, granted);
+      } catch {
+        // Listing it must never get in the way of the answer.
+      }
+    }
   });
   ses.setPermissionCheckHandler((contents, permission, _origin, details) => decide(contents, permission, details));
   ses.setDevicePermissionHandler(() => false);
