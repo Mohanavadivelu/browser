@@ -32,9 +32,19 @@ function content(size) {
 async function quitMidDownload([profile, downloadDir, base]) {
   const plainUrl = `${base}/file/big-archive.zip?size=${PLAIN_SIZE}`;
   const splitUrl = `${base}/file/split-archive.zip?size=${SPLIT_SIZE}`;
+  // This process must end on its own: the test waits for it. Any error, or a quit that hangs,
+  // ends it with a code the test reports.
+  const step = (text) => console.log(`quit phase: ${text}`);
+  process.on('uncaughtException', (error) => {
+    console.error('QUIT PHASE UNCAUGHT', error);
+    app.exit(4);
+  });
+  setTimeout(() => { step('gave up after 90 s'); app.exit(5); }, 90_000);
+  step('starting');
   const ctx = await start({ userDataDir: profile, skipSingleInstanceLock: true, blockerFilters: '', downloadDir });
   await waitFor(() => ctx.win.isVisible(), 'window ready', 30000);
   ctx.settings.update({ connectionsPerFile: 4 });
+  step('window ready');
   ctx.tabs.navigate(plainUrl);
   await waitFor(() => ctx.downloads.list().length === 1, 'first download', 30000);
   ctx.tabs.active.view.webContents.downloadURL(splitUrl);
@@ -42,7 +52,10 @@ async function quitMidDownload([profile, downloadDir, base]) {
   await waitFor(() => running().length === 2 && running().every((entry) => entry.received > 600 * 1024) && running()[0].parts?.length >= 2,
     'part of both downloads, one split', 30000);
   // As if the user closed the browser while it downloads.
+  step(`quitting with ${JSON.stringify(running().map((entry) => [entry.filename, entry.received, entry.parts?.length ?? 0]))}`);
+  app.on('will-quit', () => step('will quit'));
   app.quit();
+  setTimeout(() => { step('still running 20 s after quitting'); app.exit(6); }, 20_000);
 }
 
 async function main() {
@@ -112,7 +125,10 @@ async function main() {
   const splitSize = SPLIT_SIZE;
   pace = 60;
   const child = spawn(process.execPath, [__filename, '--phase=quit', profile, downloadDir, base], { stdio: 'inherit' });
-  const code = await new Promise((resolve) => child.on('exit', resolve));
+  const code = await new Promise((resolve) => {
+    const limit = setTimeout(() => { console.log('the quit phase did not end in 2 minutes'); child.kill(); }, 120_000);
+    child.on('exit', (exitCode) => { clearTimeout(limit); resolve(exitCode); });
+  });
   const saved = JSON.parse(fs.readFileSync(path.join(profile, 'downloads.json'), 'utf8'));
   const savedEntry = saved.entries.find((entry) => entry.filename === 'big-archive.zip');
   const savedSplit = saved.entries.find((entry) => entry.filename === 'split-archive.zip');

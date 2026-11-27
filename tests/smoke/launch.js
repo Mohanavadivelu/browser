@@ -9,6 +9,7 @@ const path = require('node:path');
 const electron = require('electron'); // the path to the Electron binary when run from Node
 
 const ALL = ['run.js', 'features.js', 'restore.js', 'downloads.js'];
+const SUITE_TIMEOUT_MS = 15 * 60 * 1000;
 const chosen = process.argv.slice(2);
 const TESTS = chosen.length ? ALL.filter((name) => chosen.includes(name)) : ALL;
 const env = { ...process.env };
@@ -26,7 +27,12 @@ for (const name of [...ALL, 'helpers.js']) {
 
 for (const name of TESTS) {
   console.log(`\n=== ${name}`);
-  const result = spawnSync(electron, [path.join(__dirname, name)], { stdio: 'inherit', env });
+  // A suite that hangs fails after 15 minutes instead of using up the CI job.
+  const result = spawnSync(electron, [path.join(__dirname, name)], { stdio: 'inherit', env, timeout: SUITE_TIMEOUT_MS });
+  if (result.error?.code === 'ETIMEDOUT') {
+    console.error(`${name} did not finish in ${SUITE_TIMEOUT_MS / 60000} minutes`);
+    process.exit(1);
+  }
   if (result.error) {
     console.error(`Could not start Electron: ${result.error.message}`);
     process.exit(1);
