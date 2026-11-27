@@ -45,7 +45,7 @@ function createSessionSetup(ctx) {
     const isPrivate = kind === 'private';
     attachDownloadPolicy(ses, {
       onBlocked: (name) => notify(`Blocked download of "${name}": executable files are not allowed.`, 'warning'),
-      onStart: (item) => downloads.track(item, { isPrivate }),
+      onStart: (item) => downloads.track(item, { isPrivate, session: ses }),
       presetPath: (item) => downloads.presetPath(item),
       autoSaveDir: ctx.downloadDir,
       saveName: ctx.downloadSaveName,

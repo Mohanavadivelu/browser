@@ -9,7 +9,7 @@ const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
 const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
-const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES } = require('./storage/settings');
+const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
@@ -54,6 +54,7 @@ function registerIpcHandlers(ipc, ctx) {
     qualities: publicQualities(),
     stopAfterChoices: STOP_AFTER_CHOICES,
     downloadsAtOnceChoices: DOWNLOADS_AT_ONCE_CHOICES,
+    connectionsChoices: CONNECTIONS_CHOICES,
   });
 
   // Tabs and navigation

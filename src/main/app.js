@@ -26,7 +26,8 @@ const { Settings } = require('./storage/settings');
 const { History } = require('./storage/history');
 const { DownloadManager } = require('./download-manager');
 const { VideoFinder } = require('./page-videos');
-const { isDangerousFile } = require('./security/downloads');
+const { isDangerousFile, setInternetMark } = require('./security/downloads');
+const { SegmentedDownload, probeRanges } = require('./segmented-download');
 const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
@@ -88,11 +89,20 @@ async function start(options = {}) {
   // Retries that start over, and downloads saved from last time, use the regular profile; the
   // list of private tabs' downloads is never saved, so they never come back.
   let sessions;
+  // A split download's connections go through the session it started in (its cookies, proxy
+  // and blocking rules); one saved from last time, through the regular profile.
+  const fetchIn = (ses) => (url, init) => (ses ?? sessions.ensure(REGULAR_PARTITION)).fetch(url, init);
   const downloads = new DownloadManager({
     storePath: path.join(userData, 'downloads.json'),
     maxActive: () => settings.data.downloadsAtOnce,
     startDownload: (url) => sessions.ensure(REGULAR_PARTITION).downloadURL(url),
     createInterrupted: (details) => sessions.ensure(REGULAR_PARTITION).createInterruptedDownload(details),
+    speedLimit: () => settings.data.speedLimitKBps * 1024,
+    segmented: {
+      connections: () => settings.data.connectionsPerFile,
+      probe: (details) => probeRanges(fetchIn(details.session), details),
+      create: (details) => new SegmentedDownload({ ...details, fetch: fetchIn(details.session) }),
+    },
   });
   const savedDownloads = downloads.load();
   const zoom = new ZoomController({ settings });
@@ -324,6 +334,8 @@ async function start(options = {}) {
   let downloadTimer = null;
   downloads.on('started', (entry) => notify(`Downloading ${entry.filename}…`));
   downloads.on('completed', (entry) => {
+    // Marked (or not) before anything can open it.
+    setInternetMark(entry.path, settings.data.markOfTheWeb);
     notify(`Download complete: ${entry.filename}`);
     if (entry.openWhenDone) openDownload(entry.id);
   });

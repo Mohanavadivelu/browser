@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { isAllowedUrl } = require('./security/navigation');
+const { RateLimiter, PART_SUFFIX } = require('./segmented-download');
 
 const MAX_TRACKED = 100;
 const SAVE_DELAY_MS = 1000;
@@ -19,6 +20,11 @@ const MAX_TEXT = 2048;
 // second name for the file (a hard link) keeps its bytes until the next start.
 const KEPT_SUFFIX = '.sbdownload';
 const MAX_COPY_BYTES = 256 * 1024 * 1024; // when a link can't be made, a copy up to this size
+// Downloads at least this big are split over several connections, when the server allows it.
+const SPLIT_FROM_BYTES = 4 * 1024 * 1024;
+const MAX_PARTS = 32;
+// How often the speed limit checks the downloads Chromium runs itself.
+const THROTTLE_TICK_MS = 100;
 
 const text = (value, max = MAX_TEXT) => (typeof value === 'string' && value.length <= max ? value : '');
 const count = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0);
@@ -49,8 +55,27 @@ function sanitizeEntry(raw) {
     openWhenDone: raw.openWhenDone === true,
     // The kept copy is always next to the file, by this name: the list can't point elsewhere.
     kept: raw.kept === true && Boolean(savePath),
+    parts: sanitizeParts(raw.parts, count(raw.total)),
   };
 }
+
+// The parts of a download split over several connections: [start, end, position] each, in the
+// file and in order, or null.
+function sanitizeParts(raw, total) {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_PARTS || total === 0) return null;
+  const parts = [];
+  for (const part of raw) {
+    if (!Array.isArray(part) || part.length !== 3 || !part.every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
+    const [start, end, pos] = part;
+    if (start > end || end >= total || pos < start || pos > end + 1) return null;
+    parts.push([start, end, pos]);
+  }
+  return parts;
+}
+
+// Where a download's unfinished bytes are: its own file for Chromium's downloads, a file next
+// to it for one split over several connections.
+const partialFileOf = (entry) => (entry.parts ? `${entry.path}${PART_SUFFIX}` : entry.path);
 
 // Puts a partial file kept at the last shutdown back under its own name.
 function recoverKept(entry) {
@@ -91,15 +116,22 @@ function keepPartial(filePath) {
 // Options (all optional): `storePath`, the JSON file the list is kept in; `maxActive()`, how
 // many may download at once; `startDownload(url)`, starts a download of `url` in the regular
 // profile (for a retry that starts over); `createInterrupted(options)`, Electron's
-// session.createInterruptedDownload in the regular profile (for resuming a saved download).
+// session.createInterruptedDownload in the regular profile (for resuming a saved download);
+// `speedLimit()`, bytes a second for all downloads together (0: no limit); `segmented`, for
+// splitting big downloads over several connections: { connections(), probe(details),
+// create(details) }, where probe resolves true when the server answers Range requests for the
+// file and create returns a SegmentedDownload (see segmented-download.js).
 // Electron's DownloadItems are handed in with track(), from the session's will-download.
 class DownloadManager extends EventEmitter {
-  constructor({ storePath = null, maxActive = () => 3, startDownload = null, createInterrupted = null, now = Date.now } = {}) {
+  constructor({ storePath = null, maxActive = () => 3, startDownload = null, createInterrupted = null, speedLimit = () => 0, segmented = null, now = Date.now } = {}) {
     super();
     this.storePath = storePath;
     this.maxActive = maxActive;
     this.startDownload = startDownload;
     this.createInterrupted = createInterrupted;
+    this.segmented = segmented;
+    this.limiter = new RateLimiter(speedLimit, now);
+    this.throttleTimer = null;
     this.now = now;
     this.records = new Map(); // id -> { entry, item, started, missingAt }
     this.nextId = 1;
@@ -155,7 +187,7 @@ class DownloadManager extends EventEmitter {
       .filter(({ entry }) => !entry.isPrivate)
       .map(({ entry, item }) => {
         const live = item && UNFINISHED.has(entry.state) ? { received: item.getReceivedBytes() } : {};
-        const { id: _id, speed: _speed, isPrivate: _private, restored: _restored, ...saved } = entry;
+        const { id: _id, speed: _speed, isPrivate: _private, restored: _restored, connections: _connections, ...saved } = entry;
         return { ...saved, ...live };
       });
     const temporary = `${this.storePath}.tmp`;
@@ -180,12 +212,15 @@ class DownloadManager extends EventEmitter {
     if (this.closed) return;
     for (const { entry, item } of this.records.values()) {
       const unfinished = UNFINISHED.has(entry.state) || (entry.state === 'interrupted' && item?.canResume?.());
-      if (!item || !unfinished || entry.isPrivate || !entry.path || fileSize(entry.path) === 0) continue;
+      if (!item || !unfinished || entry.isPrivate) continue;
       entry.received = item.getReceivedBytes();
-      entry.kept = keepPartial(entry.path);
+      // A download split over connections writes its own file, which Chromium leaves alone.
+      if (item.isSegmented) entry.parts = item.getParts();
+      else if (entry.path && fileSize(entry.path) > 0) entry.kept = keepPartial(entry.path);
     }
     this.save();
     this.closed = true;
+    clearInterval(this.throttleTimer);
   }
 
   // Starts the saved downloads that were downloading or waiting when the browser closed.
@@ -213,7 +248,8 @@ class DownloadManager extends EventEmitter {
     return this.expected.get(firstUrl(item))?.savePath ?? '';
   }
 
-  track(item, { isPrivate = false } = {}) {
+  // `session` is the item's own session, for the connections of a split download.
+  track(item, { isPrivate = false, session = null } = {}) {
     const url = firstUrl(item);
     const expected = this.expected.get(url);
     if (expected) this.expected.delete(url);
@@ -225,6 +261,8 @@ class DownloadManager extends EventEmitter {
     if (record) {
       record.item = item;
       record.started = true;
+      record.session = session;
+      record.checkedSplit = false;
       Object.assign(record.entry, { state: 'progressing', speed: 0, received: item.getReceivedBytes(), finishedAt: 0, restored: Boolean(restoringId) || record.entry.restored });
     } else {
       const entry = {
@@ -246,10 +284,11 @@ class DownloadManager extends EventEmitter {
         kind: expected?.kind && KINDS.has(expected.kind) ? expected.kind : 'file',
         openWhenDone: false,
         kept: false,
+        parts: null,
         isPrivate,
         restored: false,
       };
-      record = { entry, item, started: false, wasRunning: false, missingAt: 0 };
+      record = { entry, item, started: false, wasRunning: false, missingAt: 0, session, checkedSplit: false, throttled: false };
       this.records.set(entry.id, record);
       this.trim();
       this.emit('started', { ...entry });
@@ -274,8 +313,12 @@ class DownloadManager extends EventEmitter {
       if (record.item !== item || entry.state === 'blocked') return;
       this.copyDetails(entry, item);
       if (state === 'interrupted') {
+        const was = entry.state;
         entry.state = 'interrupted';
-      } else if (entry.state !== 'queued') {
+        // A failed download makes room for a waiting one.
+        if (was === 'progressing') setImmediate(() => this.pump());
+      } else if (entry.state !== 'queued' && !(record.throttled && item.isPaused())) {
+        // Paused by the speed limit, it is still downloading as far as the user is concerned.
         entry.state = item.isPaused() ? 'paused' : 'progressing';
       }
       // Once its file is chosen, a new download waits its turn if enough are running already.
@@ -288,6 +331,8 @@ class DownloadManager extends EventEmitter {
           setImmediate(() => { if (record.item === item && entry.state === 'queued') item.pause(); });
         }
       }
+      if (record.started && entry.state === 'progressing' && !record.checkedSplit && !item.isSegmented && entry.path) this.trySplit(record, item);
+      this.throttle();
       this.changed();
     });
     item.once('done', (_event, state) => {
@@ -304,6 +349,12 @@ class DownloadManager extends EventEmitter {
   }
 
   copyDetails(entry, item) {
+    if (item.isSegmented) {
+      entry.parts = item.getParts();
+      entry.connections = item.getActiveConnections();
+    } else {
+      entry.connections = 0;
+    }
     entry.received = item.getReceivedBytes();
     entry.total = item.getTotalBytes();
     entry.path = item.getSavePath() || entry.path;
@@ -318,6 +369,90 @@ class DownloadManager extends EventEmitter {
   changed() {
     this.emit('change');
     this.scheduleSave();
+  }
+
+  // ---------- Several connections ----------
+  // A big download whose server answers Range requests for the same file is handed over to a
+  // SegmentedDownload, which fetches its parts at once. Chromium's own download is cancelled
+  // (that deletes its file; the new one writes a file of its own next to it). Anything that
+  // doesn't match leaves the download with Chromium.
+  async trySplit(record, item) {
+    record.checkedSplit = true;
+    const { entry } = record;
+    const connections = this.segmented?.connections() ?? 1;
+    if (connections < 2 || entry.total < SPLIT_FROM_BYTES) return;
+    const details = {
+      session: record.session,
+      isPrivate: entry.isPrivate,
+      url: entry.urlChain.at(-1) || entry.url,
+      urlChain: entry.urlChain,
+      filename: entry.filename,
+      savePath: entry.path,
+      total: entry.total,
+      etag: entry.etag,
+      lastModified: entry.lastModified,
+      mimeType: entry.mimeType,
+      startTime: entry.startTime,
+      connections,
+      limiter: this.limiter,
+    };
+    let split = null;
+    try {
+      if (!(await this.segmented.probe(details))) return;
+      if (record.item !== item || entry.state !== 'progressing') return;
+      split = this.segmented.create(details);
+    } catch {
+      return;
+    }
+    record.item = split;
+    record.throttled = false;
+    item.cancel();
+    this.wire(record, split);
+    split.start();
+    this.copyDetails(entry, split);
+    this.changed();
+  }
+
+  // ---------- The speed limit ----------
+  // Split downloads wait for their share as they read. Chromium's own downloads can't be told
+  // a speed, so they are paused while all downloads together are over the limit, and resumed
+  // as the allowance builds up again.
+  throttle() {
+    if (this.throttleTimer || this.closed || !this.limiter.refill()) return;
+    this.throttleTimer = setInterval(() => this.throttleTick(), THROTTLE_TICK_MS);
+    this.throttleTimer.unref?.();
+    this.throttleTick();
+  }
+
+  throttleTick() {
+    const plain = [...this.records.values()].filter(({ entry, item }) => item && !item.isSegmented && entry.state === 'progressing');
+    if (plain.length === 0 || !this.limiter.refill()) {
+      // No limit (any more): what the limit paused goes on.
+      for (const record of plain) {
+        if (record.throttled) {
+          record.throttled = false;
+          record.item.resume();
+        }
+      }
+      clearInterval(this.throttleTimer);
+      this.throttleTimer = null;
+      return;
+    }
+    for (const record of plain) {
+      const received = record.item.getReceivedBytes();
+      this.limiter.consume(Math.max(0, received - (record.counted ?? received)));
+      record.counted = received;
+    }
+    const over = this.limiter.overBudget;
+    for (const record of plain) {
+      if (over && !record.throttled && !record.item.isPaused()) {
+        record.throttled = true;
+        record.item.pause();
+      } else if (!over && record.throttled) {
+        record.throttled = false;
+        record.item.resume();
+      }
+    }
   }
 
   // ---------- The queue ----------
@@ -343,6 +478,7 @@ class DownloadManager extends EventEmitter {
   pause(id) {
     const record = this.records.get(id);
     if (!record?.item || !['progressing', 'queued'].includes(record.entry.state)) return false;
+    record.throttled = false;
     record.item.pause();
     record.entry.state = 'paused';
     record.entry.speed = 0;
@@ -383,7 +519,7 @@ class DownloadManager extends EventEmitter {
       return true;
     }
     // A saved download that was never resumed: its partial file goes too.
-    removeQuietly(record.entry.path);
+    removeQuietly(partialFileOf(record.entry));
     record.entry.state = 'cancelled';
     record.entry.finishedAt = this.now();
     this.changed();
@@ -412,15 +548,18 @@ class DownloadManager extends EventEmitter {
     const { entry } = record;
     if (entry.isPrivate || !this.startDownload) return false;
     record.item = null;
+    if (entry.parts) removeQuietly(partialFileOf(entry));
     this.expect(entry.url, { entryId: entry.id, savePath: entry.path, kind: entry.kind });
-    Object.assign(entry, { state: 'progressing', received: 0, speed: 0, finishedAt: 0 });
+    Object.assign(entry, { state: 'progressing', received: 0, speed: 0, finishedAt: 0, parts: null });
     this.changed();
     this.startDownload(entry.url);
     return true;
   }
 
   canRestore(entry) {
-    return Boolean(this.createInterrupted && entry.path && entry.received > 0 && (entry.etag || entry.lastModified) && fileSize(entry.path) > 0);
+    if (!entry.path || entry.received === 0 || !(entry.etag || entry.lastModified)) return false;
+    if (entry.parts) return Boolean(this.segmented && fileSize(partialFileOf(entry)) === entry.total);
+    return Boolean(this.createInterrupted && fileSize(entry.path) > 0);
   }
 
   // A saved download goes on from the bytes already in its file (Chromium asks the server for
@@ -428,6 +567,7 @@ class DownloadManager extends EventEmitter {
   restore(record) {
     const { entry } = record;
     if (!this.canRestore(entry)) return this.startOver(record);
+    if (entry.parts) return this.restoreSplit(record);
     const offset = Math.min(entry.received, fileSize(entry.path));
     try {
       // The file can hold a few bytes more than were counted when the list was saved.
@@ -452,6 +592,41 @@ class DownloadManager extends EventEmitter {
     return true;
   }
 
+  // A download that was split over connections goes on from its parts' positions, with the
+  // connections set now, in the regular profile (private downloads are never saved).
+  restoreSplit(record) {
+    const { entry } = record;
+    let item;
+    try {
+      item = this.segmented.create({
+        session: null,
+        isPrivate: false,
+        url: entry.urlChain.at(-1) || entry.url,
+        urlChain: entry.urlChain,
+        filename: entry.filename,
+        savePath: entry.path,
+        total: entry.total,
+        etag: entry.etag,
+        lastModified: entry.lastModified,
+        mimeType: entry.mimeType,
+        startTime: entry.startTime,
+        connections: Math.max(1, this.segmented.connections()),
+        limiter: this.limiter,
+        parts: entry.parts,
+      });
+    } catch {
+      return this.startOver(record);
+    }
+    record.item = item;
+    record.started = true;
+    record.checkedSplit = true;
+    entry.state = 'progressing';
+    this.wire(record, item);
+    item.resume();
+    this.changed();
+    return true;
+  }
+
   setOpenWhenDone(id, open) {
     const record = this.records.get(id);
     if (!record) return false;
@@ -469,7 +644,7 @@ class DownloadManager extends EventEmitter {
     record.item = null;
     this.records.delete(id);
     if (item) item.cancel();
-    else if (record.entry.state === 'interrupted') removeQuietly(record.entry.path);
+    else if (record.entry.state === 'interrupted') removeQuietly(partialFileOf(record.entry));
     this.changed();
     return true;
   }
@@ -507,10 +682,13 @@ class DownloadManager extends EventEmitter {
   // Newest first, for the Downloads page.
   list() {
     return [...this.records.values()].reverse().map((record) => {
-      const { urlChain: _chain, mimeType: _mime, etag: _etag, lastModified: _lm, startTime: _start, kept: _kept, ...entry } = record.entry;
+      const { urlChain: _chain, mimeType: _mime, etag: _etag, lastModified: _lm, startTime: _start, kept: _kept, parts, ...entry } = record.entry;
       const canResume = record.item ? (record.item.canResume?.() ?? false) : this.canRestore(record.entry);
       return {
         ...entry,
+        connections: entry.connections ?? 0,
+        // For the page's bar, while a split download runs: [start, end, position] per part.
+        parts: parts && UNFINISHED.has(entry.state) ? parts : null,
         missing: this.isMissing(record),
         // What Retry does: picks up where it stopped, starts over, or (private, gone) nothing.
         retry: entry.state === 'interrupted' && canResume ? 'resume' : !entry.isPrivate && this.startDownload ? 'restart' : null,

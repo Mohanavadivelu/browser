@@ -1,8 +1,10 @@
 'use strict';
 
 // Smoke test for the download manager: pause and resume, the queue, retrying a failed download,
-// picking up after the browser was quit mid-download, private downloads, the toolbar's downloads
-// button and panel, the Downloads page, and saving a video from a page.
+// picking up after the browser was quit mid-download (with Chromium, and split over several
+// connections), splitting big downloads, the speed limit, marking files as from the internet,
+// private downloads, the toolbar's downloads button and panel, the Downloads page, and saving a
+// video from a page.
 // Run with: npm run smoke -- downloads.js
 // The quit-and-restart check runs this file a second time, as a separate Electron process that
 // starts a download and quits while it runs (--phase=quit).
@@ -14,6 +16,9 @@ const { app } = require('electron');
 const { start, prepare } = require('../../src/main/app');
 const { sleep, waitFor, createChecker, makeTempDir } = require('./helpers');
 
+const PLAIN_SIZE = 3.5 * 1024 * 1024; // under the size that is split: stays with Chromium
+const SPLIT_SIZE = 8 * 1024 * 1024;
+
 // The same bytes for every request, so a resumed file can be compared with the original.
 function content(size) {
   const data = Buffer.alloc(size);
@@ -21,11 +26,21 @@ function content(size) {
   return data;
 }
 
-async function quitMidDownload([profile, downloadDir, url]) {
+// Starts a download small enough to stay with Chromium and one big enough to be split over
+// several connections, and quits while both run. (It is given the server's address only:
+// Electron quits at once, saying nothing, when started with two web addresses.)
+async function quitMidDownload([profile, downloadDir, base]) {
+  const plainUrl = `${base}/file/big-archive.zip?size=${PLAIN_SIZE}`;
+  const splitUrl = `${base}/file/split-archive.zip?size=${SPLIT_SIZE}`;
   const ctx = await start({ userDataDir: profile, skipSingleInstanceLock: true, blockerFilters: '', downloadDir });
   await waitFor(() => ctx.win.isVisible(), 'window ready', 30000);
-  ctx.tabs.navigate(url);
-  await waitFor(() => ctx.downloads.list()[0]?.received > 600 * 1024, 'part of the download', 30000);
+  ctx.settings.update({ connectionsPerFile: 4 });
+  ctx.tabs.navigate(plainUrl);
+  await waitFor(() => ctx.downloads.list().length === 1, 'first download', 30000);
+  ctx.tabs.active.view.webContents.downloadURL(splitUrl);
+  const running = () => ctx.downloads.list();
+  await waitFor(() => running().length === 2 && running().every((entry) => entry.received > 600 * 1024) && running()[0].parts?.length >= 2,
+    'part of both downloads, one split', 30000);
   // As if the user closed the browser while it downloads.
   app.quit();
 }
@@ -58,8 +73,9 @@ async function main() {
     }
     const size = Number(url.searchParams.get('size')) || 2 * 1024 * 1024;
     const body = content(size);
-    const range = /bytes=(\d+)-/.exec(req.headers.range ?? '');
+    const range = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? '');
     let from = range ? Number(range[1]) : 0;
+    const to = range && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
     if (name.startsWith('flaky') && !flakyHealed && from > 0) {
       res.statusCode = 503;
       res.end('try later');
@@ -72,15 +88,15 @@ async function main() {
     res.setHeader('last-modified', 'Wed, 01 Jan 2025 00:00:00 GMT');
     if (range) {
       res.statusCode = 206;
-      res.setHeader('content-range', `bytes ${from}-${size - 1}/${size}`);
+      res.setHeader('content-range', `bytes ${from}-${to}/${size}`);
     }
-    res.setHeader('content-length', String(size - from));
+    res.setHeader('content-length', String(to - from + 1));
     const cutAt = name.startsWith('flaky') && !flakyHealed ? 512 * 1024 : Infinity;
     const step = () => {
       if (res.destroyed) return;
       if (from >= cutAt) { res.destroy(); return; }
-      if (from >= size) { res.end(); return; }
-      const next = Math.min(size, from + 64 * 1024, cutAt);
+      if (from > to) { res.end(); return; }
+      const next = Math.min(to + 1, from + 64 * 1024, cutAt);
       res.write(body.subarray(from, next));
       from = next;
       setTimeout(step, name.startsWith('fast') || url.pathname.startsWith('/media/') ? 1 : pace);
@@ -92,12 +108,18 @@ async function main() {
   const sameAs = (file, size) => fs.existsSync(file) && fs.readFileSync(file).equals(content(size));
 
   // ---------- Quit mid-download, then start again ----------
-  const bigSize = 6 * 1024 * 1024;
+  const bigSize = PLAIN_SIZE;
+  const splitSize = SPLIT_SIZE;
   pace = 60;
-  const child = spawn(process.execPath, [__filename, '--phase=quit', profile, downloadDir, `${base}/file/big-archive.zip?size=${bigSize}`], { stdio: 'inherit' });
+  const child = spawn(process.execPath, [__filename, '--phase=quit', profile, downloadDir, base], { stdio: 'inherit' });
   const code = await new Promise((resolve) => child.on('exit', resolve));
   const saved = JSON.parse(fs.readFileSync(path.join(profile, 'downloads.json'), 'utf8'));
   const savedEntry = saved.entries.find((entry) => entry.filename === 'big-archive.zip');
+  const savedSplit = saved.entries.find((entry) => entry.filename === 'split-archive.zip');
+  const splitPartFile = path.join(downloadDir, 'split-archive.zip.sbpart');
+  check('a split download is saved with its parts when the browser quits', savedSplit?.state === 'progressing' && savedSplit.parts?.length >= 2 &&
+    fs.existsSync(splitPartFile) && fs.statSync(splitPartFile).size === splitSize, JSON.stringify(savedSplit?.parts));
+  const savedSplitDone = (savedSplit?.parts ?? []).reduce((sum, [start, , pos]) => sum + pos - start, 0);
   check('quitting mid-download saves it as unfinished', code === 0 && savedEntry?.state === 'progressing' && savedEntry.received > 0 && savedEntry.etag,
     `exit ${code}, ${JSON.stringify(savedEntry && { state: savedEntry.state, received: savedEntry.received })}`);
   // Chromium deletes the partial file as it quits; a second name for it keeps the bytes.
@@ -126,7 +148,60 @@ async function main() {
   check('the resumed file is complete and correct', sameAs(path.join(downloadDir, 'big-archive.zip'), bigSize));
   check('the kept copy is gone once the file is back', !fs.existsSync(keptFile));
   check('the resumed download keeps its row, marked as picked up after a restart', downloads.list().filter((entry) => entry.filename === 'big-archive.zip').length === 1 && byName('big-archive.zip').restored);
+  await waitFor(() => byName('split-archive.zip')?.state === 'completed', 'resumed split download finished', 30000);
+  const splitRanges = requests.filter(([file]) => file === '/file/split-archive.zip').map(([, range]) => range);
+  const askedAgain = splitRanges.reduce((sum, range) => {
+    const [, from, to] = /bytes=(\d+)-(\d+)/.exec(range) ?? [0, 0, -1];
+    return sum + Number(to) - Number(from) + 1;
+  }, 0);
+  check('after a restart a split download asks only for the parts it was missing', splitRanges.length >= 2 && askedAgain <= splitSize - savedSplitDone,
+    `${askedAgain} of ${splitSize - savedSplitDone} missing bytes asked for, in ${splitRanges.length} requests`);
+  check('the resumed split file is complete and correct, and its parts file is gone', sameAs(path.join(downloadDir, 'split-archive.zip'), splitSize) && !fs.existsSync(splitPartFile));
+  const zoneOf = (file) => { try { return fs.readFileSync(`${file}:Zone.Identifier`, 'utf8'); } catch { return ''; } };
+  check('a split download is marked as coming from the internet', /ZoneId=3/.test(zoneOf(path.join(downloadDir, 'split-archive.zip'))));
   const evalIn = (contents, code) => contents.executeJavaScript(code);
+
+  // ---------- Splitting a big download, the speed limit, marking ----------
+  const helper = tabs.create({ url: `${base}/helper`, activate: false });
+  await waitFor(() => helper.view.webContents.getURL() !== '' && !helper.view.webContents.isLoading(), 'helper tab');
+  settings.update({ connectionsPerFile: 4 });
+  pace = 20;
+  helper.view.webContents.downloadURL(`${base}/file/live-split.bin?size=${12 * 1024 * 1024}`);
+  await waitFor(() => byName('live-split.bin')?.parts?.length >= 2 && byName('live-split.bin').connections >= 2, 'download split over connections', 20000);
+  check('a big download is split over several connections', byName('live-split.bin').connections >= 2, `${byName('live-split.bin').connections} connections`);
+  pace = 1;
+  await waitFor(() => byName('live-split.bin').state === 'completed', 'split download finished', 30000);
+  check('the split download is complete and correct', sameAs(path.join(downloadDir, 'live-split.bin'), 12 * 1024 * 1024));
+
+  // A download Chromium runs (one connection, as for a server that can't send parts), from a
+  // server sending about 3 MB/s, held to 1 MB/s: 6 MB that would take 2 s takes about 6 s.
+  // Chromium's downloads are held back by pausing them, so what is already in its network
+  // buffers (a MB or two) still comes in at the start; the limit holds after that.
+  settings.update({ speedLimitKBps: 1024, connectionsPerFile: 1 });
+  pace = 20;
+  let started = Date.now();
+  helper.view.webContents.downloadURL(`${base}/file/limited.bin?size=${6 * 1024 * 1024}`);
+  await waitFor(() => byName('limited.bin')?.state === 'completed', 'limited download finished', 30000);
+  const plainSeconds = (Date.now() - started) / 1000;
+  pace = 1;
+  settings.update({ connectionsPerFile: 4 });
+  check('the speed limit holds a download Chromium runs to it', plainSeconds >= 3.5 && sameAs(path.join(downloadDir, 'limited.bin'), 6 * 1024 * 1024), `${plainSeconds.toFixed(1)} s for 6 MB at 1 MB/s`);
+  // 6 MB that the server sends at once, held to 3 MB/s.
+  pace = 1;
+  settings.update({ speedLimitKBps: 3 * 1024 });
+  started = Date.now();
+  helper.view.webContents.downloadURL(`${base}/file/fast-limited-split.bin?size=${6 * 1024 * 1024}`);
+  await waitFor(() => byName('fast-limited-split.bin')?.state === 'completed', 'limited split download finished', 30000);
+  const splitSeconds = (Date.now() - started) / 1000;
+  check('the speed limit holds a split download to it', splitSeconds >= 1.2 && sameAs(path.join(downloadDir, 'fast-limited-split.bin'), 6 * 1024 * 1024), `${splitSeconds.toFixed(1)} s for 6 MB at 3 MB/s`);
+  settings.update({ speedLimitKBps: 0 });
+
+  settings.update({ markOfTheWeb: false });
+  helper.view.webContents.downloadURL(`${base}/file/fast-unmarked.txt?size=4096`);
+  await waitFor(() => byName('fast-unmarked.txt')?.state === 'completed', 'unmarked download finished');
+  check('with marking off, a download is not marked as from the internet', zoneOf(path.join(downloadDir, 'fast-unmarked.txt')) === '');
+  settings.update({ markOfTheWeb: true });
+  tabs.close(helper.id);
 
   // ---------- Toolbar: the downloads button and its panel ----------
   await waitFor(async () => evalIn(ui.webContents, "!document.getElementById('downloads').hidden"), 'downloads button shown');
@@ -134,14 +209,14 @@ async function main() {
   await evalIn(ui.webContents, "document.getElementById('downloads').click()");
   await waitFor(async () => evalIn(ui.webContents, "!document.getElementById('downloadsPanel').hidden && document.querySelectorAll('#downloadsItems .dl-item').length > 0"), 'downloads panel open');
   const panelText = await evalIn(ui.webContents, "document.getElementById('downloadsPanel').textContent");
-  check('the downloads panel lists the latest downloads', /big-archive\.zip/.test(panelText) && /Done/.test(panelText) && /Open/.test(panelText), panelText.slice(0, 120));
+  check('the downloads panel lists the latest downloads', /fast-unmarked\.txt/.test(panelText) && /Done/.test(panelText) && /Open/.test(panelText), panelText.slice(0, 120));
   const toolbarDenied = await evalIn(ui.webContents, 'window.browserApi.downloads.list().then(() => "allowed", () => "refused")');
   check('the toolbar cannot read the full downloads list (addresses and folders)', toolbarDenied === 'refused');
   await evalIn(ui.webContents, "document.getElementById('downloadsAll').click()");
   await waitFor(() => tabs.active?.kind === 'internal' && tabs.active.title === 'Downloads', 'Downloads page opened from the panel');
   check('Show all downloads opens the Downloads page', await evalIn(ui.webContents, "document.getElementById('downloadsPanel').hidden"));
   const page = tabs.active.view.webContents;
-  await waitFor(async () => (await evalIn(page, "document.querySelectorAll('#downloadList .row').length")) === 1, 'downloads page rows');
+  await waitFor(async () => (await evalIn(page, "document.querySelectorAll('#downloadList .row').length")) === downloads.list().length, 'downloads page rows');
 
   // ---------- Pause and resume, from the Downloads page ----------
   pace = 50;

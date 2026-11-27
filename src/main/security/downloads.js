@@ -28,6 +28,25 @@ function isDangerousFile(filename) {
 
 const removeFile = (filePath) => fs.rmSync(filePath, { force: true });
 
+// Windows keeps where a file came from in a stream beside it ("the mark of the web"): with it,
+// SmartScreen and Office check a downloaded file before it opens. Chromium marks the files it
+// downloads; files fetched over several connections are written by the browser itself, so they
+// are marked here. No address is written, only that it came from the internet.
+const ZONE_STREAM = ':Zone.Identifier';
+const INTERNET_ZONE = '[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=about:internet\r\n';
+
+function setInternetMark(filePath, marked, platform = process.platform) {
+  if (platform !== 'win32' || !filePath) return false;
+  try {
+    if (marked) fs.writeFileSync(`${filePath}${ZONE_STREAM}`, INTERNET_ZONE);
+    else fs.rmSync(`${filePath}${ZONE_STREAM}`, { force: true });
+    return true;
+  } catch (error) {
+    console.error(`Could not ${marked ? 'mark' : 'unmark'} a download: ${error.message}`);
+    return false;
+  }
+}
+
 // Applies the policy to one download. Returns false if it was refused at once.
 // The user can change the name in the Save dialog, so the chosen path is checked again while
 // the download runs and once more when it finishes. A blocked item emits 'blocked'.
@@ -86,4 +105,4 @@ function attachDownloadPolicy(ses, { onBlocked, onStart, autoSaveDir, saveName, 
   });
 }
 
-module.exports = { BLOCKED_EXTENSIONS, isDangerousFile, guardDownload, attachDownloadPolicy };
+module.exports = { BLOCKED_EXTENSIONS, isDangerousFile, guardDownload, attachDownloadPolicy, setInternetMark, INTERNET_ZONE };

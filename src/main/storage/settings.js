@@ -14,6 +14,7 @@ const ZOOM_RANGE = [0.25, 5];
 const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
   'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone', 'showBookmarksBar', 'downloadsAtOnce', 'resumeDownloads',
+  'connectionsPerFile', 'speedLimitKBps', 'markOfTheWeb',
 ]);
 const MAX_ALLOWED_SITES = 500;
 // Minutes after which a recording stops by itself; 0 is never.
@@ -21,6 +22,11 @@ const STOP_AFTER_CHOICES = Object.freeze([0, 5, 10, 15, 30, 45, 60, 90, 120, 180
 // How many downloads run at once; the rest wait their turn.
 const DOWNLOADS_AT_ONCE_CHOICES = Object.freeze([1, 2, 3, 5, 10]);
 const DEFAULT_DOWNLOADS_AT_ONCE = 3;
+// How many connections a big download may use at once (1: never split).
+const CONNECTIONS_CHOICES = Object.freeze([1, 2, 4, 8, 16]);
+const DEFAULT_CONNECTIONS = 8;
+// The speed limit for all downloads together, in KB a second (0: none).
+const MAX_SPEED_LIMIT_KBPS = 10 * 1024 * 1024;
 const HOST_NAME = /^[a-z0-9.-]{1,253}$/;
 
 // Sites where the user turned ad and tracker blocking off: plain lower-case host names.
@@ -77,6 +83,9 @@ function sanitizeSettings(raw) {
     checkForUpdates: source.checkForUpdates !== false,
     downloadsAtOnce: DOWNLOADS_AT_ONCE_CHOICES.includes(source.downloadsAtOnce) ? source.downloadsAtOnce : DEFAULT_DOWNLOADS_AT_ONCE,
     resumeDownloads: source.resumeDownloads !== false,
+    connectionsPerFile: CONNECTIONS_CHOICES.includes(source.connectionsPerFile) ? source.connectionsPerFile : DEFAULT_CONNECTIONS,
+    speedLimitKBps: Number.isSafeInteger(source.speedLimitKBps) && source.speedLimitKBps > 0 && source.speedLimitKBps <= MAX_SPEED_LIMIT_KBPS ? source.speedLimitKBps : 0,
+    markOfTheWeb: source.markOfTheWeb !== false,
     blockerAllowedSites: sanitizeSites(source.blockerAllowedSites),
     zoom: sanitizeZoom(source.zoom),
     session: sanitizeSession(source.session),
@@ -135,4 +144,4 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES };
+module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES };

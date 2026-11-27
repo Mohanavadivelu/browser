@@ -134,7 +134,14 @@ function downloadActions(entry) {
   return actions;
 }
 
-function downloadDetails(entry) {
+// "8 connections, in 11 parts" while a split download runs.
+function connectionsText(entry) {
+  if (!entry.parts) return 'One connection';
+  if (entry.state !== 'progressing') return `${entry.parts.length} parts`;
+  return `${entry.connections} connection${entry.connections === 1 ? '' : 's'} at once, in ${entry.parts.length} parts`;
+}
+
+function downloadDetails(entry, row) {
   const details = element('dl', 'dl-details');
   const add = (term, value) => {
     const pair = element('div');
@@ -144,6 +151,10 @@ function downloadDetails(entry) {
   };
   add('From', entry.url);
   add(entry.state === 'completed' ? 'Saved to' : 'Saving to', entry.path || 'Not chosen yet');
+  if (['progressing', 'paused', 'queued'].includes(entry.state)) {
+    add('Connections', connectionsText(entry));
+    row.connections = details.lastChild.lastChild;
+  }
   const extras = element('div', 'dl-extras');
   if (['progressing', 'paused', 'queued'].includes(entry.state)) {
     const label = element('label', 'check');
@@ -162,7 +173,7 @@ function downloadDetails(entry) {
 
 // What decides a row's buttons and parts; while it stays the same, only its text and bar change.
 function downloadShape(entry) {
-  return [entry.state, entry.missing, entry.retry, entry.openWhenDone, openDownloadDetails.has(entry.id), entry.total > 0].join('|');
+  return [entry.state, entry.missing, entry.retry, entry.openWhenDone, openDownloadDetails.has(entry.id), entry.total > 0, entry.parts?.length ?? 0].join('|');
 }
 
 function buildDownloadRow(entry) {
@@ -178,7 +189,24 @@ function buildDownloadRow(entry) {
   const meta = element('div', `meta ${entry.state}`);
   main.append(name, meta);
   let bar = null;
-  if (['progressing', 'paused', 'queued'].includes(entry.state) && entry.total > 0) {
+  let fills = null;
+  if (['progressing', 'paused', 'queued'].includes(entry.state) && entry.total > 0 && entry.parts) {
+    // One bar per part, as wide as the part, filling as it comes in.
+    bar = element('div', `dl-parts ${entry.state === 'progressing' ? '' : 'idle'}`.trim());
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', '100');
+    bar.setAttribute('aria-label', entry.filename);
+    fills = [...entry.parts].sort((a, b) => a[0] - b[0]).map(([start, end]) => {
+      const part = element('div', 'dl-part');
+      part.style.flexGrow = String(end - start + 1);
+      const fill = element('div', 'dl-part-fill');
+      part.append(fill);
+      bar.append(part);
+      return { start, fill };
+    });
+    main.append(bar);
+  } else if (['progressing', 'paused', 'queued'].includes(entry.state) && entry.total > 0) {
     bar = element('progress', entry.state === 'progressing' ? '' : 'idle');
     bar.max = 1000;
     bar.setAttribute('aria-label', entry.filename);
@@ -188,14 +216,25 @@ function buildDownloadRow(entry) {
   actions.append(...downloadActions(entry));
   top.append(main, actions);
   node.append(top);
-  if (openDownloadDetails.has(entry.id)) node.append(downloadDetails(entry));
-  return { node, meta, bar };
+  const row = { node, meta, bar, fills, connections: null };
+  if (openDownloadDetails.has(entry.id)) node.append(downloadDetails(entry, row));
+  return row;
 }
 
 function updateDownloadRow(row, entry) {
   const status = downloadStatus(entry);
   if (row.meta.textContent !== status) row.meta.textContent = status;
-  if (row.bar) row.bar.value = Math.round((entry.received / entry.total) * 1000);
+  if (row.fills) {
+    const byStart = new Map(entry.parts.map(([start, end, pos]) => [start, (pos - start) / (end - start + 1)]));
+    for (const { start, fill } of row.fills) fill.style.width = `${Math.min(100, (byStart.get(start) ?? 0) * 100).toFixed(1)}%`;
+    row.bar.setAttribute('aria-valuenow', String(Math.floor((entry.received / entry.total) * 100)));
+  } else if (row.bar) {
+    row.bar.value = Math.round((entry.received / entry.total) * 1000);
+  }
+  if (row.connections) {
+    const text = connectionsText(entry);
+    if (row.connections.textContent !== text) row.connections.textContent = text;
+  }
 }
 
 function matchesDownload(entry, query) {
@@ -263,8 +302,15 @@ function renderDownloads(items = downloadItems) {
   list.replaceChildren(...parts);
 }
 
+function showDownloadLimit(kilobytes) {
+  $('downloadLimit').textContent = kilobytes > 0 ? `Speed limit: ${formatBytes(kilobytes * 1024)}/s` : 'Speed limit: none';
+  $('downloadLimit').classList.toggle('on', kilobytes > 0);
+}
+
 async function loadDownloads() {
-  renderDownloads(await api.downloads.list());
+  const [items, settings] = await Promise.all([api.downloads.list(), api.settings.get()]);
+  showDownloadLimit(settings.speedLimitKBps);
+  renderDownloads(items);
 }
 
 function bindDownloads() {
@@ -279,4 +325,11 @@ function bindDownloads() {
     downloadItems.some((entry) => entry.state === 'progressing' || entry.state === 'queued') ? api.downloads.pauseAll() : api.downloads.resumeAll()
   ));
   $('downloadsClear').addEventListener('click', () => api.downloads.clear());
+  // The limit is set in Settings, with the other download settings.
+  $('downloadLimit').addEventListener('click', async () => {
+    show('settings');
+    renderSettings(await api.settings.get());
+    $('speedLimitField').scrollIntoView({ block: 'center' });
+    $(($('speedLimitOn').checked ? 'speedLimitValue' : 'speedLimitNone')).focus();
+  });
 }

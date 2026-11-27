@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Big downloads use several connections at once.** A file of 4 MB or more is fetched in parts at the same time when the server allows it (8 connections by default, 1 to 16 in Settings). When a part finishes early, its connection takes over half of the slowest part, so all of them keep busy to the end. The Downloads page draws one bar per part and says how many connections are in use. If the server can't send parts, or anything about its answer doesn't match, the download stays on one connection as before.
+- **A speed limit** for all downloads together, set in Settings (or from **Speed limit** on the Downloads page). Downloads over several connections keep to it exactly. One-connection downloads are paused and resumed to keep to it, so a MB or two already on its way can still arrive at the start.
+- **Downloads are marked as coming from the internet** (the Windows "mark of the web"), so SmartScreen and Office check them before they open. This includes the files the browser writes itself. It can be turned off in Settings.
+- A download split over several connections also picks up after a restart: each part goes on from where it stopped.
+
 ## 0.10.0
 
 A download manager: pause, resume and retry, a queue, downloads that survive a restart, a downloads button in the toolbar, and saving videos.

@@ -825,6 +825,13 @@ function renderSettings(settings) {
   $('checkForUpdates').checked = settings.checkForUpdates;
   fillSelect($('downloadsAtOnce'), settings.downloadsAtOnceChoices.map((count) => ({ key: String(count), label: String(count) })), String(settings.downloadsAtOnce));
   $('resumeDownloads').checked = settings.resumeDownloads;
+  fillSelect($('connectionsPerFile'), settings.connectionsChoices.map((count) => ({ key: String(count), label: count === 1 ? '1 (never split)' : String(count) })), String(settings.connectionsPerFile));
+  $('speedLimitNone').checked = settings.speedLimitKBps === 0;
+  $('speedLimitOn').checked = settings.speedLimitKBps > 0;
+  if (settings.speedLimitKBps > 0) $('speedLimitValue').value = String(Math.round((settings.speedLimitKBps / 1024) * 10) / 10);
+  else if (!$('speedLimitValue').value) $('speedLimitValue').value = '5';
+  $('markOfTheWeb').checked = settings.markOfTheWeb;
+  showDownloadLimit(settings.speedLimitKBps);
   const sites = $('allowedSites');
   sites.replaceChildren();
   if (settings.blockerAllowedSites.length === 0) sites.append(element('p', 'empty', 'None.'));
@@ -854,6 +861,20 @@ function bindSettings() {
   $('checkForUpdates').addEventListener('change', () => saveSetting({ checkForUpdates: $('checkForUpdates').checked }));
   $('downloadsAtOnce').addEventListener('change', () => saveSetting({ downloadsAtOnce: Number($('downloadsAtOnce').value) }));
   $('resumeDownloads').addEventListener('change', () => saveSetting({ resumeDownloads: $('resumeDownloads').checked }));
+  $('connectionsPerFile').addEventListener('change', () => saveSetting({ connectionsPerFile: Number($('connectionsPerFile').value) }));
+  // The limit is typed in MB/s and kept in KB/s.
+  const saveLimit = () => {
+    const megabytes = Number($('speedLimitValue').value);
+    const kilobytes = Number.isFinite(megabytes) && megabytes > 0 ? Math.min(10 * 1024 * 1024, Math.max(1, Math.round(megabytes * 1024))) : 0;
+    saveSetting({ speedLimitKBps: $('speedLimitOn').checked ? kilobytes : 0 });
+  };
+  $('speedLimitNone').addEventListener('change', saveLimit);
+  $('speedLimitOn').addEventListener('change', saveLimit);
+  $('speedLimitValue').addEventListener('change', () => {
+    $('speedLimitOn').checked = true;
+    saveLimit();
+  });
+  $('markOfTheWeb').addEventListener('change', () => saveSetting({ markOfTheWeb: $('markOfTheWeb').checked }));
   $('updatesCheck').addEventListener('click', async () => {
     $('updatesMessage').textContent = 'Checking…';
     const result = await api.updates.check();

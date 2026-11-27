@@ -157,3 +157,14 @@ code { padding: 5px 9px; border-radius: 6px; background: var(--bg); font-size: 1
 .dl-extras .check { margin: 0; font-size: 13px; }
 .dl-extras .note { margin: 0; }
 @media (max-width: 640px) { .dl-details { grid-template-columns: minmax(0, 1fr); padding-left: 14px; } }
+
+/* Downloads: a split download's parts, the speed limit link, number fields in Settings */
+.dl-parts { display: flex; gap: 2px; height: 6px; margin-top: 6px; }
+.dl-part { min-width: 2px; overflow: hidden; border-radius: 2px; background: #3c3d42; }
+.dl-part-fill { width: 0; height: 100%; background: #8ab4ff; }
+.dl-parts.idle .dl-part-fill { background: var(--muted); }
+.dl-limit { padding: 6px 10px; border-radius: 6px; background: var(--panel); font-size: 13px; }
+.dl-limit.on { color: #fdd663; }
+.field input[type="number"] { width: 90px; font: 14px "Segoe UI", sans-serif; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; outline: none; }
+.field input[type="number"]:focus { border-color: var(--accent); }
+.check.inline-check { margin: 0 6px 0 0; }
