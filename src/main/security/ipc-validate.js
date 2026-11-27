@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 
 const MAX_CHUNK_BYTES = 32 * 1024 * 1024;

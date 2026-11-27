@@ -8,6 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"tests/unit/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json",
     "smoke": "node tests/smoke/launch.js",
     "test:packaged": "node tests/packaged/check.js",
     "audit:prod": "npm audit --omit=dev",
@@ -62,8 +63,10 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@types/node": "24.19.2",
     "electron": "45.4.1",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "typescript": "6.0.3"
   },
   "dependencies": {
     "@ghostery/adblocker": "2.20.3",

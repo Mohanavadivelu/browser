@@ -44,7 +44,8 @@ npm start
 | Command | What it does |
 |---|---|
 | `npm start` | Launch the browser |
-| `npm test` | Unit tests (security rules, settings, history, zoom, downloads, recordings, shortcuts) |
+| `npm test` | Unit tests (security rules, settings, history, zoom, downloads, recordings, shortcuts, and that the pages, the preload bridge and the main process agree on every IPC channel) |
+| `npm run typecheck` | Type-check the files marked `// @ts-check` (the IPC code) with TypeScript; nothing is compiled |
 | `npm run smoke` | End-to-end tests: launch the app against a local server and check sandboxing, navigation blocking, tabs, full screen, find, zoom, history, the library pages, downloads (pause, queue, retry, resuming after a restart, saving videos), screenshots, restoring tabs, and real recordings (audio, pause, quality, following tabs) |
 | `npm run test:packaged` | After a build: start the packaged app (`dist\win-unpacked`) with a temporary profile and check it works from its `app.asar` |
 | `npm run audit:prod` | Check production dependencies for known vulnerabilities |

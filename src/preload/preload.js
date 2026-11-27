@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 
 // Sandboxed preload: the only bridge between the browser's own pages and the main process.

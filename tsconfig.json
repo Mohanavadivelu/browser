@@ -1,0 +1,18 @@
+{
+  // Type-checks the files marked // @ts-check (the IPC between the browser's own pages and the
+  // main process); nothing is compiled. Run with: npm run typecheck
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "module": "node16",
+    "moduleResolution": "node16",
+    "target": "es2023",
+    "lib": ["es2023", "dom"],
+    "types": ["node"],
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.js"]
+}

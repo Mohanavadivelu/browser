@@ -38,6 +38,9 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Type check (the IPC files)
+        run: npm run typecheck
+
       # Launches the real app against a local server: sandboxing, navigation, downloads,
       # full screen, find, zoom, history, restore, and real recordings with sound.
       - name: End-to-end smoke tests

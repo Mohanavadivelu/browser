@@ -95,6 +95,10 @@ function inlineCompletion(typed, pages) {
 // address, open a browser page, or search), then matching bookmarks and visited pages.
 // With `complete`, a site the text begins (see inlineCompletion) comes first instead, marked
 // with the completed text, and what the typed text does on its own comes last.
+/**
+ * @param {{ text: string, history?: Array<{ url: string, title?: string, visits?: number, lastVisit?: number }>,
+ *   bookmarks?: Array<{ url: string, title?: string }>, engine?: string, now?: number, limit?: number, complete?: boolean }} options
+ */
 function suggest({ text, history = [], bookmarks = [], engine, now = Date.now(), limit = DEFAULT_LIMIT, complete = false }) {
   const typed = String(text ?? '').trim();
   if (!typed) return [];

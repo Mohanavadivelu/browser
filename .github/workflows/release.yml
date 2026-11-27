@@ -40,6 +40,9 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Type check (the IPC files)
+        run: npm run typecheck
+
       - name: End-to-end smoke tests
         run: npm run smoke
 

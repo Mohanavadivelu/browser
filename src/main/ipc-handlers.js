@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 
 const fs = require('node:fs');
@@ -208,7 +209,7 @@ function registerIpcHandlers(ipc, ctx) {
     try {
       fs.writeFileSync(result.filePath, bookmarkList.toHtml(settings.data.bookmarks), 'utf8');
     } catch (error) {
-      return { ok: false, message: error.message };
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
     return { ok: true, count: bookmarkList.links(settings.data.bookmarks).length, path: result.filePath };
   });
@@ -225,7 +226,7 @@ function registerIpcHandlers(ipc, ctx) {
       if (fs.statSync(filePath).size > MAX_IMPORT_BYTES) return { ok: false, message: 'That file is too large to be a bookmarks file.' };
       html = fs.readFileSync(filePath, 'utf8');
     } catch (error) {
-      return { ok: false, message: error.message };
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
     const parsed = bookmarkList.fromHtml(html);
     const merged = bookmarkList.merge(settings.data.bookmarks, parsed);
