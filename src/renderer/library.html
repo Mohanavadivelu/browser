@@ -61,6 +61,7 @@
       <header>
         <h2>Downloads</h2>
         <input id="downloadSearch" type="search" placeholder="Search downloads" aria-label="Search downloads" autocomplete="off">
+        <button id="downloadsAdd" type="button" class="primary">Add links</button>
         <button id="downloadsPauseAll" type="button" hidden>Pause all</button>
         <button id="downloadsClear" type="button">Clear finished</button>
       </header>
@@ -77,6 +78,19 @@
         <button id="downloadLimit" type="button" class="dl-limit">Speed limit: none</button>
       </div>
       <div id="downloadList" class="list dl-list"></div>
+      <div class="dl-foot">
+        <label class="dl-when">When all downloads finish
+          <select id="whenDone">
+            <option value="none">Do nothing</option>
+            <option value="sleep">Sleep</option>
+            <option value="shutdown">Shut down the computer</option>
+          </select>
+        </label>
+        <div id="whenDoneBanner" class="dl-countdown" role="alert" hidden>
+          <span id="whenDoneText"></span>
+          <button id="whenDoneCancel" type="button" class="primary">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <section id="page-recordings" hidden>
@@ -161,6 +175,16 @@
           </div>
         </div>
         <label class="check"><input id="markOfTheWeb" type="checkbox"> Mark downloaded files as coming from the internet (Windows then checks programs and Office files before they open)</label>
+        <label class="check"><input id="downloadNightOnly" type="checkbox"> Start downloads added to the queue (with Add links) only at night</label>
+        <div class="field">
+          <span>Night is between</span>
+          <div class="inline">
+            <input id="downloadNightFrom" type="time" aria-label="Night starts at">
+            <span>and</span>
+            <input id="downloadNightTo" type="time" aria-label="Night ends at">
+          </div>
+          <small>Downloads you start yourself, and Start now, still begin at once.</small>
+        </div>
       </div>
 
       <div class="group">
@@ -197,6 +221,41 @@
       </div>
     </section>
   </main>
+  <dialog id="addDialog" class="add-dialog" aria-labelledby="addDialogTitle">
+    <h2 id="addDialogTitle">Add downloads</h2>
+    <label class="field">
+      <span>Paste links, one per line</span>
+      <textarea id="addLinks" rows="5" spellcheck="false" placeholder="https://example.com/file.zip"></textarea>
+    </label>
+    <div id="addCheck" class="add-check" hidden>
+      <p id="addSummary" class="note"></p>
+      <ul id="addResults" class="add-results"></ul>
+    </div>
+    <div class="add-row">
+      <span class="add-folder">Save to <code id="addFolder"></code></span>
+      <button id="addFolderChange" type="button">Change…</button>
+    </div>
+    <fieldset class="add-start">
+      <legend>Start</legend>
+      <label class="check inline-check"><input type="radio" name="addStart" value="queue" checked> Add to the queue</label>
+      <label class="check inline-check"><input type="radio" name="addStart" value="now"> Start all now</label>
+      <label class="check inline-check"><input type="radio" name="addStart" value="at"> At</label>
+      <input id="addStartAt" type="time" value="01:00" aria-label="Start time">
+      <small id="addStartNote"></small>
+    </fieldset>
+    <details id="addChecksumBox" class="add-checksum">
+      <summary>Check a SHA-256 checksum (one link only)</summary>
+      <label class="field">
+        <span>The SHA-256 the site gives for the file</span>
+        <input id="addChecksum" type="text" spellcheck="false" maxlength="100" placeholder="64 letters and digits">
+      </label>
+    </details>
+    <p id="addMessage" class="note warn" hidden></p>
+    <div class="move-actions">
+      <button id="addCancel" type="button">Cancel</button>
+      <button id="addConfirm" type="button" class="primary" disabled>Add downloads</button>
+    </div>
+  </dialog>
   <dialog id="moveDialog" class="move-dialog" aria-labelledby="moveDialogTitle">
     <h2 id="moveDialogTitle">Move to</h2>
     <p id="moveDialogNote" class="note"></p>
@@ -208,6 +267,7 @@
   </dialog>
   <script src="menu.js"></script>
   <script src="library-downloads.js"></script>
+  <script src="library-add-links.js"></script>
   <script src="library.js"></script>
 </body>
 </html>

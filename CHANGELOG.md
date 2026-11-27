@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- **Add links**: paste up to 50 links on the Downloads page. Each is checked before it is added: its size, whether the server can resume it, its name, and why it can't be added if not (a web page rather than a file, a blocked file type, an FTP link, an error from the server). Choose the folder, and whether they start now, wait their turn in the queue, or start at a time you set.
+- **Downloads at night**: Settings can hold downloads added to the queue until a night window (1:00 to 7:00 by default). Downloads you start yourself, and Start now, still begin at once.
+- **Drag to reorder the queue**: waiting downloads start in the order shown. Drag one by its handle, or use the arrow keys on the handle.
+- **SHA-256 checksums**: give the checksum the site lists when adding a link, or paste it into a download's details. It is checked when the download finishes (at once, if it already has), and the row says whether it matches.
+- **When all downloads finish**: do nothing, sleep, or shut the computer down. It is chosen on the Downloads page, applies to this session only, and acts after a 60-second countdown that can be cancelled.
+
+### Tests
+
+- Two smoke checks that failed at random (address-bar suggestions while another app had the foreground, and a recording thumbnail that was scrolled out of view) no longer do.
+
 ## 0.11.0
 
 Faster downloads over several connections, a speed limit, and downloads marked as coming from the internet.

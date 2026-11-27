@@ -25,6 +25,7 @@ const DOWNLOAD_ICONS = {
   retry: ['M20 12a8 8 0 1 1-2.3-5.7', 'M20 4v5h-5'],
   more: ['M6 9l6 6 6-6'],
   less: ['M6 15l6-6 6 6'],
+  grip: ['M9 6h.01', 'M15 6h.01', 'M9 12h.01', 'M15 12h.01', 'M9 18h.01', 'M15 18h.01'],
 };
 
 let downloadItems = [];
@@ -32,6 +33,54 @@ let downloadFilter = 'all';
 let downloadLayout = '';
 const downloadRows = new Map(); // id -> { shape, node, meta, bar }
 const openDownloadDetails = new Set();
+let downloadSettings = null; // the night window and speed limit, for the page's texts
+let draggedDownload = 0;
+
+// Times of day: minutes after midnight <-> "01:00" (what a time field holds) and "1:00 AM".
+function minutesToTime(minutes) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function timeToMinutes(value) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function clockText(minutes) {
+  const date = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60);
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function nightText() {
+  return `${clockText(downloadSettings.downloadNightFrom)}–${clockText(downloadSettings.downloadNightTo)}`;
+}
+
+function inNight(now = new Date()) {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const { downloadNightFrom: from, downloadNightTo: to } = downloadSettings;
+  return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
+}
+
+// When a waiting download starts.
+function waitingText(entry) {
+  if (!entry.deferred) return 'Waiting for its turn';
+  if (entry.startAt > Date.now()) {
+    const at = new Date(entry.startAt);
+    const sameDay = at.toDateString() === new Date().toDateString();
+    const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return `Starts at ${time}${sameDay ? '' : ` on ${at.toLocaleDateString([], { weekday: 'long' })}`}`;
+  }
+  if (!entry.startAt && downloadSettings?.downloadNightOnly && !inNight()) return `Waits for the night (${nightText()})`;
+  return 'Waiting for its turn';
+}
+
+const CHECKSUM_TEXT = {
+  checking: 'checking the checksum…',
+  match: 'checksum matches',
+  mismatch: 'checksum does NOT match',
+  error: 'the checksum could not be checked',
+};
 
 function downloadIcon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -79,15 +128,19 @@ function downloadStatus(entry) {
       return parts.join(' · ');
     }
     case 'paused': return `Paused · ${size}`;
-    case 'queued': return `Waiting · ${size} · starts when another download finishes`;
+    case 'queued': return entry.total > 0 ? `${waitingText(entry)} · ${formatBytes(entry.total)}` : waitingText(entry);
     case 'interrupted': {
       const where = percent === null ? 'Failed' : `Failed at ${percent}%`;
       if (entry.retry === 'resume') return `${where} · Retry picks up where it stopped`;
       if (entry.retry === 'restart') return `${where} · the server can't resume it, so Retry starts over`;
       return `${where} · it was in a private tab that has closed`;
     }
-    case 'completed':
-      return entry.missing ? 'The file was moved or deleted' : `Completed · ${formatBytes(entry.received)} · ${new Date(entry.finishedAt || entry.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    case 'completed': {
+      if (entry.missing) return 'The file was moved or deleted';
+      const parts = ['Completed', formatBytes(entry.received), new Date(entry.finishedAt || entry.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })];
+      if (entry.checksum?.result) parts.push(CHECKSUM_TEXT[entry.checksum.result]);
+      return parts.join(' · ');
+    }
     case 'cancelled': return 'Cancelled';
     case 'blocked': return 'Blocked: this file type is not allowed';
     default: return entry.state;
@@ -165,21 +218,52 @@ function downloadDetails(entry, row) {
     label.append(box, ' Open when done');
     extras.append(label);
   }
+  if (!['cancelled', 'blocked'].includes(entry.state) && !entry.missing) details.append(checksumField(entry));
   if (entry.isPrivate) extras.append(element('span', 'note', 'From a private tab: not kept after the browser closes'));
   extras.append(button('Copy link', () => api.downloads.copyLink(entry.id), 'link-button'));
   details.append(extras);
   return details;
 }
 
+// The SHA-256 a download should have: shown once set, with how the check went; otherwise a field
+// to paste it into (checked at once if the download is finished, else when it finishes).
+function checksumField(entry) {
+  const pair = element('div', 'dl-checksum');
+  pair.append(element('dt', undefined, 'SHA-256'));
+  const value = element('dd');
+  if (entry.checksum) {
+    const result = entry.checksum.result || (entry.state === 'completed' ? '' : 'checked when it finishes');
+    value.append(element('code', undefined, entry.checksum.expected));
+    if (result) value.append(element('span', `sum-result ${entry.checksum.result}`, ` · ${CHECKSUM_TEXT[result] ?? result}`));
+  } else {
+    const input = element('input');
+    input.type = 'text';
+    input.spellcheck = false;
+    input.maxLength = 100;
+    input.placeholder = 'Paste the SHA-256 the site gives';
+    input.setAttribute('aria-label', `SHA-256 for ${entry.filename}`);
+    const note = element('span', 'note');
+    const check = button(entry.state === 'completed' ? 'Check' : 'Check when done', async () => {
+      if (!(await api.downloads.checksum(entry.id, input.value))) note.textContent = ' That is not a SHA-256 (64 letters and digits).';
+    });
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') check.click(); });
+    value.append(input, check, note);
+  }
+  pair.append(value);
+  return pair;
+}
+
 // What decides a row's buttons and parts; while it stays the same, only its text and bar change.
 function downloadShape(entry) {
-  return [entry.state, entry.missing, entry.retry, entry.openWhenDone, openDownloadDetails.has(entry.id), entry.total > 0, entry.parts?.length ?? 0].join('|');
+  return [entry.state, entry.missing, entry.retry, entry.openWhenDone, openDownloadDetails.has(entry.id), entry.total > 0, entry.parts?.length ?? 0,
+    entry.checksum ? `${entry.checksum.expected}:${entry.checksum.result}` : ''].join('|');
 }
 
 function buildDownloadRow(entry) {
   const node = element('div', `row dl-row ${groupOf(entry)}`);
   node.dataset.id = String(entry.id);
   const top = element('div', 'dl-top');
+  if (entry.state === 'queued') top.append(queueHandle(entry, node));
   top.append(element('div', `dl-icon ${downloadIconName(entry)}`));
   top.firstChild.append(downloadIcon(downloadIconName(entry)));
   const main = element('div', 'main');
@@ -219,6 +303,51 @@ function buildDownloadRow(entry) {
   const row = { node, meta, bar, fills, connections: null };
   if (openDownloadDetails.has(entry.id)) node.append(downloadDetails(entry, row));
   return row;
+}
+
+// Waiting downloads start in the order shown; drag one by its handle to change it, or use the
+// arrow keys on the handle.
+function queueHandle(entry, node) {
+  const handle = iconButton('grip', `Move ${entry.filename} in the queue (drag, or use the arrow keys)`, () => {}, 'quiet handle');
+  handle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    const order = waitingOrder();
+    const at = order.indexOf(entry.id);
+    if (event.key === 'ArrowUp' && at > 0) api.downloads.move(entry.id, order[at - 1]);
+    if (event.key === 'ArrowDown' && at >= 0 && at < order.length - 1) api.downloads.move(entry.id, order[at + 2] ?? 0);
+    pendingFocus = entry.id;
+  });
+  handle.addEventListener('mousedown', () => { node.draggable = true; });
+  node.addEventListener('dragstart', (event) => {
+    draggedDownload = entry.id;
+    event.dataTransfer.effectAllowed = 'move';
+    node.classList.add('dragging');
+  });
+  node.addEventListener('dragend', () => {
+    node.draggable = false;
+    node.classList.remove('dragging');
+    draggedDownload = 0;
+    for (const row of document.querySelectorAll('.dl-row.drop-before')) row.classList.remove('drop-before');
+  });
+  node.addEventListener('dragover', (event) => {
+    if (!draggedDownload || draggedDownload === entry.id) return;
+    event.preventDefault();
+    node.classList.add('drop-before');
+  });
+  node.addEventListener('dragleave', () => node.classList.remove('drop-before'));
+  node.addEventListener('drop', (event) => {
+    event.preventDefault();
+    node.classList.remove('drop-before');
+    if (draggedDownload && draggedDownload !== entry.id) api.downloads.move(draggedDownload, entry.id);
+  });
+  return handle;
+}
+
+let pendingFocus = 0;
+
+function waitingOrder() {
+  return downloadItems.filter((entry) => entry.state === 'queued').sort((a, b) => a.order - b.order).map((entry) => entry.id);
 }
 
 function updateDownloadRow(row, entry) {
@@ -277,7 +406,12 @@ function renderDownloads(items = downloadItems) {
   }
 
   // The list itself is only put together again when its rows or their order changed.
-  const layout = `${downloadFilter}|${query}|${shown.map((entry) => `${entry.id}:${groupOf(entry)}`).join(',')}`;
+  const grouped = DOWNLOAD_GROUPS.map((group) => {
+    const entries = shown.filter((entry) => groupOf(entry) === group.key);
+    if (group.key === 'waiting') entries.sort((a, b) => a.order - b.order);
+    return { group, entries };
+  });
+  const layout = `${downloadFilter}|${query}|${grouped.map(({ group, entries }) => `${group.key}:${entries.map((entry) => entry.id).join(',')}`).join('|')}`;
   if (!rebuilt && layout === downloadLayout) return;
   downloadLayout = layout;
   const list = $('downloadList');
@@ -290,26 +424,48 @@ function renderDownloads(items = downloadItems) {
     return;
   }
   const parts = [];
-  for (const group of DOWNLOAD_GROUPS) {
-    const entries = shown.filter((entry) => groupOf(entry) === group.key);
+  for (const { group, entries } of grouped) {
     if (entries.length === 0) continue;
     const section = element('section', 'dl-group');
     const heading = element('h3', undefined, group.title);
-    if (group.key === 'waiting') heading.append(element('span', 'hint', ' · they start in order as others finish'));
+    if (group.key === 'waiting') heading.append(element('span', 'hint', ' · they start in this order; drag to change it'));
     section.append(heading, ...entries.map((entry) => downloadRows.get(entry.id).node));
     parts.push(section);
   }
   list.replaceChildren(...parts);
+  // A row moved with the keyboard keeps the focus on its handle.
+  if (pendingFocus) {
+    document.querySelector(`.dl-row[data-id="${pendingFocus}"] .handle`)?.focus();
+    pendingFocus = 0;
+  }
 }
 
-function showDownloadLimit(kilobytes) {
+function showDownloadSettings(settings) {
+  downloadSettings = settings;
+  const kilobytes = settings.speedLimitKBps;
   $('downloadLimit').textContent = kilobytes > 0 ? `Speed limit: ${formatBytes(kilobytes * 1024)}/s` : 'Speed limit: none';
   $('downloadLimit').classList.toggle('on', kilobytes > 0);
 }
 
+// "When all downloads finish", and its countdown once they have.
+let whenDoneTimer = null;
+function showWhenDone(state) {
+  $('whenDone').value = state.action;
+  clearInterval(whenDoneTimer);
+  $('whenDoneBanner').hidden = !state.endsAt;
+  if (!state.endsAt) return;
+  const tick = () => {
+    const seconds = Math.max(0, Math.ceil((state.endsAt - Date.now()) / 1000));
+    $('whenDoneText').textContent = `Downloads finished. The computer will ${state.action === 'sleep' ? 'sleep' : 'shut down'} in ${seconds} s.`;
+  };
+  tick();
+  whenDoneTimer = setInterval(tick, 500);
+}
+
 async function loadDownloads() {
-  const [items, settings] = await Promise.all([api.downloads.list(), api.settings.get()]);
-  showDownloadLimit(settings.speedLimitKBps);
+  const [items, settings, whenDone] = await Promise.all([api.downloads.list(), api.settings.get(), api.downloads.whenDone()]);
+  showDownloadSettings(settings);
+  showWhenDone(whenDone);
   renderDownloads(items);
 }
 
@@ -325,6 +481,11 @@ function bindDownloads() {
     downloadItems.some((entry) => entry.state === 'progressing' || entry.state === 'queued') ? api.downloads.pauseAll() : api.downloads.resumeAll()
   ));
   $('downloadsClear').addEventListener('click', () => api.downloads.clear());
+  $('whenDone').addEventListener('change', async () => showWhenDone(await api.downloads.setWhenDone($('whenDone').value)));
+  $('whenDoneCancel').addEventListener('click', async () => showWhenDone(await api.downloads.cancelWhenDone()));
+  api.onWhenDone(showWhenDone);
+  $('downloadsAdd').addEventListener('click', openAddLinks);
+  bindAddLinks();
   // The limit is set in Settings, with the other download settings.
   $('downloadLimit').addEventListener('click', async () => {
     show('settings');

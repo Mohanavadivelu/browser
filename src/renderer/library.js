@@ -831,7 +831,10 @@ function renderSettings(settings) {
   if (settings.speedLimitKBps > 0) $('speedLimitValue').value = String(Math.round((settings.speedLimitKBps / 1024) * 10) / 10);
   else if (!$('speedLimitValue').value) $('speedLimitValue').value = '5';
   $('markOfTheWeb').checked = settings.markOfTheWeb;
-  showDownloadLimit(settings.speedLimitKBps);
+  $('downloadNightOnly').checked = settings.downloadNightOnly;
+  $('downloadNightFrom').value = minutesToTime(settings.downloadNightFrom);
+  $('downloadNightTo').value = minutesToTime(settings.downloadNightTo);
+  showDownloadSettings(settings);
   const sites = $('allowedSites');
   sites.replaceChildren();
   if (settings.blockerAllowedSites.length === 0) sites.append(element('p', 'empty', 'None.'));
@@ -875,6 +878,13 @@ function bindSettings() {
     saveLimit();
   });
   $('markOfTheWeb').addEventListener('change', () => saveSetting({ markOfTheWeb: $('markOfTheWeb').checked }));
+  $('downloadNightOnly').addEventListener('change', () => saveSetting({ downloadNightOnly: $('downloadNightOnly').checked }));
+  for (const id of ['downloadNightFrom', 'downloadNightTo']) {
+    $(id).addEventListener('change', () => {
+      const minutes = timeToMinutes($(id).value);
+      if (minutes !== null) saveSetting({ [id]: minutes });
+    });
+  }
   $('updatesCheck').addEventListener('click', async () => {
     $('updatesMessage').textContent = 'Checking…';
     const result = await api.updates.check();

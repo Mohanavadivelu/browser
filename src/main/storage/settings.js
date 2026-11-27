@@ -14,7 +14,7 @@ const ZOOM_RANGE = [0.25, 5];
 const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
   'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone', 'showBookmarksBar', 'downloadsAtOnce', 'resumeDownloads',
-  'connectionsPerFile', 'speedLimitKBps', 'markOfTheWeb',
+  'connectionsPerFile', 'speedLimitKBps', 'markOfTheWeb', 'downloadNightOnly', 'downloadNightFrom', 'downloadNightTo',
 ]);
 const MAX_ALLOWED_SITES = 500;
 // Minutes after which a recording stops by itself; 0 is never.
@@ -27,6 +27,8 @@ const CONNECTIONS_CHOICES = Object.freeze([1, 2, 4, 8, 16]);
 const DEFAULT_CONNECTIONS = 8;
 // The speed limit for all downloads together, in KB a second (0: none).
 const MAX_SPEED_LIMIT_KBPS = 10 * 1024 * 1024;
+// When downloads added to the queue may start, if only at night: minutes after midnight.
+const minutesOfDay = (value, fallback) => (Number.isInteger(value) && value >= 0 && value < 24 * 60 ? value : fallback);
 const HOST_NAME = /^[a-z0-9.-]{1,253}$/;
 
 // Sites where the user turned ad and tracker blocking off: plain lower-case host names.
@@ -86,6 +88,9 @@ function sanitizeSettings(raw) {
     connectionsPerFile: CONNECTIONS_CHOICES.includes(source.connectionsPerFile) ? source.connectionsPerFile : DEFAULT_CONNECTIONS,
     speedLimitKBps: Number.isSafeInteger(source.speedLimitKBps) && source.speedLimitKBps > 0 && source.speedLimitKBps <= MAX_SPEED_LIMIT_KBPS ? source.speedLimitKBps : 0,
     markOfTheWeb: source.markOfTheWeb !== false,
+    downloadNightOnly: source.downloadNightOnly === true,
+    downloadNightFrom: minutesOfDay(source.downloadNightFrom, 60),
+    downloadNightTo: minutesOfDay(source.downloadNightTo, 7 * 60),
     blockerAllowedSites: sanitizeSites(source.blockerAllowedSites),
     zoom: sanitizeZoom(source.zoom),
     session: sanitizeSession(source.session),

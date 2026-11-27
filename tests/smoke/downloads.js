@@ -3,8 +3,10 @@
 // Smoke test for the download manager: pause and resume, the queue, retrying a failed download,
 // picking up after the browser was quit mid-download (with Chromium, and split over several
 // connections), splitting big downloads, the speed limit, marking files as from the internet,
-// private downloads, the toolbar's downloads button and panel, the Downloads page, and saving a
-// video from a page.
+// private downloads, the toolbar's downloads button and panel, the Downloads page, saving a
+// video from a page, adding links in bulk, start times and the night, reordering the queue,
+// checksums, and sleeping or shutting down when downloads finish (never for real: the test
+// records what would have been done).
 // Run with: npm run smoke -- downloads.js
 // The quit-and-restart check runs this file a second time, as a separate Electron process that
 // starts a download and quits while it runs (--phase=quit).
@@ -150,7 +152,11 @@ async function main() {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('console-message', (event) => { if (event.level === 'error') console.log(`[page error] ${event.message} @${event.sourceId}:${event.lineNumber}`); });
   });
-  const ctx = await start({ userDataDir: profile, skipSingleInstanceLock: true, blockerFilters: '', downloadDir, quitOnClose: false });
+  const powerCalls = []; // sleep and shut down, as asked for (the test never runs them)
+  const ctx = await start({
+    userDataDir: profile, skipSingleInstanceLock: true, blockerFilters: '', downloadDir, quitOnClose: false,
+    powerAction: (action) => powerCalls.push(action), whenDoneCountdownMs: 1500,
+  });
   const { tabs, downloads, settings, ui } = ctx;
   await waitFor(() => ctx.win.isVisible() && !ui.webContents.isLoading(), 'window ready', 30000);
   const notices = [];
@@ -334,6 +340,91 @@ async function main() {
   await evalIn(page, "document.getElementById('downloadsClear').click()");
   await waitFor(() => downloads.list().length === 0, 'cleared');
   check('Clear finished empties the list', /No downloads yet/.test(await evalIn(page, "new Promise((r) => setTimeout(() => r(document.getElementById('downloadList').textContent), 400))")));
+
+  // ---------- Add links ----------
+  tabs.activate(tabs.order.find((id) => tabs.tabs.get(id).kind === 'internal'));
+  await evalIn(page, "document.getElementById('downloadsAdd').click()");
+  await waitFor(async () => evalIn(page, "document.getElementById('addDialog').open"), 'add dialog open');
+  const pasted = [`${base}/file/added-one.bin?size=300000`, `${base}/file/added-two.bin?size=400000`, `${base}/page-not-file`].join('\n');
+  await evalIn(page, `(() => { const box = document.getElementById('addLinks'); box.value = ${JSON.stringify(pasted)};
+    box.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await waitFor(async () => /2 of 3 links/.test(await evalIn(page, "document.getElementById('addSummary').textContent")), 'links checked', 15000);
+  const addText = await evalIn(page, "document.getElementById('addResults').textContent");
+  check('pasted links are checked: size, resuming, and why one can\'t be added', /added-one\.bin/.test(addText) && /293 KB · resumable/.test(addText) && /web page, not a file/.test(addText), addText);
+  check('the Add button counts the links that can be added', await evalIn(page, "document.getElementById('addConfirm').textContent") === 'Add 2 downloads');
+  const defaultFolder = await evalIn(page, "document.getElementById('addFolder').textContent");
+  check('links go into the downloads folder unless another is chosen', defaultFolder === downloadDir, defaultFolder);
+  await evalIn(page, "document.getElementById('addConfirm').click()");
+  await waitFor(() => byName('added-one.bin')?.state === 'completed' && byName('added-two.bin')?.state === 'completed', 'added links downloaded', 20000);
+  check('added links download into the folder, correctly', sameAs(path.join(downloadDir, 'added-one.bin'), 300000) && sameAs(path.join(downloadDir, 'added-two.bin'), 400000));
+  const anyFolder = await evalIn(page, `window.browserApi.downloads.addLinks({ links: [{ url: '${base}/file/x.bin' }], saveDir: 'C:\\\\Windows', start: 'now' })`);
+  check('the page can\'t save into a folder the user didn\'t choose', anyFolder.ok === false && anyFolder.reason === 'folder', JSON.stringify(anyFolder));
+
+  // ---------- Start times, the night, and the order of the queue ----------
+  const inAnHour = Date.now() + 3_600_000;
+  await evalIn(page, `window.browserApi.downloads.addLinks({ links: ['a', 'b', 'c'].map((n) => ({ url: '${base}/file/later-' + n + '.bin', filename: 'later-' + n + '.bin' })),
+    saveDir: ${JSON.stringify(downloadDir)}, start: 'at', startAt: ${inAnHour} })`);
+  await waitFor(async () => (await evalIn(page, "document.querySelectorAll('.dl-group .handle').length")) === 3, 'waiting rows with handles');
+  const waitingText = await evalIn(page, "[...document.querySelectorAll('.dl-group')].find((g) => /Waiting/.test(g.querySelector('h3').textContent)).textContent");
+  check('links set to start later wait, saying when', ['a', 'b', 'c'].every((n) => byName(`later-${n}.bin`)?.state === 'queued') && /Starts at/.test(waitingText), waitingText.slice(0, 160));
+  const queueOrder = () => downloads.queue().map(({ entry }) => entry.filename).join(',');
+  await evalIn(page, "document.querySelectorAll('.dl-group .handle')[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))");
+  await waitFor(() => queueOrder() === 'later-a.bin,later-c.bin,later-b.bin', 'moved up', 5000).catch(() => {});
+  check('a waiting download moves up the queue with the arrow keys on its handle', queueOrder() === 'later-a.bin,later-c.bin,later-b.bin', queueOrder());
+  await waitFor(async () => (await evalIn(page, "[...document.querySelectorAll('.dl-group .dl-row')].filter((r) => r.querySelector('.handle')).map((r) => r.querySelector('.name').firstChild.textContent).join(',')")) === 'later-a.bin,later-c.bin,later-b.bin', 'page shows the new order', 5000).catch(() => {});
+  check('the page shows the queue in its new order', true);
+  for (const n of ['a', 'b', 'c']) downloads.cancel(byName(`later-${n}.bin`).id);
+
+  const minutesNow = new Date().getHours() * 60 + new Date().getMinutes();
+  // Through the Settings page, as the user would (the Downloads page then knows the night too).
+  const saveSettings = (patch) => evalIn(page, `saveSetting(${JSON.stringify(patch)}).then(() => true)`);
+  await saveSettings({ downloadNightOnly: true, downloadNightFrom: (minutesNow + 120) % 1440, downloadNightTo: (minutesNow + 180) % 1440 });
+  await evalIn(page, `window.browserApi.downloads.addLinks({ links: [{ url: '${base}/file/nightly.bin?size=2048', filename: 'nightly.bin' }], saveDir: ${JSON.stringify(downloadDir)}, start: 'queue' })`);
+  await waitFor(async () => /Waits for the night/.test(await evalIn(page, "document.getElementById('downloadList').textContent")), 'night text', 5000).catch(() => {});
+  check('with "only at night" on, an added link waits for the night', byName('nightly.bin')?.state === 'queued' &&
+    /Waits for the night/.test(await evalIn(page, "document.getElementById('downloadList').textContent")));
+  await saveSettings({ downloadNightFrom: (minutesNow + 1439) % 1440, downloadNightTo: (minutesNow + 60) % 1440 });
+  downloads.pump(); // what the schedule's next look does
+  await waitFor(() => byName('nightly.bin')?.state === 'completed', 'night download ran', 10000).catch(() => {});
+  check('once it is night, it downloads', byName('nightly.bin')?.state === 'completed');
+  await saveSettings({ downloadNightOnly: false });
+
+  // ---------- Checksums ----------
+  const sha = (size) => require('node:crypto').createHash('sha256').update(content(size)).digest('hex');
+  await evalIn(page, `window.browserApi.downloads.addLinks({ links: [{ url: '${base}/file/checked.bin?size=50000', filename: 'checked.bin' }],
+    saveDir: ${JSON.stringify(downloadDir)}, start: 'now', checksum: '${sha(50000).toUpperCase()}' })`);
+  await waitFor(() => byName('checked.bin')?.checksum?.result === 'match', 'checksum checked', 10000).catch(() => {});
+  check('a SHA-256 given when adding is checked when the download finishes', byName('checked.bin')?.checksum?.result === 'match', JSON.stringify(byName('checked.bin')?.checksum));
+  await waitFor(async () => /checksum matches/.test(await evalIn(page, `document.querySelector('[data-id="${byName('checked.bin').id}"]')?.textContent ?? ''`)), 'match shown', 5000).catch(() => {});
+  check('the row says the checksum matches', /checksum matches/.test(await evalIn(page, `document.querySelector('[data-id="${byName('checked.bin').id}"]')?.textContent ?? ''`)));
+  const plainId = byName('added-one.bin').id;
+  await evalIn(page, `document.querySelector('[data-id="${plainId}"] [aria-label="Show details"]').click()`);
+  await waitFor(async () => evalIn(page, `Boolean(document.querySelector('[data-id="${plainId}"] .dl-checksum input'))`), 'checksum field');
+  await evalIn(page, `(() => { const row = document.querySelector('[data-id="${plainId}"]'); row.querySelector('.dl-checksum input').value = '${'0'.repeat(64)}';
+    [...row.querySelectorAll('.dl-checksum button')].find((b) => b.textContent === 'Check').click(); })()`);
+  await waitFor(() => byName('added-one.bin')?.checksum?.result === 'mismatch', 'mismatch found', 10000).catch(() => {});
+  check('a SHA-256 pasted for a finished download is checked at once, and a wrong one is flagged', byName('added-one.bin')?.checksum?.result === 'mismatch');
+
+  // ---------- When all downloads finish ----------
+  pace = 20;
+  await evalIn(page, "(() => { const s = document.getElementById('whenDone'); s.value = 'shutdown'; s.dispatchEvent(new Event('change')); })()");
+  await waitFor(() => ctx.whenDone.state().action === 'shutdown', 'shut down chosen');
+  await evalIn(page, `window.browserApi.downloads.addLinks({ links: [{ url: '${base}/file/last-one.bin?size=1000000', filename: 'last-one.bin' }], saveDir: ${JSON.stringify(downloadDir)}, start: 'now' })`);
+  await waitFor(() => byName('last-one.bin')?.state === 'completed', 'last download done', 20000);
+  await waitFor(async () => /shut down in/.test(await evalIn(page, "document.getElementById('whenDoneBanner').hidden ? '' : document.getElementById('whenDoneText').textContent")), 'countdown shown', 5000).catch(() => {});
+  check('when the downloads finish, a countdown to shutting down is shown', /shut down in/.test(await evalIn(page, "document.getElementById('whenDoneText').textContent")) && powerCalls.length === 0);
+  await waitFor(() => powerCalls.length === 1, 'shut down asked for', 5000).catch(() => {});
+  check('after the countdown the computer is shut down (recorded, not done, in this test)', JSON.stringify(powerCalls) === '["shutdown"]', JSON.stringify(powerCalls));
+  check('the choice goes back to doing nothing', await evalIn(page, "new Promise((r) => setTimeout(() => r(document.getElementById('whenDone').value), 300))") === 'none');
+
+  await evalIn(page, "(() => { const s = document.getElementById('whenDone'); s.value = 'sleep'; s.dispatchEvent(new Event('change')); })()");
+  await waitFor(() => ctx.whenDone.state().action === 'sleep', 'sleep chosen');
+  await evalIn(page, `window.browserApi.downloads.addLinks({ links: [{ url: '${base}/file/cancel-sleep.bin?size=600000', filename: 'cancel-sleep.bin' }], saveDir: ${JSON.stringify(downloadDir)}, start: 'now' })`);
+  await waitFor(async () => evalIn(page, "!document.getElementById('whenDoneBanner').hidden"), 'sleep countdown', 20000);
+  await evalIn(page, "document.getElementById('whenDoneCancel').click()");
+  await sleep(2000);
+  pace = 1;
+  check('Cancel stops the countdown: the computer stays on', JSON.stringify(powerCalls) === '["shutdown"]' && ctx.whenDone.state().action === 'none', JSON.stringify(powerCalls));
 
   // Downloads go on reporting while the browser quits, after its window and views are gone;
   // that must not throw (it showed an error box as the browser closed). Checked by "no uncaught

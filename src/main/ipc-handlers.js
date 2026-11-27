@@ -11,6 +11,7 @@ const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
 const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
+const { checkLinks } = require('./link-check');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const {
@@ -38,12 +39,12 @@ function registerIpcHandlers(ipc, ctx) {
     app, shell, dialog, host, tabs, recorder, settings, history, downloads, recordingsIndex, blocker, refreshBlockerLists, updates,
     bookmarkIcons, keepBookmarkIcons,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
-    videoFinder, openDownload, saveMedia, clipboard,
+    videoFinder, openDownload, saveMedia, clipboard, whenDone, defaultDownloadDir, downloadFolders, fetchIn,
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
-    entryIdAndBool, listIndex,
+    entryIdAndBool, listIndex, longText, addLinks, entryAndTarget, entryIdAndText,
   } = validators;
 
   const settingsPayload = () => ({
@@ -265,6 +266,40 @@ function registerIpcHandlers(ipc, ctx) {
     const filePath = downloads.pathOf(id);
     if (filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
   });
+  ipc.handle('downloads:move', LIBRARY, entryAndTarget, (_e, id, beforeId) => downloads.move(id, beforeId || null));
+  ipc.handle('downloads:checksum', LIBRARY, entryIdAndText, (_e, id, value) => downloads.setChecksum(id, value));
+
+  // Add links: the page checks pasted links (through the regular profile, as the downloads
+  // will be), and adds them into the downloads folder or one the user picked in the dialog.
+  ipc.handle('downloads:check-links', LIBRARY, longText, (_e, text) => checkLinks(fetchIn(null), text));
+  ipc.handle('downloads:default-folder', LIBRARY, none, () => defaultDownloadDir);
+  ipc.handle('downloads:choose-folder', LIBRARY, none, async () => {
+    const result = await dialog.showOpenDialog(host.win, {
+      title: 'Save the downloads in',
+      defaultPath: defaultDownloadDir,
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    const folder = !result.canceled && result.filePaths[0];
+    if (!folder) return null;
+    downloadFolders.add(path.resolve(folder).toLowerCase());
+    return folder;
+  });
+  ipc.handle('downloads:add-links', LIBRARY, addLinks, (_e, request) => {
+    const folder = path.resolve(request.saveDir);
+    if (!downloadFolders.has(folder.toLowerCase())) return { ok: false, reason: 'folder' };
+    try {
+      fs.mkdirSync(folder, { recursive: true });
+    } catch {
+      return { ok: false, reason: 'folder' };
+    }
+    const ids = downloads.addLinks({ ...request, saveDir: folder });
+    return { ok: ids.length > 0, added: ids.length };
+  });
+
+  // When all downloads finish: nothing, sleep or shut down (for this session; with a countdown).
+  ipc.handle('downloads:when-done', LIBRARY, none, () => whenDone.state());
+  ipc.handle('downloads:when-done-set', LIBRARY, text, (_e, action) => whenDone.set(action));
+  ipc.handle('downloads:when-done-cancel', LIBRARY, none, () => whenDone.cancel());
 
   // The videos on the active tab's page, for the address bar's video panel. The panel names one
   // by its place in the list; the address comes from the main process's own scan of the page.

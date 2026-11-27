@@ -28,6 +28,7 @@ const { DownloadManager } = require('./download-manager');
 const { VideoFinder } = require('./page-videos');
 const { isDangerousFile, setInternetMark } = require('./security/downloads');
 const { SegmentedDownload, probeRanges } = require('./segmented-download');
+const { WhenDone } = require('./when-done');
 const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
@@ -104,7 +105,12 @@ async function start(options = {}) {
       probe: (details) => probeRanges(fetchIn(details.session), details),
       create: (details) => new SegmentedDownload({ ...details, fetch: fetchIn(details.session) }),
     },
+    nightWindow: () => (settings.data.downloadNightOnly ? { from: settings.data.downloadNightFrom, to: settings.data.downloadNightTo } : null),
   });
+  // Folders the Downloads page may save added links into: the downloads folder, and those the
+  // user picked in the folder dialog (the page can't name any other).
+  const defaultDownloadDir = options.downloadDir ?? app.getPath('downloads');
+  const downloadFolders = new Set([path.resolve(defaultDownloadDir).toLowerCase()]);
   const savedDownloads = downloads.load();
   const zoom = new ZoomController({ settings });
 
@@ -332,6 +338,19 @@ async function start(options = {}) {
     recording.onTabActivated(id);
   });
 
+  // Sleep or shut down once downloads finish. Tests pass their own `powerAction`.
+  const runPowerAction = options.powerAction ?? ((action) => {
+    const { execFile } = require('node:child_process');
+    const quiet = { windowsHide: true };
+    if (action === 'shutdown') execFile('shutdown.exe', ['/s', '/t', '0'], quiet);
+    else if (action === 'sleep') {
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        "Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)"], quiet);
+    }
+  });
+  const whenDone = new WhenDone({ downloads, run: runPowerAction, notify: (text, kind) => notify(text, kind), countdownMs: options.whenDoneCountdownMs });
+  whenDone.on('change', (state) => broadcastToLibrary('downloads:when-done', state));
+
   let downloadTimer = null;
   downloads.on('started', (entry) => notify(`Downloading ${entry.filename}…`));
   downloads.on('completed', (entry) => {
@@ -406,6 +425,7 @@ async function start(options = {}) {
   const context = {
     app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, bookmarkIcons, keepBookmarkIcons, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, videoFinder, openDownload, saveMedia, clipboard,
+    whenDone, defaultDownloadDir, downloadFolders, fetchIn,
     showMenu: () => showMainMenu(context),
   };
   registerIpcHandlers(ipc, context);
@@ -478,13 +498,14 @@ async function start(options = {}) {
     pushState();
     // Downloads that were running when the browser closed go on where they stopped.
     const resumed = settings.data.resumeDownloads ? downloads.resumeSaved() : 0;
+    downloads.pump(); // links added to the queue last time
     if (resumed) notify(`Picking up ${resumed} download${resumed === 1 ? '' : 's'} from last time.`);
     else if (savedDownloads) notify(`${savedDownloads} unfinished download${savedDownloads === 1 ? ' is' : 's are'} paused on the Downloads page.`);
   });
 
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
-    ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates, bookmarkIcons, videoFinder,
+    ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates, bookmarkIcons, videoFinder, whenDone,
   };
 }
 

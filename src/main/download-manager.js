@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { isAllowedUrl } = require('./security/navigation');
 const { RateLimiter, PART_SUFFIX } = require('./segmented-download');
@@ -25,6 +26,13 @@ const SPLIT_FROM_BYTES = 4 * 1024 * 1024;
 const MAX_PARTS = 32;
 // How often the speed limit checks the downloads Chromium runs itself.
 const THROTTLE_TICK_MS = 100;
+// How often waiting downloads with a start time (or for the night) are looked at.
+const SCHEDULE_TICK_MS = 15 * 1000;
+// A download asked for that hasn't begun by then (refused, or the address failed) has failed.
+const START_TIMEOUT_MS = 30 * 1000;
+const MAX_ADD = 50;
+const SHA256 = /^[0-9a-f]{64}$/;
+const CHECKSUM_RESULTS = new Set(['', 'checking', 'match', 'mismatch', 'error']);
 
 const text = (value, max = MAX_TEXT) => (typeof value === 'string' && value.length <= max ? value : '');
 const count = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : 0);
@@ -56,7 +64,51 @@ function sanitizeEntry(raw) {
     // The kept copy is always next to the file, by this name: the list can't point elsewhere.
     kept: raw.kept === true && Boolean(savePath),
     parts: sanitizeParts(raw.parts, count(raw.total)),
+    // Added from the Add links dialog: the folder it goes into, when it may start, and whether
+    // it waits for the schedule (a start time, or the night) before it starts.
+    saveDir: typeof raw.saveDir === 'string' && raw.saveDir.length <= MAX_TEXT && path.isAbsolute(raw.saveDir) ? raw.saveDir : '',
+    startAt: count(raw.startAt),
+    deferred: raw.deferred === true,
+    order: Number.isFinite(raw.order) ? raw.order : 0,
+    checksum: sanitizeChecksum(raw.checksum),
   };
+}
+
+function sanitizeChecksum(raw) {
+  const expected = typeof raw?.expected === 'string' ? raw.expected.trim().toLowerCase() : '';
+  if (!SHA256.test(expected)) return null;
+  // A check that was running when the browser closed runs again.
+  return { expected, result: CHECKSUM_RESULTS.has(raw.result) && raw.result !== 'checking' ? raw.result : '' };
+}
+
+// A checksum typed or pasted by the user: 64 hex digits, any case, spaces around allowed.
+function parseChecksum(value) {
+  const hex = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return SHA256.test(hex) ? hex : '';
+}
+
+// The SHA-256 of a file, read as a stream (big files too).
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    fs.createReadStream(filePath)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+// A name in `dir` no other file (or download on the list) has: "report (2).pdf" if need be.
+function uniquePath(dir, filename, taken) {
+  const safe = path.win32.basename(filename).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'download';
+  const ext = path.extname(safe);
+  const stem = safe.slice(0, safe.length - ext.length);
+  for (let n = 1; n < 1000; n += 1) {
+    const candidate = path.join(dir, n === 1 ? safe : `${stem} (${n})${ext}`);
+    const lower = candidate.toLowerCase();
+    if (!fs.existsSync(candidate) && !fs.existsSync(`${candidate}${PART_SUFFIX}`) && !taken.has(lower)) return candidate;
+  }
+  return path.join(dir, `${stem} (${Date.now()})${ext}`);
 }
 
 // The parts of a download split over several connections: [start, end, position] each, in the
@@ -123,8 +175,14 @@ function keepPartial(filePath) {
 // file and create returns a SegmentedDownload (see segmented-download.js).
 // Electron's DownloadItems are handed in with track(), from the session's will-download.
 class DownloadManager extends EventEmitter {
-  constructor({ storePath = null, maxActive = () => 3, startDownload = null, createInterrupted = null, speedLimit = () => 0, segmented = null, now = Date.now } = {}) {
+  constructor({ storePath = null, maxActive = () => 3, startDownload = null, createInterrupted = null, speedLimit = () => 0, segmented = null,
+    nightWindow = () => null, now = Date.now } = {}) {
     super();
+    // `nightWindow()`: null, or { from, to } in minutes after midnight, when waiting downloads
+    // added to the queue may start (the window can run past midnight).
+    this.nightWindow = nightWindow;
+    this.scheduleTimer = null;
+    this.nextOrder = 1;
     this.storePath = storePath;
     this.maxActive = maxActive;
     this.startDownload = startDownload;
@@ -159,14 +217,18 @@ class DownloadManager extends EventEmitter {
       const clean = sanitizeEntry(raw);
       if (!clean) continue;
       recoverKept(clean);
-      const wasRunning = clean.state === 'progressing' || clean.state === 'queued';
-      if (UNFINISHED.has(clean.state)) {
+      // Added to the queue and not started yet: it goes on waiting for its turn or its time.
+      const waiting = clean.state === 'queued' && clean.deferred && clean.received === 0;
+      const wasRunning = !waiting && (clean.state === 'progressing' || clean.state === 'queued');
+      if (UNFINISHED.has(clean.state) && !waiting) {
         clean.state = 'paused';
         unfinished += 1;
       }
-      const entry = { id: this.nextId++, ...clean, speed: 0, isPrivate: false, restored: UNFINISHED.has(raw.state) };
+      const entry = { id: this.nextId++, ...clean, speed: 0, isPrivate: false, restored: UNFINISHED.has(raw.state) && !waiting };
+      this.nextOrder = Math.max(this.nextOrder, Math.ceil(entry.order) + 1);
       this.records.set(entry.id, { entry, item: null, started: false, wasRunning, missingAt: 0 });
     }
+    this.schedule();
     return unfinished;
   }
 
@@ -221,6 +283,7 @@ class DownloadManager extends EventEmitter {
     this.save();
     this.closed = true;
     clearInterval(this.throttleTimer);
+    clearInterval(this.scheduleTimer);
   }
 
   // Starts the saved downloads that were downloading or waiting when the browser closed.
@@ -242,10 +305,16 @@ class DownloadManager extends EventEmitter {
     if (isAllowedUrl(url)) this.expected.set(url, details);
   }
 
-  // Where a download should be saved without asking: a retry goes back into its own file.
+  // Where a download should be saved without asking: a retry goes back into its own file, and
+  // a link added with a folder goes into that folder, under a name not yet taken there.
   presetPath(item) {
     if (item.getSavePath()) return '';
-    return this.expected.get(firstUrl(item))?.savePath ?? '';
+    const expected = this.expected.get(firstUrl(item));
+    if (expected?.savePath) return expected.savePath;
+    if (!expected?.saveDir) return '';
+    const taken = new Set([...this.records.values()].map(({ entry }) => entry.path.toLowerCase()).filter(Boolean));
+    expected.savePath = uniquePath(expected.saveDir, item.getFilename(), taken);
+    return expected.savePath;
   }
 
   // `session` is the item's own session, for the connections of a split download.
@@ -259,10 +328,13 @@ class DownloadManager extends EventEmitter {
     let record = adoptId ? this.records.get(adoptId) : null;
 
     if (record) {
+      clearTimeout(record.startTimer);
       record.item = item;
       record.started = true;
       record.session = session;
       record.checkedSplit = false;
+      // The name the server gave, now that it is known.
+      if (expected?.saveDir) record.entry.filename = item.getFilename() || record.entry.filename;
       Object.assign(record.entry, { state: 'progressing', speed: 0, received: item.getReceivedBytes(), finishedAt: 0, restored: Boolean(restoringId) || record.entry.restored });
     } else {
       const entry = {
@@ -285,6 +357,11 @@ class DownloadManager extends EventEmitter {
         openWhenDone: false,
         kept: false,
         parts: null,
+        saveDir: '',
+        startAt: 0,
+        deferred: false,
+        order: this.nextOrder++,
+        checksum: null,
         isPrivate,
         restored: false,
       };
@@ -343,7 +420,10 @@ class DownloadManager extends EventEmitter {
       entry.finishedAt = this.now();
       if (entry.state !== 'interrupted') record.item = null;
       this.changed();
-      if (entry.state === 'completed') this.emit('completed', { ...entry });
+      if (entry.state === 'completed') {
+        this.emit('completed', { ...entry });
+        if (entry.checksum) this.verify(record);
+      }
       this.pump();
     });
   }
@@ -463,15 +543,177 @@ class DownloadManager extends EventEmitter {
     return active;
   }
 
-  // Starts waiting downloads, oldest first, while there is room.
+  // Starts waiting downloads in their order (the user can drag it), while there is room. One
+  // added to the queue from Add links also waits for its start time and the night, if set.
   pump() {
-    const waiting = [...this.records.values()].filter(({ entry, item }) => entry.state === 'queued' && item);
+    const waiting = this.queue();
+    let started = false;
     for (const record of waiting) {
       if (this.activeCount() >= this.maxActive()) break;
-      record.entry.state = 'progressing';
-      record.item.resume();
+      if (record.item) {
+        record.entry.state = 'progressing';
+        record.item.resume();
+        started = true;
+      } else if (this.mayStart(record.entry)) {
+        this.startWaiting(record);
+        started = true;
+      }
     }
-    if (waiting.length) this.changed();
+    if (started) this.changed();
+    this.schedule();
+  }
+
+  queue() {
+    return [...this.records.values()].filter(({ entry }) => entry.state === 'queued').sort((a, b) => a.entry.order - b.entry.order);
+  }
+
+  // Whether a download added to the queue may start now: its start time has come, and (when
+  // the night setting is on) it is night.
+  mayStart(entry, now = this.now()) {
+    if (!entry.deferred) return true;
+    if (entry.startAt > now) return false;
+    return entry.startAt > 0 || this.inNightWindow(now);
+  }
+
+  inNightWindow(now = this.now()) {
+    const window = this.nightWindow();
+    if (!window) return true;
+    const date = new Date(now);
+    const minutes = date.getHours() * 60 + date.getMinutes();
+    return window.from <= window.to ? minutes >= window.from && minutes < window.to : minutes >= window.from || minutes < window.to;
+  }
+
+  // Looks at waiting downloads every few seconds while some wait for a time.
+  schedule() {
+    const timed = [...this.records.values()].some(({ entry, item }) => entry.state === 'queued' && !item && entry.deferred);
+    if (timed && !this.scheduleTimer && !this.closed) {
+      this.scheduleTimer = setInterval(() => this.pump(), SCHEDULE_TICK_MS);
+      this.scheduleTimer.unref?.();
+    } else if (!timed && this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+  }
+
+  startWaiting(record) {
+    const { entry } = record;
+    if (entry.isPrivate || !this.startDownload) return false;
+    record.started = true; // counts against the limit while Chromium starts it
+    this.expect(entry.url, { entryId: entry.id, savePath: entry.path, saveDir: entry.saveDir, kind: entry.kind });
+    Object.assign(entry, { state: 'progressing', received: 0, speed: 0, finishedAt: 0 });
+    clearTimeout(record.startTimer);
+    record.startTimer = setTimeout(() => {
+      if (record.item || entry.state !== 'progressing') return;
+      this.expected.delete(entry.url);
+      entry.state = 'interrupted';
+      entry.finishedAt = this.now();
+      this.changed();
+      this.pump();
+    }, START_TIMEOUT_MS);
+    record.startTimer.unref?.();
+    this.startDownload(entry.url);
+    return true;
+  }
+
+  // ---------- Links added in bulk ----------
+  // `links`: [{ url, filename, total }]; `start`: 'queue' (waits its turn, and for the night if
+  // that is set), 'now' (starts at once, whatever the limit) or 'at' (waits for `startAt`).
+  // `checksum` only with a single link. Returns the new entries' ids.
+  addLinks({ links, saveDir, start = 'queue', startAt = 0, checksum = '' }) {
+    if (!Array.isArray(links) || !saveDir || !path.isAbsolute(saveDir)) return [];
+    const hex = links.length === 1 ? parseChecksum(checksum) : '';
+    const ids = [];
+    const seen = new Set();
+    for (const link of links.slice(0, MAX_ADD)) {
+      if (!isAllowedUrl(link?.url) || seen.has(link.url)) continue;
+      seen.add(link.url);
+      const entry = {
+        id: this.nextId++,
+        filename: text(link.filename, 260) || 'download',
+        path: '',
+        url: link.url,
+        urlChain: [link.url],
+        mimeType: '',
+        etag: '',
+        lastModified: '',
+        startTime: 0,
+        state: 'queued',
+        received: 0,
+        total: count(link.total),
+        speed: 0,
+        startedAt: this.now(),
+        finishedAt: 0,
+        kind: 'file',
+        openWhenDone: false,
+        kept: false,
+        parts: null,
+        saveDir,
+        startAt: start === 'at' ? count(startAt) : 0,
+        deferred: start !== 'now',
+        order: this.nextOrder++,
+        checksum: hex ? { expected: hex, result: '' } : null,
+        isPrivate: false,
+        restored: false,
+      };
+      const record = { entry, item: null, started: false, wasRunning: false, missingAt: 0, session: null, checkedSplit: false, throttled: false };
+      this.records.set(entry.id, record);
+      ids.push(entry.id);
+      if (start === 'now') this.startWaiting(record);
+    }
+    this.startedThisRun = this.startedThisRun || ids.length > 0;
+    this.trim();
+    this.changed();
+    this.pump();
+    return ids;
+  }
+
+  // Moves a waiting download before another (or to the end, with no other).
+  move(id, beforeId = null) {
+    const queue = this.queue().map(({ entry }) => entry);
+    const moving = queue.find((entry) => entry.id === id);
+    if (!moving || (beforeId !== null && !queue.some((entry) => entry.id === beforeId))) return false;
+    const rest = queue.filter((entry) => entry.id !== id);
+    const at = beforeId === null ? rest.length : rest.findIndex((entry) => entry.id === beforeId);
+    rest.splice(at, 0, moving);
+    const base = Math.min(...queue.map((entry) => entry.order));
+    rest.forEach((entry, index) => { entry.order = base + index; });
+    this.nextOrder = Math.max(this.nextOrder, base + rest.length);
+    this.changed();
+    return true;
+  }
+
+  // ---------- Checksums ----------
+  // Sets the SHA-256 a download should have; a finished one is checked at once.
+  setChecksum(id, value) {
+    const record = this.records.get(id);
+    const hex = parseChecksum(value);
+    if (!record || !hex) return false;
+    record.entry.checksum = { expected: hex, result: '' };
+    this.changed();
+    if (record.entry.state === 'completed') this.verify(record);
+    return true;
+  }
+
+  async verify(record) {
+    const { entry } = record;
+    if (!entry.checksum || !entry.path) return;
+    entry.checksum = { ...entry.checksum, result: 'checking' };
+    this.changed();
+    let result;
+    try {
+      result = (await hashFile(entry.path)) === entry.checksum.expected ? 'match' : 'mismatch';
+    } catch {
+      result = 'error';
+    }
+    if (!entry.checksum) return;
+    entry.checksum = { ...entry.checksum, result };
+    this.changed();
+    this.emit('checksum', { ...entry });
+  }
+
+  // True when nothing is downloading or waiting to (paused and failed downloads don't count).
+  get idle() {
+    return ![...this.records.values()].some(({ entry }) => entry.state === 'progressing' || entry.state === 'queued');
   }
 
   // ---------- What the pages can do ----------
@@ -487,10 +729,11 @@ class DownloadManager extends EventEmitter {
     return true;
   }
 
-  // Resume (or Start now) runs it at once, whatever the limit: the user asked for it.
+  // Resume (or Start now) runs it at once, whatever the limit or the schedule: the user asked.
   resume(id) {
     const record = this.records.get(id);
     if (!record || !['paused', 'queued'].includes(record.entry.state)) return false;
+    if (!record.item && record.entry.state === 'queued' && record.entry.received === 0) return this.startWaiting(record);
     if (!record.item) return this.restore(record);
     record.started = true;
     record.item.resume();
@@ -514,6 +757,7 @@ class DownloadManager extends EventEmitter {
   cancel(id) {
     const record = this.records.get(id);
     if (!record || !UNFINISHED.has(record.entry.state)) return false;
+    clearTimeout(record.startTimer);
     if (record.item) {
       record.item.cancel();
       return true;
@@ -551,6 +795,7 @@ class DownloadManager extends EventEmitter {
     if (entry.parts) removeQuietly(partialFileOf(entry));
     this.expect(entry.url, { entryId: entry.id, savePath: entry.path, kind: entry.kind });
     Object.assign(entry, { state: 'progressing', received: 0, speed: 0, finishedAt: 0, parts: null });
+    if (entry.checksum) entry.checksum = { ...entry.checksum, result: '' };
     this.changed();
     this.startDownload(entry.url);
     return true;
@@ -749,4 +994,4 @@ function removeQuietly(filePath) {
   }
 }
 
-module.exports = { DownloadManager, sanitizeEntry, MAX_TRACKED };
+module.exports = { DownloadManager, sanitizeEntry, parseChecksum, hashFile, uniquePath, MAX_TRACKED, MAX_ADD };

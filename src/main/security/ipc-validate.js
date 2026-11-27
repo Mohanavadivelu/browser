@@ -12,6 +12,28 @@ const validators = {
   entryId: (...args) => args.length === 1 && Number.isSafeInteger(args[0]) && args[0] > 0,
   // A download, and whether to open it when it finishes.
   entryIdAndBool: (...args) => args.length === 2 && Number.isSafeInteger(args[0]) && args[0] > 0 && typeof args[1] === 'boolean',
+  // Pasted links: one long text.
+  longText: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 200_000,
+  // A waiting download, and the one to put it before (0: the end of the queue).
+  entryAndTarget: (...args) => args.length === 2 && Number.isSafeInteger(args[0]) && args[0] > 0 && Number.isSafeInteger(args[1]) && args[1] >= 0,
+  // A download and a short text (its SHA-256).
+  entryIdAndText: (...args) => args.length === 2 && Number.isSafeInteger(args[0]) && args[0] > 0 && typeof args[1] === 'string' && args[1].length <= 200,
+  // Links to add: { links: [{ url, filename, total }], saveDir, start, startAt, checksum }.
+  addLinks: (...args) => {
+    if (args.length !== 1 || args[0] === null || typeof args[0] !== 'object' || Array.isArray(args[0])) return false;
+    const request = args[0];
+    const keys = ['links', 'saveDir', 'start', 'startAt', 'checksum'];
+    if (!Object.keys(request).every((key) => keys.includes(key))) return false;
+    const linkOk = (link) => link !== null && typeof link === 'object' && typeof link.url === 'string' && link.url.length <= 2048 &&
+      (link.filename === undefined || (typeof link.filename === 'string' && link.filename.length <= 260)) &&
+      (link.total === undefined || (Number.isSafeInteger(link.total) && link.total >= 0)) &&
+      Object.keys(link).every((key) => ['url', 'filename', 'total'].includes(key));
+    return Array.isArray(request.links) && request.links.length > 0 && request.links.length <= 50 && request.links.every(linkOk) &&
+      typeof request.saveDir === 'string' && request.saveDir.length > 0 && request.saveDir.length <= 2048 &&
+      ['queue', 'now', 'at'].includes(request.start) &&
+      (request.startAt === undefined || (Number.isSafeInteger(request.startAt) && request.startAt >= 0)) &&
+      (request.checksum === undefined || (typeof request.checksum === 'string' && request.checksum.length <= 200));
+  },
   // A place in a short list (the videos on a page).
   listIndex: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] < 100,
   text: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048,
