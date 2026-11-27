@@ -92,7 +92,13 @@ async function main() {
     const body = content(size);
     const range = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? '');
     let from = range ? Number(range[1]) : 0;
-    const to = range && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+    let to = range && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+    // A server that can't send parts: it ignores Range and says nothing of them.
+    const noRanges = name.startsWith('noranges');
+    if (noRanges) {
+      from = 0;
+      to = size - 1;
+    }
     if (name.startsWith('flaky') && !flakyHealed && from > 0) {
       res.statusCode = 503;
       res.end('try later');
@@ -100,10 +106,10 @@ async function main() {
     }
     res.setHeader('content-type', url.pathname.startsWith('/media/') ? 'video/mp4' : 'application/octet-stream');
     if (url.pathname.startsWith('/file/')) res.setHeader('content-disposition', `attachment; filename="${name}"`);
-    res.setHeader('accept-ranges', 'bytes');
+    if (!noRanges) res.setHeader('accept-ranges', 'bytes');
     res.setHeader('etag', `"${name}-${size}"`);
     res.setHeader('last-modified', 'Wed, 01 Jan 2025 00:00:00 GMT');
-    if (range) {
+    if (range && !noRanges) {
       res.statusCode = 206;
       res.setHeader('content-range', `bytes ${from}-${to}/${size}`);
     }
@@ -197,19 +203,23 @@ async function main() {
   await waitFor(() => byName('live-split.bin').state === 'completed', 'split download finished', 30000);
   check('the split download is complete and correct', sameAs(path.join(downloadDir, 'live-split.bin'), 12 * 1024 * 1024));
 
-  // A download Chromium runs (one connection, as for a server that can't send parts), from a
-  // server sending about 3 MB/s, held to 1 MB/s: 6 MB that would take 2 s takes about 6 s.
-  // Chromium's downloads are held back by pausing them, so what is already in its network
-  // buffers (a MB or two) still comes in at the start; the limit holds after that.
+  // One connection, from a server sending about 3 MB/s, held to 1 MB/s: with a limit on, the
+  // download is handed to the browser's own reader, which keeps to it (3 MB takes about 3 s).
   settings.update({ speedLimitKBps: 1024, connectionsPerFile: 1 });
   pace = 20;
   let started = Date.now();
-  helper.view.webContents.downloadURL(`${base}/file/limited.bin?size=${6 * 1024 * 1024}`);
+  helper.view.webContents.downloadURL(`${base}/file/limited.bin?size=${3 * 1024 * 1024}`);
   await waitFor(() => byName('limited.bin')?.state === 'completed', 'limited download finished', 30000);
   const plainSeconds = (Date.now() - started) / 1000;
+  check('with a speed limit, a one-connection download keeps to it', plainSeconds >= 2.4 && sameAs(path.join(downloadDir, 'limited.bin'), 3 * 1024 * 1024),
+    `${plainSeconds.toFixed(1)} s for 3 MB at 1 MB/s`);
+  // A server that can't send parts stays with Chromium, held back roughly by pausing (how
+  // closely depends on its network buffers, so only that it finishes, correctly, is checked).
+  helper.view.webContents.downloadURL(`${base}/file/noranges.bin?size=${2 * 1024 * 1024}`);
+  await waitFor(() => byName('noranges.bin')?.state === 'completed', 'no-ranges download finished', 30000);
+  check('a download from a server that cannot send parts finishes correctly under the limit', sameAs(path.join(downloadDir, 'noranges.bin'), 2 * 1024 * 1024) && !byName('noranges.bin').parts);
   pace = 1;
   settings.update({ connectionsPerFile: 4 });
-  check('the speed limit holds a download Chromium runs to it', plainSeconds >= 3.5 && sameAs(path.join(downloadDir, 'limited.bin'), 6 * 1024 * 1024), `${plainSeconds.toFixed(1)} s for 6 MB at 1 MB/s`);
   // 6 MB that the server sends at once, held to 3 MB/s.
   pace = 1;
   settings.update({ speedLimitKBps: 3 * 1024 });

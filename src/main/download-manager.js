@@ -456,11 +456,17 @@ class DownloadManager extends EventEmitter {
   // SegmentedDownload, which fetches its parts at once. Chromium's own download is cancelled
   // (that deletes its file; the new one writes a file of its own next to it). Anything that
   // doesn't match leaves the download with Chromium.
+  //
+  // With a speed limit on, any download whose server can send parts is handed over too, even
+  // over one connection: Chromium's own downloads can only be held to the limit roughly (by
+  // pausing them), while the browser's own reader keeps to it exactly.
   async trySplit(record, item) {
     record.checkedSplit = true;
     const { entry } = record;
     const connections = this.segmented?.connections() ?? 1;
-    if (connections < 2 || entry.total < SPLIT_FROM_BYTES) return;
+    const split = connections >= 2 && entry.total >= SPLIT_FROM_BYTES;
+    const limited = this.limiter.refill() > 0 && entry.total > 0;
+    if (!this.segmented || (!split && !limited)) return;
     const details = {
       session: record.session,
       isPrivate: entry.isPrivate,
@@ -473,23 +479,23 @@ class DownloadManager extends EventEmitter {
       lastModified: entry.lastModified,
       mimeType: entry.mimeType,
       startTime: entry.startTime,
-      connections,
+      connections: split ? connections : 1,
       limiter: this.limiter,
     };
-    let split = null;
+    let own = null;
     try {
       if (!(await this.segmented.probe(details))) return;
       if (record.item !== item || entry.state !== 'progressing') return;
-      split = this.segmented.create(details);
+      own = this.segmented.create(details);
     } catch {
       return;
     }
-    record.item = split;
+    record.item = own;
     record.throttled = false;
     item.cancel();
-    this.wire(record, split);
-    split.start();
-    this.copyDetails(entry, split);
+    this.wire(record, own);
+    own.start();
+    this.copyDetails(entry, own);
     this.changed();
   }
 

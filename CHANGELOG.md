@@ -11,6 +11,10 @@ A page for crashed tabs, a site info panel, tab search, and clearing browsing da
 - **Tab search**: Ctrl+Shift+A, or the button at the end of the tab strip, lists the open tabs to search by title or address, matched part in bold, with Private, Playing, Muted and Crashed marked. Arrow keys choose, Enter goes to the tab, Ctrl+Delete closes it, Esc closes the list.
 - **Clear browsing data** (Settings › Privacy) replaces *Clear history now*: choose the last hour, 24 hours, 7 days, 4 weeks or all time, and what to clear (history, cookies and site data, the cache, the downloads list), each with what it would remove. Cookies are cleared by when they were set (the browser now notes that, as Electron doesn't), along with what the sites that set them stored; the cache can only be emptied whole, and the dialog says so. Bookmarks, settings and recordings are never touched.
 
+### Fixes
+
+- **The speed limit now holds for one-connection downloads too.** With a limit on, any download whose server can send parts is fetched by the browser's own reader, which keeps to the limit exactly; before, a fast connection could run well past it for a while. Downloads from servers that can't send parts are still held back only roughly, by pausing them.
+
 ## 0.12.0
 
 Add links in bulk, downloads at a set time or at night, a queue you can reorder, SHA-256 checks, and sleep or shut down when downloads finish.

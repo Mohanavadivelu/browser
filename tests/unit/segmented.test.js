@@ -237,6 +237,23 @@ test('small downloads, a refused probe, or one connection leave the download wit
   assert.equal(probes, 1);
 });
 
+test('with a speed limit on, even a small one-connection download is handed to the browser’s reader', async () => {
+  const created = [];
+  const manager = new DownloadManager({
+    speedLimit: () => 1024 * 1024,
+    segmented: { connections: () => 1, probe: async () => true, create: (details) => { const own = fakeSplit(details); created.push(own); return own; } },
+  });
+  const item = chromiumItem('small.pdf', 300 * 1024);
+  manager.track(item);
+  item.progress(10);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(created.length, 1);
+  assert.equal(created[0].details.connections, 1);
+  assert.deepEqual(item.calls, ['cancel']);
+  clearInterval(manager.throttleTimer);
+});
+
 test('the speed limit pauses Chromium\u2019s own downloads while over it, without calling them paused', () => {
   const manager = new DownloadManager({ speedLimit: () => 100 * 1024 });
   const item = chromiumItem('plain.bin', MB);
