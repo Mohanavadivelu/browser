@@ -203,18 +203,25 @@ async function main() {
   check('history stores page titles', history.list().find((e) => e.url === `${base}/text`)?.title === 'Text Page');
 
   // ---------- Address-bar suggestions ----------
-  ui.webContents.focus(); // as Ctrl+L does: the address bar only takes focus inside a focused view
-  await evalIn(ui, `(() => { const a = document.getElementById('address'); a.focus(); a.value = 'text p';
-    a.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  await waitFor(async () => /Text Page/.test(await evalIn(ui, "document.getElementById('suggestions').textContent")), 'suggestion list', 5000).catch(() => {});
+  // The list stays open only while the address bar has focus, which it loses whenever the window
+  // goes to the background (another app taking the foreground while the test runs). So each try
+  // brings the window and the address bar forward again and types once more.
+  const suggestionsShow = (pattern) => evalIn(ui, `${pattern}.test(document.getElementById('suggestions').textContent)`);
+  const typeInAddress = (text, pattern, label) => waitFor(async () => {
+    if (await suggestionsShow(pattern)) return true;
+    ctx.win.focus();
+    ui.webContents.focus(); // as Ctrl+L does: the address bar only takes focus inside a focused view
+    await evalIn(ui, `(() => { const a = document.getElementById('address'); a.focus(); a.value = ${JSON.stringify(text)};
+      a.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await sleep(300);
+    return suggestionsShow(pattern);
+  }, label, 8000);
+  await typeInAddress('text p', '/Text Page/', 'suggestion list').catch(() => {});
   const suggested = await evalIn(ui, "[...document.querySelectorAll('#suggestions .suggestion')].map((row) => row.textContent)");
   check('typing in the address bar suggests a visited page', suggested.length >= 2 && /Search Google/.test(suggested[0]) && suggested.some((row) => /Text Page/.test(row)), suggested.join(' | '));
   check('the suggestion list gets room below the bars', ui.getBounds().height > 116, `toolbar view ${ui.getBounds().height}px`);
   await load(`${base}/other`);
-  ui.webContents.focus(); // as Ctrl+L does: the address bar only takes focus inside a focused view
-  await evalIn(ui, `(() => { const a = document.getElementById('address'); a.focus(); a.value = 'text p';
-    a.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  await waitFor(async () => /Text Page/.test(await evalIn(ui, "document.getElementById('suggestions').textContent")), 'suggestion list again', 5000);
+  await typeInAddress('text p', '/Text Page/', 'suggestion list again');
   await evalIn(ui, "[...document.querySelectorAll('#suggestions .suggestion')].find((row) => /Text Page/.test(row.textContent)).click()");
   await waitFor(() => tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/text`, 'suggestion opened', 5000).catch(() => {});
   check('choosing a suggestion opens it', tabs.snapshot().find((tab) => tab.id === tabs.activeId).url === `${base}/text`);
@@ -229,6 +236,7 @@ async function main() {
   const press = (keyCode) => ui.webContents.sendInputEvent({ type: 'keyDown', keyCode });
   const typeText = (text) => ui.webContents.insertText(text);
   const startTyping = async () => {
+    ctx.win.focus();
     ui.webContents.focus();
     await evalIn(ui, "(() => { const a = document.getElementById('address'); a.focus(); a.value = ''; })()");
   };
@@ -978,7 +986,10 @@ async function main() {
   await waitFor(() => recPage.title === 'Recordings', 'recordings page (player)');
   const inRecPage = (script) => evalIn(recPage.view, script);
   const rowOf = (name) => `document.querySelector('.row[data-name="${name}"]')`;
-  const thumbFrame = () => inRecPage(`(() => { const v = ${rowOf(pausedName)}?.querySelector('.thumb video'); return v ? v.readyState >= 2 && v.videoWidth > 0 : false; })()`);
+  // A thumbnail loads only once it is scrolled into view, and the list can be longer than the
+  // window: bring the row into view first.
+  const thumbFrame = () => inRecPage(`(() => { const row = ${rowOf(pausedName)}; row?.scrollIntoView({ block: 'center' });
+    const v = row?.querySelector('.thumb video'); return v ? v.readyState >= 2 && v.videoWidth > 0 : false; })()`);
   await waitFor(thumbFrame, 'thumbnail frame', 10000).catch(() => {});
   check('recordings show a thumbnail frame', await thumbFrame());
   await inRecPage(`[...${rowOf(pausedName)}.querySelectorAll('button')].find((b) => b.textContent === 'Play').click()`);
