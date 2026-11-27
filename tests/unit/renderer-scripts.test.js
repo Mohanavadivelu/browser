@@ -41,3 +41,10 @@ test('the toolbar loads its parts before the script that wires them', () => {
   assert.ok(scripts.indexOf('toolbar-base.js') < scripts.indexOf('toolbar-tabs.js'));
   for (const file of scripts) assert.ok(fs.existsSync(path.join(RENDERER, file)), file);
 });
+
+test('the library loads its helpers first and the script that wires the pages last', () => {
+  const scripts = scriptsOf('library.html');
+  assert.equal(scripts.indexOf('library-base.js'), scripts.indexOf('menu.js') + 1);
+  assert.equal(scripts[scripts.length - 1], 'library.js');
+  for (const file of scripts) assert.ok(fs.existsSync(path.join(RENDERER, file)), file);
+});

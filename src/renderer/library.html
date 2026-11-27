@@ -265,7 +265,14 @@
       <button id="moveDialogMove" type="button" class="primary">Move</button>
     </div>
   </dialog>
+  <!-- The library's scripts share one scope: helpers first, library.js (the wiring) last. -->
   <script src="menu.js"></script>
+  <script src="library-base.js"></script>
+  <script src="library-history.js"></script>
+  <script src="library-bookmarks.js"></script>
+  <script src="library-bookmark-move.js"></script>
+  <script src="library-recordings.js"></script>
+  <script src="library-settings.js"></script>
   <script src="library-downloads.js"></script>
   <script src="library-add-links.js"></script>
   <script src="library.js"></script>
