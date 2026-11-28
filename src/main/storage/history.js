@@ -97,6 +97,26 @@ class History {
     return this.entries.length !== before;
   }
 
+  // Visits from a backup, added to the history in time order (one already there isn't added twice).
+  importEntries(entries) {
+    const known = new Set(this.entries.map((entry) => `${entry.time}	${entry.url}`));
+    const added = entries.filter((entry) => !known.has(`${entry.time}	${entry.url}`));
+    const merged = [...this.entries, ...added.map((entry) => ({ ...entry }))].sort((a, b) => a.time - b.time).slice(-this.max);
+    this.entries = merged.map((entry, index) => ({ ...entry, id: index + 1 }));
+    this.nextId = this.entries.length + 1;
+    this.flush();
+    return added.length;
+  }
+
+  // Visits between two times, from `from` up to (not including) `to`: a day on the History page.
+  removeBetween(from, to) {
+    const before = this.entries.length;
+    this.entries = this.entries.filter((entry) => entry.time < from || entry.time >= to);
+    const removed = before - this.entries.length;
+    if (removed) this.flush();
+    return removed;
+  }
+
   // Visits since a time (0: all of them), for clearing browsing data over a time range.
   countSince(since) {
     return this.entries.filter((entry) => entry.time >= since).length;

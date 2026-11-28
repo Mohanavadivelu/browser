@@ -164,6 +164,26 @@ function drawSite(info) {
     panel.append(siteRow('', shield, act));
   }
 
+  // Dark pages (only while the setting is on): this site can be kept light.
+  if (info.dark) {
+    // A site with a dark design of its own shows it under dark pages; one that is darkened by
+    // turning its colours round can be kept light.
+    if (!info.dark.keptLight && !info.dark.darkened) {
+      panel.append(siteRow('', element('div', 'site-grow site-note', 'Dark pages: this site uses its own dark design')));
+    } else {
+      const act = element('button', 'link', info.dark.keptLight ? 'Make dark' : 'Keep this site light');
+      act.type = 'button';
+      act.id = 'siteDark';
+      act.addEventListener('click', async () => {
+        act.disabled = true;
+        await api.site.darkToggle();
+        // The page's look changes a moment later.
+        setTimeout(() => { if (siteOpen) refreshSite(); }, 300);
+      });
+      panel.append(siteRow('', element('div', 'site-grow', info.dark.keptLight ? 'Dark pages: kept light here' : 'Dark pages: darkened'), act));
+    }
+  }
+
   if (info.zoom !== 100) {
     const reset = element('button', 'link', 'Reset zoom');
     reset.type = 'button';

@@ -26,6 +26,11 @@ class SessionManager {
     return ses;
   }
 
+  // The sessions of web tabs set up so far (the regular profile and open private tabs).
+  webSessions() {
+    return [...this.configured].filter((partition) => partition !== UI_PARTITION).map((partition) => session.fromPartition(partition));
+  }
+
   async releasePrivate(tabId) {
     const partition = this.partitionFor(tabId, true);
     if (!this.configured.has(partition)) return;

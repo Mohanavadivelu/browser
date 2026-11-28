@@ -3,6 +3,7 @@
 const { isAllowedUrl, engineFor } = require('./security/navigation');
 
 const MAX_LABEL_TEXT = 30;
+const MAX_SUGGESTIONS = 5;
 
 function trimSeparators(items) {
   const result = [];
@@ -50,6 +51,19 @@ function buildContextMenuTemplate(params, actions) {
       { label: `Copy ${mediaKind} address`, click: () => actions.copyText(media) },
       { label: `Open ${mediaKind} in new tab`, click: () => actions.openInNewTab(media) },
     );
+    separator();
+  }
+
+  // Spell checking: a misspelled word in a text box offers what it may have meant, and to add it
+  // to the dictionary.
+  if (params.isEditable && params.misspelledWord && actions.replaceMisspelling) {
+    const suggestions = (params.dictionarySuggestions ?? []).slice(0, MAX_SUGGESTIONS);
+    if (suggestions.length) {
+      for (const word of suggestions) items.push({ label: word, click: () => actions.replaceMisspelling(word) });
+    } else {
+      items.push({ label: 'No spelling suggestions', enabled: false });
+    }
+    items.push({ label: 'Add to dictionary', click: () => actions.addToDictionary(params.misspelledWord) });
     separator();
   }
 

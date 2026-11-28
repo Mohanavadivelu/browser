@@ -15,7 +15,7 @@ const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
   'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone', 'showBookmarksBar', 'downloadsAtOnce', 'resumeDownloads',
   'connectionsPerFile', 'speedLimitKBps', 'markOfTheWeb', 'downloadNightOnly', 'downloadNightFrom', 'downloadNightTo',
-  'memorySaverMinutes',
+  'memorySaverMinutes', 'spellcheck', 'darkPages',
 ]);
 // Tab groups' colours (see tabs.js), and how long a tab may stay in the background before the
 // memory saver puts it to sleep (0: never).
@@ -131,6 +131,14 @@ function sanitizeSettings(raw) {
     zoom: sanitizeZoom(source.zoom),
     session: sanitizeSession(source.session),
     pinnedTabs: sanitizePinned(source.pinnedTabs),
+    // Spell checking in the text boxes of web pages; dark pages, and the sites kept light; the
+    // new tab page's tiles the user removed.
+    spellcheck: source.spellcheck !== false,
+    darkPages: source.darkPages === true,
+    darkPagesLight: sanitizeSites(source.darkPagesLight),
+    newTabHidden: Array.isArray(source.newTabHidden)
+      ? [...new Set(source.newTabHidden.filter((url) => typeof url === 'string' && url.length <= 400 && isAllowedUrl(url)))].slice(-200)
+      : [],
     memorySaverMinutes: MEMORY_SAVER_CHOICES.includes(source.memorySaverMinutes) ? source.memorySaverMinutes : DEFAULT_MEMORY_SAVER,
   };
 }

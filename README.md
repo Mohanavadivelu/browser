@@ -9,12 +9,15 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Tabs**: drag to reorder, reopen a closed tab with Ctrl+Shift+T (private tabs are never kept), and a 🔊 icon on tabs playing sound that mutes the tab when clicked.
 - **Private tabs**: each one has its own in-memory session that is wiped when the tab closes.
 - **Ad and tracker blocking** (on by default): requests on the EasyList and EasyPrivacy lists are blocked in every tab. The shield in the address bar shows how many were blocked on the page; click it to see them by site, marked Ad or Tracker, and to allow them on that site. Turn it off, or see the allowed sites, in Settings.
-- **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload.
+- **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload, and spelling suggestions with *Add to dictionary* for a word underlined in red (spell checking can be turned off in Settings).
+- **New tab page**: a search box, the pages you visit most (while history is on; never in private tabs) and your bookmarks bar as tiles; × keeps a tile off the page.
+- **Dark pages** (off by default, in Settings): sites with a dark design use it, others are shown with their colours turned round (pictures left as they are); the lock in the address bar keeps a site light.
 - **Print** (Ctrl+P) and **Save page as PDF** (⋮ menu).
 - **Find in page** (Ctrl+F) with match count and next/previous, and **zoom** (Ctrl +, −, 0) that is remembered per site and shown in the address bar.
 - **Bookmarks** in folders (folders can hold folders): the bar shows its bookmarks with their site icons and its folders, a folder opens as a menu with its subfolders and "Open all", bookmarks that do not fit go under », and "Other bookmarks" holds the rest. Right-click a bookmark to open it in a new or private tab, edit or delete it; Ctrl+Shift+B shows or hides the bar. The Bookmarks page (Ctrl+Shift+O) has the folder tree, search across all folders, drag to reorder or to drop into a folder, ↑ ↓, edit name and address, select several to move or delete, "Open all", and import or export as the bookmarks file Chrome, Edge and Firefox use (folders kept). The star (☆, Ctrl+D) bookmarks the page into the folder you used last and opens a small popover to change its name or folder (or make a new folder), or remove it; ★ on a bookmarked page opens the same popover.
 - **History** (off by default; never saved from private tabs), **Downloads** (pause, resume, retry, a queue you can reorder, adding links in bulk, start times and night-only downloads, SHA-256 checks, several connections per file, a speed limit, sleep or shut down when done, and downloads that pick up where they stopped after a restart) and **Recordings** pages. Open them from the ⋮ menu or by typing `simple-browser://history`, `bookmarks`, `downloads`, `recordings` or `settings` in the address bar.
-- **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, recording quality, keep recording across tabs, and the folder for recordings and screenshots.
+- **History by day** (Today, Yesterday, earlier days), with **Delete this day**; a search keeps the days.
+- **Settings**: home page, search engine, reopen tabs on start (off by default), history on/off, spell checking, dark pages, recording quality, keep recording across tabs, the folder for recordings and screenshots, and **back up and restore** (bookmarks, settings, pinned tabs, the downloads list and, if you choose, history, in one file; a restore shows what the file holds first).
 - **Full screen** (F11 or the ⛶ button): only the page is shown. Move the mouse to the top edge to bring the toolbar back. After **5 seconds without mouse or keyboard activity**, the top bar and the mouse pointer hide automatically; move the mouse or press a key to bring them back. Pages can also take the whole window for their own video full screen.
 - **Record** (● button, Ctrl+Shift+E or menu): captures the current tab's page **and its sound** (not the browser bars, other windows or other apps) to a `.webm` file in `Videos\Simple Browser`. A native consent dialog comes first, and a REC indicator with **Pause/Resume** and **Stop** stays visible while recording, including in full screen. Paused time is not counted. Quality is Low (720p, 15 fps), Medium (1080p, 30 fps) or High (1440p, 60 fps).
 - **Markers**: while recording, press Ctrl+Shift+M (or Mark on the REC controls) to mark a moment. Markers are saved in the file as chapters that players such as VLC list (up to about 120 per file), and the built-in player shows them as buttons that jump there. Trimmed and joined copies keep the markers inside them.
@@ -100,6 +103,9 @@ src/
     privacy.js         Clear browsing data over a time range, and when each cookie was set
     memory-saver.js    Puts background tabs to sleep after a while (tabs.js sleeps and wakes them)
     reader.js, reader-overlay.js  Reading mode (Mozilla's Readability, in an isolated world)
+    dark-pages.js      Dark pages: darkens light pages, except sites kept light
+    new-tab.js         The new tab page's tiles (most visited, bookmarks bar)
+    backup.js          Back up and restore: one checked file
     page-videos.js     Finds the videos on a page, for the address bar's video button
     idle-tracker.js, fullscreen-idle.js  Hide the top bar and pointer after 5 s idle in full screen
     sandbox/           Locked-down web preferences, per-tab session manager
@@ -113,7 +119,8 @@ mockup/            Original design mockup
 tests/
   unit/            node:test unit tests
   packaged/        Check of the built app (check.js)
-  smoke/           End-to-end Electron tests (run.js, features.js, restore.js; launch.js runs them)
+  smoke/           End-to-end Electron tests (run.js, features.js, restore.js, downloads.js, everyday.js,
+                   tabs.js, comfort.js; launch.js runs them)
 ```
 
 ## Build the .exe
@@ -137,6 +144,8 @@ The build is **not code-signed**, so Windows SmartScreen may show an "unknown pu
 The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums. It also uploads `latest.yml` and the installer's `.blockmap`, which installed copies use to find and download the update.
 
 ## Status
+
+Version 0.15.0: spell checking with suggestions, a new tab page with your most visited sites and bookmarks, history by day with Delete this day, dark pages (with Keep this site light), and back up and restore. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.14.0: tabs sleep to save memory, pinned tabs, tab groups, full-page screenshots (Ctrl+Shift+F), and reading mode. See [CHANGELOG.md](CHANGELOG.md).
 

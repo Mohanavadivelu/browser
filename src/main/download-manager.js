@@ -900,6 +900,35 @@ class DownloadManager extends EventEmitter {
     return true;
   }
 
+  // ---------- Backups ----------
+  // The finished downloads of the regular profile, as saved (for a backup).
+  exportEntries() {
+    return [...this.records.values()]
+      .filter(({ entry }) => !entry.isPrivate && ['completed', 'cancelled', 'interrupted'].includes(entry.state))
+      .map(({ entry }) => {
+        const { id: _id, speed: _speed, isPrivate: _private, restored: _restored, connections: _connections, ...saved } = entry;
+        return saved;
+      });
+  }
+
+  // Downloads from a backup (already checked), added to the list as finished ones; one already
+  // listed (same address and file) isn't added twice. Returns how many were added.
+  importEntries(entries) {
+    const known = new Set([...this.records.values()].map(({ entry }) => `${entry.url}	${entry.path}`));
+    let added = 0;
+    for (const raw of entries) {
+      if (known.has(`${raw.url}	${raw.path}`)) continue;
+      const state = raw.state === 'completed' || raw.state === 'cancelled' ? raw.state : 'interrupted';
+      const entry = { ...raw, id: this.nextId++, state, speed: 0, isPrivate: false, restored: false, parts: null, kept: false, checksum: raw.checksum ?? null };
+      this.records.set(entry.id, { entry, item: null, started: false, wasRunning: false, missingAt: 0 });
+      known.add(`${raw.url}	${raw.path}`);
+      added += 1;
+    }
+    this.trim();
+    if (added) this.changed();
+    return added;
+  }
+
   // Finished downloads started since a time (0: all of them), for clearing browsing data over a
   // time range. Only the list: the files stay. Running and waiting downloads are kept.
   countFinishedSince(since) {

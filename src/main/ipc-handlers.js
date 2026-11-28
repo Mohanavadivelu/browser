@@ -15,6 +15,7 @@ const { hostOf } = require('./blocker');
 const { checkLinks } = require('./link-check');
 const { siteCookies, storageUsage, clearSiteData } = require('./site-info');
 const { clearSummary, clearBrowsingData } = require('./privacy');
+const { createBackup, parseBackup, restoreBackup, MAX_BYTES: MAX_BACKUP_BYTES } = require('./backup');
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const {
@@ -44,17 +45,19 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
     videoFinder, openDownload, saveMedia, clipboard, whenDone, defaultDownloadDir, downloadFolders, fetchIn,
     permissionLog, certificates, cookieClock, regularSession, blockingActiveFor, toggleReader,
+    darkPages, applyPageSettings, openPinned,
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
     entryIdAndBool, listIndex, longText, addLinks, entryAndTarget, entryIdAndText, clearRange, clearRequest,
-    tabIdAndBool, groupId, tabAndGroup, groupPatch,
+    tabIdAndBool, groupId, tabAndGroup, groupPatch, timeRange, backupParts,
   } = validators;
 
   const settingsPayload = () => ({
     ...pickEditable(settings.data),
     blockerAllowedSites: settings.data.blockerAllowedSites,
+    darkPagesLight: settings.data.darkPagesLight,
     recordingFolder: getRecordingFolder(),
     engines: Object.entries(SEARCH_ENGINES).map(([key, engine]) => ({ key, name: engine.name })),
     qualities: publicQualities(),
@@ -131,9 +134,72 @@ function registerIpcHandlers(ipc, ctx) {
     if (!settings.data.restoreTabs) settings.update({ session: { urls: [], active: 0 } });
     // A higher limit lets waiting downloads start.
     if (patch.downloadsAtOnce !== undefined) downloads.pump();
+    if (patch.spellcheck !== undefined || patch.darkPages !== undefined) applyPageSettings();
     pushState();
     return settingsPayload();
   });
+  ipc.handle('settings:dark-remove-site', LIBRARY, text, (_e, site) => {
+    settings.update({ darkPagesLight: settings.data.darkPagesLight.filter((known) => known !== site) });
+    applyPageSettings();
+    return settingsPayload();
+  });
+
+  // Back up and restore (Settings). A backup being restored is read and checked here; the page
+  // is shown what it holds and chooses the parts, and only then is anything changed.
+  let pendingBackup = null;
+  const backupName = () => `simple-browser-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  ipc.handle('settings:backup-save', LIBRARY, bool, async (_e, includeHistory) => {
+    const result = await dialog.showSaveDialog(host.win, {
+      title: 'Back up',
+      defaultPath: path.join(app.getPath('documents'), backupName()),
+      filters: [{ name: 'Simple Browser backup', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    const backup = createBackup({ settings: settings.data, history, downloads, includeHistory, appVersion: app.getVersion() });
+    try {
+      fs.writeFileSync(result.filePath, JSON.stringify(backup, null, 1), 'utf8');
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+    return { ok: true, path: result.filePath, history: includeHistory ? backup.history.length : null };
+  });
+  ipc.handle('settings:backup-open', LIBRARY, none, async () => {
+    pendingBackup = null;
+    const result = await dialog.showOpenDialog(host.win, {
+      title: 'Restore from a backup',
+      properties: ['openFile'],
+      filters: [{ name: 'Simple Browser backup', extensions: ['json'] }],
+    });
+    const filePath = result.filePaths?.[0];
+    if (result.canceled || !filePath) return { ok: false, canceled: true };
+    let text;
+    try {
+      if (fs.statSync(filePath).size > MAX_BACKUP_BYTES) return { ok: false, reason: 'too-large' };
+      text = fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+      return { ok: false, reason: 'unreadable', message: error instanceof Error ? error.message : String(error) };
+    }
+    const parsed = parseBackup(text);
+    const { backup } = parsed;
+    if (!parsed.ok || !backup) return parsed;
+    pendingBackup = backup;
+    return { ok: true, counts: parsed.counts, createdAt: backup.createdAt, appVersion: backup.appVersion, file: path.basename(filePath) };
+  });
+  ipc.handle('settings:backup-restore', LIBRARY, backupParts, (_e, parts) => {
+    if (!pendingBackup) return { ok: false };
+    const backup = pendingBackup;
+    pendingBackup = null;
+    const done = restoreBackup(backup, parts, { settings, history, downloads, openPinned });
+    keepBookmarkIcons();
+    host.setBookmarksBar(settings.data.showBookmarksBar);
+    if (!settings.data.restoreTabs) settings.update({ session: { urls: [], active: 0 } });
+    applyPageSettings();
+    pushState();
+    broadcastToLibrary('bookmarks:changed');
+    if (done.history !== undefined) broadcastToLibrary('history:changed');
+    return { ok: true, done, settings: settingsPayload() };
+  });
+  ipc.handle('settings:backup-cancel', LIBRARY, none, () => { pendingBackup = null; });
   ipc.handle('updates:check', LIBRARY, none, async () => {
     const state = await updates.check({ manual: true });
     return { status: state.status, version: state.version, mode: updates.mode };
@@ -257,6 +323,8 @@ function registerIpcHandlers(ipc, ctx) {
   }));
   ipc.handle('history:remove', LIBRARY, entryId, (_e, id) => history.remove(id));
   ipc.handle('history:clear', LIBRARY, none, () => { history.clear(); });
+  // One day of the History page (from midnight to midnight, as the page counts days).
+  ipc.handle('history:remove-range', LIBRARY, timeRange, (_e, from, to) => history.removeBetween(from, to));
 
   // Downloads. The toolbar's panel sees names and progress only (no addresses or folders), and
   // can pause, resume and open a finished download; everything else is on the Downloads page.
@@ -338,7 +406,20 @@ function registerIpcHandlers(ipc, ctx) {
       zoom: Math.round(contents.getZoomFactor() * 100),
       httpsUrl: secure ? '' : url.replace(/^http:/i, 'https:'),
       isPrivate: tab.isPrivate,
+      // Dark pages: only offered while the setting is on.
+      dark: settings.data.darkPages ? { keptLight: settings.data.darkPagesLight.includes(hostname), darkened: darkPages.isDarkened(contents) } : null,
     };
+  });
+  // Keeps the active tab's site light (or dark again) under dark pages.
+  ipc.handle('site:dark-toggle', TOOLBAR, none, async () => {
+    const site = activeSite();
+    if (!site || !settings.data.darkPages) return null;
+    const { hostname } = new URL(site.url);
+    const kept = settings.data.darkPagesLight;
+    const keptLight = !kept.includes(hostname);
+    settings.update({ darkPagesLight: keptLight ? [...kept, hostname] : kept.filter((known) => known !== hostname) });
+    applyPageSettings();
+    return { keptLight };
   });
   ipc.handle('site:clear-data', TOOLBAR, none, async () => {
     const site = activeSite();

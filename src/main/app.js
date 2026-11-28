@@ -3,7 +3,7 @@
 // The composition root: creates the window, sessions, tabs and services, wires them together,
 // and returns them (the smoke tests drive the app through what start() returns).
 const path = require('node:path');
-const { app, ipcMain, shell, dialog, Menu, clipboard, net, protocol, session } = require('electron');
+const { app, ipcMain, shell, dialog, Menu, clipboard, net, protocol, session, nativeTheme } = require('electron');
 const { BrowserWindow } = require('./window');
 const { TabManager } = require('./tabs');
 const { SessionManager, UI_PARTITION, REGULAR_PARTITION } = require('./sandbox/session-manager');
@@ -33,6 +33,8 @@ const { PermissionLog, CertificateLog } = require('./site-info');
 const { CookieClock } = require('./privacy');
 const { MemorySaver } = require('./memory-saver');
 const { ReaderWatch, toggleReader } = require('./reader');
+const { DarkPages } = require('./dark-pages');
+const { newTabTiles, hiddenFromHash, addHidden } = require('./new-tab');
 const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
@@ -164,6 +166,21 @@ async function start(options = {}) {
   const videoFinder = new VideoFinder({ onChange: (tabId) => { if (tabId === tabs.activeId) pushState(); } });
   // Whether the active tab's page has an article, for the reading mode button.
   const readerWatch = new ReaderWatch({ onChange: (tab) => { if (tab.id === tabs.activeId) pushState(); } });
+  // Dark pages (Settings), except on the sites kept light.
+  const darkPages = new DarkPages({
+    enabled: () => settings.data.darkPages,
+    keptLight: (host) => settings.data.darkPagesLight.includes(host),
+  });
+  // Spell checking and dark pages follow the settings at once, in every open tab.
+  const applyPageSettings = () => {
+    // Sites with a dark design of their own are asked for it.
+    nativeTheme.themeSource = settings.data.darkPages ? 'dark' : 'system';
+    for (const ses of sessions.webSessions()) ses.setSpellCheckerEnabled(settings.data.spellcheck);
+    for (const tab of tabs.tabs.values()) {
+      const contents = tab.view?.webContents;
+      if (tab.kind === 'web' && isLive(contents)) darkPages.apply(contents).catch(() => {});
+    }
+  };
 
   // ---------- What the browser's own pages are told ----------
   const buildState = () => ({
@@ -267,6 +284,7 @@ async function start(options = {}) {
     permissionLog,
     certificates,
     cookieClock,
+    spellcheck: () => settings.data.spellcheck,
   }));
   sessions.ensure(UI_PARTITION, 'ui');
 
@@ -293,6 +311,19 @@ async function start(options = {}) {
       if (reason !== 'empty') notify(BLOCK_MESSAGES[reason] ?? BLOCK_MESSAGES['blocked-scheme'], 'warning');
     },
     onInput: trackInput,
+    // The new tab page's tiles: the most visited pages (while history is on, never in private
+    // tabs) and the bookmarks bar; a tile the user removes stays away.
+    getNewTabTiles: (isPrivate) => newTabTiles({
+      entries: history.entries,
+      historyOn: settings.data.historyEnabled,
+      isPrivate,
+      barLinks: settings.data.bookmarks.bar.children.filter((node) => node.type === 'link'),
+      hidden: settings.data.newTabHidden,
+    }),
+    onNewTabHide: (hash) => {
+      const url = hiddenFromHash(hash);
+      if (url) settings.update({ newTabHidden: addHidden(settings.data.newTabHidden, url) });
+    },
   });
   idle = new FullscreenIdle({ host, tabs, idleMs: options.idleMs });
 
@@ -307,6 +338,7 @@ async function start(options = {}) {
     const contents = tab.view.webContents;
     videoFinder.watch(tab);
     readerWatch.watch(tab);
+    if (tab.kind === 'web') darkPages.watch(contents);
     attachContextMenu(contents, win, () => ({
       openInNewTab: (url) => tabs.create({ url, isPrivate: tab.isPrivate }),
       copyText: (text) => clipboard.writeText(text),
@@ -314,6 +346,8 @@ async function start(options = {}) {
       saveMedia: (url, kind) => saveMedia(contents, url, kind),
       copyImage: (x, y) => contents.copyImageAt(x, y),
       edit: edit(contents),
+      replaceMisspelling: (word) => contents.replaceMisspelling(word),
+      addToDictionary: (word) => contents.session.addWordToSpellCheckerDictionary(word),
       searchFor: (text) => tabs.create({ url: engineFor(settings.data.searchEngine).url + encodeURIComponent(text), isPrivate: tab.isPrivate }),
       searchEngine: () => settings.data.searchEngine,
       navigation: {
@@ -423,6 +457,15 @@ async function start(options = {}) {
   tabs.on('navigated', (tab) => { if (tab.pinned) schedulePinnedSave(); });
   tabs.on('closed', (tab) => { if (tab.pinned) schedulePinnedSave(); });
 
+  // Backup restore opens the pinned tabs of the backup that aren't open yet.
+  const openPinned = (urls) => {
+    const open = new Set(tabs.pinnedUrls());
+    const missing = urls.filter((url) => !open.has(url));
+    for (const url of missing) tabs.create({ url, activate: false, pinned: true });
+    if (missing.length) schedulePinnedSave();
+    return missing.length;
+  };
+
   // Memory saver: background tabs go to sleep after the time set in Settings.
   const memorySaver = new MemorySaver({ tabs, minutes: () => settings.data.memorySaverMinutes });
   memorySaver.start();
@@ -468,10 +511,12 @@ async function start(options = {}) {
     app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, bookmarkIcons, keepBookmarkIcons, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, videoFinder, openDownload, saveMedia, clipboard,
     whenDone, defaultDownloadDir, downloadFolders, fetchIn, permissionLog, certificates, cookieClock, blockingActiveFor, toggleReader,
+    darkPages, applyPageSettings, openPinned,
     regularSession: () => sessions.ensure(REGULAR_PARTITION),
     showMenu: () => showMainMenu(context),
   };
   registerIpcHandlers(ipc, context);
+  if (settings.data.darkPages) nativeTheme.themeSource = 'dark';
 
   host.on('mode-change', pushState);
   host.setBookmarksBar(settings.data.showBookmarksBar);
@@ -556,7 +601,7 @@ async function start(options = {}) {
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates, bookmarkIcons, videoFinder, whenDone,
-    permissionLog, certificates, cookieClock, sessions, memorySaver,
+    permissionLog, certificates, cookieClock, sessions, memorySaver, darkPages,
   };
 }
 

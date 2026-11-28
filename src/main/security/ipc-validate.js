@@ -9,6 +9,8 @@ const GROUP_COLORS = new Set(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 
 const isGroupId = (value) => typeof value === 'string' && /^g\d{1,9}$/.test(value);
 const isTabId = (value) => Number.isInteger(value) && value > 0;
 const CLEAR_KINDS = new Set(['history', 'cookies', 'cache', 'downloads']);
+const BACKUP_PARTS = new Set(['bookmarks', 'settings', 'pinnedTabs', 'downloads', 'history']);
+const isTime = (value) => Number.isSafeInteger(value) && value >= 0;
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
 
 const validators = {
@@ -54,6 +56,12 @@ const validators = {
   clearRequest: (...args) => args.length === 2 && CLEAR_RANGES.has(args[0]) && args[1] !== null && typeof args[1] === 'object' &&
     !Array.isArray(args[1]) && Object.keys(args[1]).length > 0 &&
     Object.entries(args[1]).every(([key, value]) => CLEAR_KINDS.has(key) && typeof value === 'boolean'),
+  // A stretch of time (a day on the History page): from, up to.
+  timeRange: (...args) => args.length === 2 && isTime(args[0]) && isTime(args[1]) && args[1] > args[0],
+  // The parts of a backup to restore.
+  backupParts: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
+    !Array.isArray(args[0]) && Object.keys(args[0]).length > 0 &&
+    Object.entries(args[0]).every(([key, value]) => BACKUP_PARTS.has(key) && typeof value === 'boolean'),
   // A place in a short list (the videos on a page).
   listIndex: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] < 100,
   text: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048,

@@ -225,3 +225,18 @@ code { padding: 5px 9px; border-radius: 6px; background: var(--bg); font-size: 1
 .clear-dialog .note { margin: 0 0 4px; font-size: 12px; }
 .clear-go { background: #c5221f; color: #fff; font-weight: 500; }
 .clear-go:hover { background: #a50e0e; }
+
+/* History by day */
+.day { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.day-header { display: flex; align-items: center; gap: 12px; min-height: 32px; margin: 0 2px 2px; }
+.day-header h3 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
+.day-tools { display: flex; align-items: center; gap: 8px; }
+.day-tools button { padding: 4px 10px; font-size: 12px; }
+.day-tools .confirm-text { font-size: 13px; color: var(--muted); }
+
+/* Restoring a backup */
+.restore-preview { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.restore-preview[hidden], #darkSitesField[hidden] { display: none; }
+.restore-summary { margin: 0 0 8px; font-size: 13px; }
+.restore-parts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.restore-parts .check { margin-bottom: 0; }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0
+
+Spell checking, a new tab page with your sites, history by day, dark pages, and back up and restore.
+
+### New
+
+- **Spell checking**: words the dictionary doesn't know are underlined in red in text boxes. Right-click one for up to five suggestions and **Add to dictionary**. Turn it off in Settings › General.
+- **A new tab page with your sites**: under the search box, the pages you visit most (only while history is on, and never in private tabs) and the bookmarks on your bookmarks bar, as tiles with a letter for each site (no icons are fetched). Hover a most-visited tile and click × to keep it off the page.
+- **History by day**: the History page groups visits under Today, Yesterday and each earlier day, newest first, and a search keeps the days. **Delete this day** removes a whole day, after asking on the page; while searching it removes only the pages found that day.
+- **Dark pages** (Settings › Appearance, off by default): websites are shown dark. Sites with a dark design of their own are asked for it, as Windows' dark mode would; others have their colours turned round, with pictures and videos left as they are. The lock in the address bar has **Keep this site light** (and **Make dark** to undo it); Settings lists the sites kept light.
+- **Back up and restore** (Settings): **Back up…** saves one file with your bookmarks, settings, pinned tabs and the list of finished downloads, and your history if you tick it. Never passwords, cookies, site data or recordings. **Restore from a backup…** first shows what the file holds and when it was made, and lets you choose the parts; bookmarks and settings you restore replace yours, while pinned tabs, downloads and history are added. A restored file is checked as strictly as the browser's own files.
+
 ## 0.14.0
 
 Tabs that sleep to save memory, pinned tabs, tab groups, full-page screenshots, and reading mode.

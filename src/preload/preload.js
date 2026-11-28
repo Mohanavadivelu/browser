@@ -82,11 +82,17 @@ contextBridge.exposeInMainWorld('browserApi', {
     get: () => invoke('settings:get'),
     update: (patch) => invoke('settings:update', patch),
     chooseFolder: () => invoke('settings:choose-folder'),
+    removeDarkSite: (site) => invoke('settings:dark-remove-site', site),
+    backupSave: (includeHistory) => invoke('settings:backup-save', includeHistory === true),
+    backupOpen: () => invoke('settings:backup-open'),
+    backupRestore: (parts) => invoke('settings:backup-restore', parts),
+    backupCancel: () => invoke('settings:backup-cancel'),
   },
   history: {
     list: (query) => (query ? invoke('history:list', query) : invoke('history:list')),
     remove: (id) => invoke('history:remove', id),
     clear: () => invoke('history:clear'),
+    removeRange: (from, to) => invoke('history:remove-range', from, to),
   },
   downloads: {
     list: () => invoke('downloads:list'),
@@ -121,6 +127,7 @@ contextBridge.exposeInMainWorld('browserApi', {
   site: {
     info: () => invoke('site:info'),
     clearData: () => invoke('site:clear-data'),
+    darkToggle: () => invoke('site:dark-toggle'),
   },
   privacy: {
     summary: (range) => invoke('privacy:summary', range),

@@ -36,6 +36,7 @@ class TabManager extends EventEmitter {
   constructor({
     host, sessions, newTabPage, warningPage, crashedPage = 'crashed.html', libraryPage, preloadPath, zoom,
     getEngine, getHome, onBlocked, onInput, fetchFavicon = require('./favicons').fetchFavicon,
+    getNewTabTiles = () => null, onNewTabHide = () => {},
   }) {
     super();
     this.fetchFavicon = fetchFavicon;
@@ -44,6 +45,9 @@ class TabManager extends EventEmitter {
     this.newTabPage = newTabPage;
     this.warningPage = warningPage;
     this.crashedPage = crashedPage;
+    // The new tab page's tiles ({ top, bookmarks }), and hiding one the user removed.
+    this.getNewTabTiles = getNewTabTiles;
+    this.onNewTabHide = onNewTabHide;
     this.libraryPage = libraryPage;
     this.preloadPath = preloadPath;
     this.zoom = zoom;
@@ -78,7 +82,7 @@ class TabManager extends EventEmitter {
     this.emit('created', tab);
 
     if (url && isAllowedUrl(url)) view.webContents.loadURL(url).catch(() => {});
-    else this.loadNewTabPage(view.webContents);
+    else this.loadNewTabPage(view.webContents, tab.isPrivate);
 
     if (activate || this.activeId === null) this.activate(id);
     this.emit('change');
@@ -98,8 +102,11 @@ class TabManager extends EventEmitter {
     return this.order.filter((id) => this.tabs.get(id)?.pinned).length;
   }
 
-  loadNewTabPage(contents) {
-    contents.loadURL(appUrl(this.newTabPage, { query: { engine: this.getEngine() } })).catch(() => {});
+  loadNewTabPage(contents, isPrivate = false) {
+    const query = { engine: this.getEngine() };
+    const tiles = this.getNewTabTiles(isPrivate);
+    if (tiles) query.tiles = JSON.stringify(tiles);
+    contents.loadURL(appUrl(this.newTabPage, { query })).catch(() => {});
   }
 
   register(tab, index = this.order.length) {
@@ -221,6 +228,12 @@ class TabManager extends EventEmitter {
       changed();
     });
     contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+      // The new tab page's × on a tile sets #hide=<address> on itself: the tile stays hidden. Only
+      // the new tab page can do that (a web page can't change another page's address).
+      if (isMainFrame && isAppUrl(url) && new URL(url).pathname === `/${this.newTabPage}`) {
+        this.onNewTabHide(new URL(url).hash);
+        return;
+      }
       if (isMainFrame && tab.crashed && this.isCrashPage(url)) {
         const action = new URL(url).hash;
         if (action === '#close') setImmediate(() => this.close(tab.id));
@@ -607,7 +620,7 @@ class TabManager extends EventEmitter {
     }
     const tab = this.active;
     if (!tab || tab.kind === 'internal') this.create();
-    else this.loadNewTabPage(tab.view.webContents);
+    else this.loadNewTabPage(tab.view.webContents, tab.isPrivate);
   }
 
   back() {

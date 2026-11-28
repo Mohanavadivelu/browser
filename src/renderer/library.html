@@ -143,6 +143,16 @@
           <select id="memorySaverMinutes"></select>
           <small>A sleeping tab frees its memory and wakes where it was when you open it. Tabs playing sound, pinned tabs and pages with something typed in stay awake.</small>
         </label>
+        <label class="check"><input id="spellcheck" type="checkbox"> Check spelling as I type (right-click a word underlined in red for suggestions)</label>
+      </div>
+
+      <div class="group">
+        <h3>Appearance</h3>
+        <label class="check"><input id="darkPages" type="checkbox"> Dark pages: show websites dark (sites with a dark design use it; others have their colours turned round, with pictures and videos left as they are)</label>
+        <div class="field" id="darkSitesField">
+          <span>Sites kept light (choose this from the lock in the address bar)</span>
+          <div id="darkSites" class="list"></div>
+        </div>
       </div>
 
       <div class="group">
@@ -223,6 +233,26 @@
             <button id="folderOpen" type="button">Open</button>
           </div>
         </div>
+      </div>
+
+      <div class="group">
+        <h3>Back up and restore</h3>
+        <p class="note">One file with your bookmarks, settings, pinned tabs and the list of finished downloads. Never passwords, cookies, site data or recordings.</p>
+        <label class="check"><input id="backupHistory" type="checkbox"> Include my browsing history</label>
+        <div class="inline">
+          <button id="backupSave" type="button">Back up…</button>
+          <button id="backupOpen" type="button">Restore from a backup…</button>
+        </div>
+        <div id="restorePreview" class="restore-preview" hidden>
+          <p id="restoreSummary" class="restore-summary"></p>
+          <div id="restoreParts" class="restore-parts"></div>
+          <p class="note">Bookmarks and settings you restore replace the ones you have now. Pinned tabs, downloads and history are added to yours.</p>
+          <div class="inline">
+            <button id="restoreConfirm" type="button" class="primary">Restore</button>
+            <button id="restoreCancel" type="button">Cancel</button>
+          </div>
+        </div>
+        <p id="backupMessage" class="note" role="status" hidden></p>
       </div>
     </section>
   </main>

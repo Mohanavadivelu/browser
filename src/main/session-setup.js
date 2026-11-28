@@ -61,6 +61,8 @@ function createSessionSetup(ctx) {
       saveName: ctx.downloadSaveName,
     });
     ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
+    // Spell checking in text boxes, as set in Settings.
+    ses.setSpellCheckerEnabled(ctx.spellcheck ? ctx.spellcheck() : true);
   };
 }
 

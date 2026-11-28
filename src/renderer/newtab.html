@@ -6,18 +6,21 @@
   <title>New tab</title>
   <link rel="stylesheet" href="pages.css">
 </head>
-<body>
+<body class="newtab">
   <main>
     <h1>Simple Browser</h1>
     <form id="search" action="https://www.google.com/search" method="get" class="search">
-      <input name="q" type="search" placeholder="Search or enter a web address" autofocus autocomplete="off">
+      <input name="q" type="search" placeholder="Search or enter a web address" aria-label="Search" autofocus autocomplete="off">
     </form>
-    <p class="hint">Type a web address in the address bar above, or search here.</p>
-    <nav class="tiles">
-      <a class="tile" href="https://www.google.com/"><span class="icon">🔎</span>Google</a>
-      <a class="tile" href="https://duckduckgo.com/"><span class="icon">🦆</span>DuckDuckGo</a>
-      <a class="tile" href="https://en.wikipedia.org/"><span class="icon">📖</span>Wikipedia</a>
-    </nav>
+    <section id="topSection" class="tile-section" hidden>
+      <h2>Most visited</h2>
+      <nav id="topTiles" class="tiles" aria-label="Most visited"></nav>
+    </section>
+    <section id="bookmarkSection" class="tile-section" hidden>
+      <h2>Bookmarks</h2>
+      <nav id="bookmarkTiles" class="tiles" aria-label="Bookmarks"></nav>
+    </section>
+    <p id="emptyHint" class="hint" hidden>The sites you visit most (while history is on in Settings) and your bookmarks bar show here.</p>
   </main>
   <script src="newtab.js"></script>
 </body>
