@@ -22,6 +22,14 @@ contextBridge.exposeInMainWorld('browserApi', {
     open: (url) => invoke('tabs:open', url),
     move: (id, index) => invoke('tabs:move', id, index),
     toggleMute: (id) => invoke('tabs:toggle-mute', id),
+    pin: (id, pinned) => invoke('tabs:pin', id, pinned === true),
+    sleep: (id) => invoke('tabs:sleep', id),
+    newGroup: (id) => invoke('tabs:group-new', id),
+    addToGroup: (id, group) => invoke('tabs:group-add', id, group),
+    removeFromGroup: (id) => invoke('tabs:group-remove', id),
+    updateGroup: (group, patch) => invoke('tabs:group-update', group, patch),
+    ungroup: (group) => invoke('tabs:group-ungroup', group),
+    closeGroup: (group) => invoke('tabs:group-close', group),
   },
   nav: {
     go: (input) => invoke('nav:go', input),
@@ -129,6 +137,10 @@ contextBridge.exposeInMainWorld('browserApi', {
     join: (name) => invoke('recordings:join', name),
   },
   screenshot: () => invoke('screenshot:take'),
+  fullScreenshot: () => invoke('screenshot:full'),
+  reader: {
+    toggle: () => invoke('reader:toggle'),
+  },
   recording: {
     requestStart: () => invoke('recording:request-start'),
     requestStop: () => invoke('recording:request-stop'),

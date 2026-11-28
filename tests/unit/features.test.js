@@ -54,7 +54,7 @@ test('settings have safe defaults and reject bad values', () => {
   assert.equal(bad.homePage, '');
   assert.equal(bad.historyEnabled, false);
   assert.deepEqual(bad.zoom, { 'b.com': 1.25 });
-  assert.deepEqual(bad.session, { urls: ['https://ok.example/'], active: 0 });
+  assert.deepEqual(bad.session, { urls: ['https://ok.example/'], active: 0, groups: [] });
   assert.equal(sanitizeSettings({ homePage: ' https://example.com ' }).homePage, 'https://example.com/');
 });
 

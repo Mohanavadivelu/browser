@@ -29,6 +29,9 @@
         <span class="complete-hint" id="completeHint" hidden>Tab to accept</span>
         <button class="zoom-chip" id="zoom" type="button" title="Reset zoom"></button>
         <button class="videos-chip" id="videos" type="button" aria-haspopup="dialog" hidden></button>
+        <button class="reader-btn" id="reader" type="button" title="Reading mode" aria-label="Reading mode" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"></path><path d="M12 6v13"></path></svg>
+        </button>
         <button class="shield" id="shield" type="button" hidden></button>
         <button class="star" id="star" type="button" title="Bookmark (Ctrl+D)">☆</button>
         <div class="notice" id="notice" role="status"></div>
@@ -95,6 +98,13 @@
     </div>
   </section>
   <section id="sitePanel" class="site-panel" role="dialog" aria-labelledby="siteTitle" hidden></section>
+  <section id="groupPanel" class="group-panel" role="dialog" aria-label="Tab group" hidden>
+    <label class="group-field">Name
+      <input id="groupName" type="text" maxlength="60" spellcheck="false" placeholder="Name this group">
+    </label>
+    <div id="groupColors" class="group-colors" role="radiogroup" aria-label="Colour"></div>
+    <div class="group-actions"><button id="groupDone" type="button" class="primary">Done</button></div>
+  </section>
   <section id="tabSearchPanel" class="tab-search" role="dialog" aria-label="Search open tabs" hidden>
     <label class="ts-box">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z"></path><path d="M20 20l-4-4"></path></svg>
@@ -116,6 +126,7 @@
   <script src="menu.js"></script>
   <script src="toolbar-base.js"></script>
   <script src="toolbar-tabs.js"></script>
+  <script src="toolbar-groups.js"></script>
   <script src="toolbar-bookmarks.js"></script>
   <script src="toolbar-recording.js"></script>
   <script src="toolbar-star.js"></script>

@@ -14,6 +14,8 @@ function renderToolbar() {
 
   if (!addressFocused) $('address').value = tab?.url ?? '';
   renderSecurity(tab);
+  // Reading mode: offered when the page has an article.
+  $('reader').hidden = !tab?.readerable;
 
   const bookmarked = Boolean(tab && state.bookmarked);
   $('star').textContent = bookmarked ? '★' : '☆';
@@ -71,6 +73,7 @@ $('star').addEventListener('click', openStar);
 api.onStar(openStar);
 $('zoom').addEventListener('click', () => api.zoom.reset());
 $('shot').addEventListener('click', () => api.screenshot());
+$('reader').addEventListener('click', () => api.reader.toggle());
 $('record').addEventListener('click', toggleRecording);
 $('recPause').addEventListener('click', togglePause);
 $('recStop').addEventListener('click', stopRecording);
@@ -109,6 +112,7 @@ api.onState((next) => {
   if (!state.recording.active && capture && !retargeting) stopRecording();
   render();
   renderTabSearch();
+  followGroupEditor();
 });
 api.onNotice(showNotice);
 api.onFocusAddress(() => $('address').focus());

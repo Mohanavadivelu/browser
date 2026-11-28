@@ -31,6 +31,8 @@ const { SegmentedDownload, probeRanges } = require('./segmented-download');
 const { WhenDone } = require('./when-done');
 const { PermissionLog, CertificateLog } = require('./site-info');
 const { CookieClock } = require('./privacy');
+const { MemorySaver } = require('./memory-saver');
+const { ReaderWatch, toggleReader } = require('./reader');
 const { ZoomController } = require('./zoom');
 const { createShortcutHandler } = require('./shortcuts');
 const { FullscreenIdle } = require('./fullscreen-idle');
@@ -160,6 +162,8 @@ async function start(options = {}) {
   let tabs;
   let idle;
   const videoFinder = new VideoFinder({ onChange: (tabId) => { if (tabId === tabs.activeId) pushState(); } });
+  // Whether the active tab's page has an article, for the reading mode button.
+  const readerWatch = new ReaderWatch({ onChange: (tab) => { if (tab.id === tabs.activeId) pushState(); } });
 
   // ---------- What the browser's own pages are told ----------
   const buildState = () => ({
@@ -179,6 +183,7 @@ async function start(options = {}) {
     bookmarked: Boolean(tabs.active?.kind === 'web' && bookmarkTree.findLinkByUrl(settings.data.bookmarks, tabs.active.view.webContents.getURL())),
     // Videos on the active tab's page (for the address bar's video button).
     videos: tabs.activeId ? videoFinder.list(tabs.activeId).length : 0,
+    groups: tabs.groupsSnapshot(),
     update: { status: updates.state.status, version: updates.state.version },
     blocker: {
       enabled: settings.data.blockTrackers,
@@ -301,6 +306,7 @@ async function start(options = {}) {
   tabs.on('created', (tab) => {
     const contents = tab.view.webContents;
     videoFinder.watch(tab);
+    readerWatch.watch(tab);
     attachContextMenu(contents, win, () => ({
       openInNewTab: (url) => tabs.create({ url, isPrivate: tab.isPrivate }),
       copyText: (text) => clipboard.writeText(text),
@@ -395,8 +401,31 @@ async function start(options = {}) {
   };
   tabs.on('navigated', scheduleSessionSave);
   tabs.on('activated', scheduleSessionSave);
-  // Closing a tab in the background activates nothing, but it still changes the session.
+  // Closing a tab in the background activates nothing, but it still changes the session; so do
+  // tab groups and pinning, which only change the tabs' state.
   tabs.on('closed', scheduleSessionSave);
+  tabs.on('change', scheduleSessionSave);
+
+  // Pinned tabs are kept for every start, whatever the restore setting.
+  let pinnedTimer = null;
+  const savePinned = () => {
+    clearTimeout(pinnedTimer);
+    pinnedTimer = null;
+    const urls = tabs.pinnedUrls();
+    if (JSON.stringify(urls) !== JSON.stringify(settings.data.pinnedTabs)) settings.update({ pinnedTabs: urls });
+  };
+  const schedulePinnedSave = () => {
+    clearTimeout(pinnedTimer);
+    pinnedTimer = setTimeout(savePinned, SESSION_SAVE_DELAY_MS);
+    pinnedTimer.unref?.();
+  };
+  tabs.on('pinned', schedulePinnedSave);
+  tabs.on('navigated', (tab) => { if (tab.pinned) schedulePinnedSave(); });
+  tabs.on('closed', (tab) => { if (tab.pinned) schedulePinnedSave(); });
+
+  // Memory saver: background tabs go to sleep after the time set in Settings.
+  const memorySaver = new MemorySaver({ tabs, minutes: () => settings.data.memorySaverMinutes });
+  memorySaver.start();
 
   // A finished download opens in its own app; the blocked file types never get this far, but
   // the name is checked again in case the file was swapped for one.
@@ -415,6 +444,7 @@ async function start(options = {}) {
       tabs, host, zoom, dialog: appDialog, win, documentsDir: () => app.getPath('documents'), getRecordingFolder, notify, pushState, broadcastToLibrary,
     }),
     ...recording.actions,
+    notify,
   };
 
   shortcutHandler = createShortcutHandler({ tabs, host, ui, actions });
@@ -437,7 +467,7 @@ async function start(options = {}) {
   const context = {
     app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, bookmarkIcons, keepBookmarkIcons, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, videoFinder, openDownload, saveMedia, clipboard,
-    whenDone, defaultDownloadDir, downloadFolders, fetchIn, permissionLog, certificates, cookieClock, blockingActiveFor,
+    whenDone, defaultDownloadDir, downloadFolders, fetchIn, permissionLog, certificates, cookieClock, blockingActiveFor, toggleReader,
     regularSession: () => sessions.ensure(REGULAR_PARTITION),
     showMenu: () => showMainMenu(context),
   };
@@ -460,6 +490,8 @@ async function start(options = {}) {
   let closing = false;
   win.on('close', (event) => {
     saveSession();
+    savePinned();
+    memorySaver.stop();
     history.flush();
     bookmarkIcons.flush();
     downloads.shutdown();
@@ -489,7 +521,8 @@ async function start(options = {}) {
     // A closed window leaves the pages of its views running; close them, so a toolbar or tab of a
     // closed window cannot keep calling in (the tests open several windows in one process).
     tabs.shutdown();
-    const pages = [ui, indicator, find, ...[...tabs.tabs.values()].map((tab) => tab.view)].map((view) => view.webContents);
+    // A sleeping tab has no page to close.
+    const pages = [ui, indicator, find, ...[...tabs.tabs.values()].map((tab) => tab.view).filter(Boolean)].map((view) => view.webContents);
     for (const contents of pages) {
       if (contents && !contents.isDestroyed()) contents.close();
     }
@@ -497,10 +530,13 @@ async function start(options = {}) {
   });
 
   // ---------- First tabs ----------
-  const restored = settings.data.restoreTabs ? settings.data.session : { urls: [], active: 0 };
+  // Pinned tabs first, always; then the saved session (with its tab groups) if restoring is on.
+  for (const url of settings.data.pinnedTabs) tabs.create({ url, activate: false, pinned: true });
+  const restored = settings.data.restoreTabs ? settings.data.session : { urls: [], active: 0, groups: [] };
   if (restored.urls.length) {
-    restored.urls.forEach((url) => tabs.create({ url, activate: false }));
-    tabs.activate(tabs.order[restored.active] ?? tabs.order[0]);
+    const ids = restored.urls.map((url) => tabs.create({ url, activate: false }).id);
+    tabs.restoreGroups(restored.groups.map((group) => ({ ...group, tabs: group.tabs.map((place) => ids[place]) })));
+    tabs.activate(ids[restored.active] ?? ids[0]);
   } else {
     tabs.create({ url: settings.data.homePage || undefined });
   }
@@ -520,7 +556,7 @@ async function start(options = {}) {
   return {
     app, host, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, indicator, find, win, idle, actions, saveSession, stopCapture, updates, bookmarkIcons, videoFinder, whenDone,
-    permissionLog, certificates, cookieClock, sessions,
+    permissionLog, certificates, cookieClock, sessions, memorySaver,
   };
 }
 

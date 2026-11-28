@@ -298,3 +298,43 @@ img.ts-icon { background: none; }
 .ts-empty { padding: 10px; color: #bdc1c6; }
 .ts-keys { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 16px 12px; border-top: 1px solid var(--border); color: #bdc1c6; font-size: 12px; }
 .ts-keys kbd { display: inline-block; min-width: 18px; padding: 1px 6px; border: 1px solid #5f6368; border-bottom-width: 2px; border-radius: 4px; font: 11px "Segoe UI", system-ui, sans-serif; color: #c4c7cc; text-align: center; }
+
+/* Pinned and sleeping tabs */
+.tab.pinned { flex: 0 0 auto; width: 40px; min-width: 40px; justify-content: center; padding: 0; }
+.tab.pinned .fav { margin: 0; }
+.tab.sleeping .fav, .tab.sleeping .title { opacity: .5; }
+.tab.sleeping .fav { filter: grayscale(1); }
+
+/* Tab groups: a chip before the group's tabs, and a coloured line under them */
+.group-chip { flex: none; align-self: center; display: flex; align-items: center; gap: 6px; height: 24px; max-width: 160px; margin: 0 2px 4px 4px; padding: 0 10px; border-radius: 12px; font-size: 12px; font-weight: 600; color: #202124; -webkit-app-region: no-drag; }
+.group-chip .group-dot { display: none; }
+.group-chip .group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-chip .group-count { padding: 0 6px; border-radius: 8px; background: rgba(0, 0, 0, .2); font-size: 11px; }
+.group-chip:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.group-chip.drop-into { outline: 2px dashed #fff; outline-offset: 2px; }
+.tab.grouped { box-shadow: inset 0 -3px 0 var(--group-color, #9aa0a6); }
+.group-grey { --group-color: #9aa0a6; } .group-chip.group-grey, .group-swatch.group-grey, .group-dot.group-grey { background: #9aa0a6; }
+.group-blue { --group-color: #8ab4f8; } .group-chip.group-blue, .group-swatch.group-blue, .group-dot.group-blue { background: #8ab4f8; }
+.group-red { --group-color: #f28b82; } .group-chip.group-red, .group-swatch.group-red, .group-dot.group-red { background: #f28b82; }
+.group-yellow { --group-color: #fdd663; } .group-chip.group-yellow, .group-swatch.group-yellow, .group-dot.group-yellow { background: #fdd663; }
+.group-green { --group-color: #81c995; } .group-chip.group-green, .group-swatch.group-green, .group-dot.group-green { background: #81c995; }
+.group-pink { --group-color: #ff8bcb; } .group-chip.group-pink, .group-swatch.group-pink, .group-dot.group-pink { background: #ff8bcb; }
+.group-purple { --group-color: #c58af9; } .group-chip.group-purple, .group-swatch.group-purple, .group-dot.group-purple { background: #c58af9; }
+.group-cyan { --group-color: #78d9ec; } .group-chip.group-cyan, .group-swatch.group-cyan, .group-dot.group-cyan { background: #78d9ec; }
+span.group-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.group-panel { position: fixed; z-index: 20; width: 280px; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: #292a2d; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font-size: 13px; }
+.group-panel[hidden] { display: none; }
+.group-field { display: flex; flex-direction: column; gap: 6px; color: #bdc1c6; font-size: 12px; }
+.group-field input { height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 14px "Segoe UI", sans-serif; outline: none; }
+.group-field input:focus { border-color: var(--accent); }
+.group-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.group-swatch { width: 26px; height: 26px; border-radius: 50%; }
+.group-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px #292a2d, 0 0 0 4px #e8eaed; }
+.group-actions { display: flex; justify-content: flex-end; }
+.group-actions button { height: 30px; padding: 0 14px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; }
+
+/* Reading mode button in the address bar */
+.reader-btn { flex: none; display: flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 13px; color: #c4c7cc; }
+.reader-btn[hidden] { display: none; }
+.reader-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round; }
+.reader-btn:hover { background: var(--hover); color: var(--text); }

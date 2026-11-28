@@ -137,7 +137,12 @@
           <select id="searchEngine"></select>
         </label>
         <label class="check"><input id="showBookmarksBar" type="checkbox"> Show the bookmarks bar (Ctrl+Shift+B)</label>
-        <label class="check"><input id="restoreTabs" type="checkbox"> Reopen my tabs when the browser starts (private tabs are never restored)</label>
+        <label class="check"><input id="restoreTabs" type="checkbox"> Reopen my tabs, and their groups, when the browser starts (private tabs are never restored; pinned tabs always are)</label>
+        <label class="field">
+          <span>Memory saver: put a tab to sleep after it has been in the background for</span>
+          <select id="memorySaverMinutes"></select>
+          <small>A sleeping tab frees its memory and wakes where it was when you open it. Tabs playing sound, pinned tabs and pages with something typed in stay awake.</small>
+        </label>
       </div>
 
       <div class="group">

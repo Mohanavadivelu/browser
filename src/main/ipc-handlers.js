@@ -10,7 +10,7 @@ const { publicQualities } = require('./recording/quality');
 const { suggest } = require('./suggestions');
 const { mediaUrl } = require('./recording/media-server');
 const bookmarkList = require('./bookmarks');
-const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES } = require('./storage/settings');
+const { STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES, MEMORY_SAVER_CHOICES } = require('./storage/settings');
 const { hostOf } = require('./blocker');
 const { checkLinks } = require('./link-check');
 const { siteCookies, storageUsage, clearSiteData } = require('./site-info');
@@ -43,12 +43,13 @@ function registerIpcHandlers(ipc, ctx) {
     bookmarkIcons, keepBookmarkIcons,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
     videoFinder, openDownload, saveMedia, clipboard, whenDone, defaultDownloadDir, downloadFolders, fetchIn,
-    permissionLog, certificates, cookieClock, regularSession, blockingActiveFor,
+    permissionLog, certificates, cookieClock, regularSession, blockingActiveFor, toggleReader,
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
     entryIdAndBool, listIndex, longText, addLinks, entryAndTarget, entryIdAndText, clearRange, clearRequest,
+    tabIdAndBool, groupId, tabAndGroup, groupPatch,
   } = validators;
 
   const settingsPayload = () => ({
@@ -60,6 +61,7 @@ function registerIpcHandlers(ipc, ctx) {
     stopAfterChoices: STOP_AFTER_CHOICES,
     downloadsAtOnceChoices: DOWNLOADS_AT_ONCE_CHOICES,
     connectionsChoices: CONNECTIONS_CHOICES,
+    memorySaverChoices: MEMORY_SAVER_CHOICES,
   });
 
   // Tabs and navigation
@@ -70,6 +72,15 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('tabs:open', LIBRARY, text, (_e, url) => { if (isAllowedUrl(url)) tabs.create({ url }); });
   ipc.handle('tabs:move', TOOLBAR, tabMove, (_e, id, index) => tabs.move(id, index));
   ipc.handle('tabs:toggle-mute', TOOLBAR, tabId, (_e, id) => tabs.toggleMute(id));
+  // Pinned tabs, sleeping tabs and tab groups (the tab strip's right-click menu and group chips).
+  ipc.handle('tabs:pin', TOOLBAR, tabIdAndBool, (_e, id, pinned) => tabs.pin(id, pinned));
+  ipc.handle('tabs:sleep', TOOLBAR, tabId, async (_e, id) => (await tabs.canSleep(id)) && tabs.sleep(id));
+  ipc.handle('tabs:group-new', TOOLBAR, tabId, (_e, id) => tabs.newGroup(id));
+  ipc.handle('tabs:group-add', TOOLBAR, tabAndGroup, (_e, id, group) => tabs.addToGroup(id, group));
+  ipc.handle('tabs:group-remove', TOOLBAR, tabId, (_e, id) => tabs.removeFromGroup(id));
+  ipc.handle('tabs:group-update', TOOLBAR, groupPatch, (_e, group, patch) => tabs.updateGroup(group, patch));
+  ipc.handle('tabs:group-ungroup', TOOLBAR, groupId, (_e, group) => tabs.ungroup(group));
+  ipc.handle('tabs:group-close', TOOLBAR, groupId, (_e, group) => tabs.closeGroup(group));
   ipc.handle('nav:go', TOOLBAR, text, (_e, input) => tabs.navigate(input).ok);
   ipc.handle('nav:back', TOOLBAR, none, () => tabs.back());
   ipc.handle('nav:forward', TOOLBAR, none, () => tabs.forward());
@@ -425,6 +436,21 @@ function registerIpcHandlers(ipc, ctx) {
     await shell.openPath(getRecordingFolder());
   });
   ipc.handle('screenshot:take', TOOLBAR, none, () => actions.screenshot());
+  ipc.handle('screenshot:full', TOOLBAR, none, () => actions.fullScreenshot());
+
+  // Reading mode, on the active tab's page (see reader.js).
+  ipc.handle('reader:toggle', TOOLBAR, none, async () => {
+    const tab = tabs.active;
+    if (tab?.kind !== 'web' || tab.crashed) return null;
+    try {
+      const result = await toggleReader(tab.view.webContents);
+      if (result === null) notify('This page has no article to show in reading mode.', 'warning');
+      return result;
+    } catch {
+      notify('Reading mode could not open on this page.', 'warning');
+      return null;
+    }
+  });
 
   // Recording control
   const captureOptions = () => ({ quality: settings.data.recordingQuality, microphone: settings.data.recordingMicrophone });

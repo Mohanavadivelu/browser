@@ -71,6 +71,7 @@ npm start
 | Ctrl+Plus, Ctrl+Minus, Ctrl+0 | Zoom in, out, reset |
 | Ctrl+H, Ctrl+J | History, Downloads |
 | Ctrl+Shift+A | Search open tabs |
+| Ctrl+Shift+F | Screenshot of the whole page |
 | Ctrl+Shift+O | Bookmarks |
 | Ctrl+Shift+B | Show or hide the bookmarks bar |
 | Ctrl+Shift+E | Start / stop recording |
@@ -97,6 +98,8 @@ src/
     when-done.js       Sleep or shut down when all downloads finish, after a countdown
     site-info.js       The site info panel: certificates, permissions asked for, a site's cookies and data
     privacy.js         Clear browsing data over a time range, and when each cookie was set
+    memory-saver.js    Puts background tabs to sleep after a while (tabs.js sleeps and wakes them)
+    reader.js, reader-overlay.js  Reading mode (Mozilla's Readability, in an isolated world)
     page-videos.js     Finds the videos on a page, for the address bar's video button
     idle-tracker.js, fullscreen-idle.js  Hide the top bar and pointer after 5 s idle in full screen
     sandbox/           Locked-down web preferences, per-tab session manager
@@ -134,6 +137,8 @@ The build is **not code-signed**, so Windows SmartScreen may show an "unknown pu
 The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums. It also uploads `latest.yml` and the installer's `.blockmap`, which installed copies use to find and download the update.
 
 ## Status
+
+Version 0.14.0: tabs sleep to save memory, pinned tabs, tab groups, full-page screenshots (Ctrl+Shift+F), and reading mode. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.13.0: a page for crashed tabs, a site info panel behind the lock in the address bar (certificate, what the site asked for, its cookies and data, and clearing them), tab search (Ctrl+Shift+A), and clearing browsing data over a time range. See [CHANGELOG.md](CHANGELOG.md).
 

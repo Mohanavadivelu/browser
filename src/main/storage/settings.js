@@ -15,7 +15,15 @@ const EDITABLE_KEYS = Object.freeze([
   'homePage', 'searchEngine', 'historyEnabled', 'restoreTabs', 'recordingQuality', 'recordingFollowTab', 'blockTrackers',
   'checkForUpdates', 'recordingStopAfter', 'recordingMicrophone', 'showBookmarksBar', 'downloadsAtOnce', 'resumeDownloads',
   'connectionsPerFile', 'speedLimitKBps', 'markOfTheWeb', 'downloadNightOnly', 'downloadNightFrom', 'downloadNightTo',
+  'memorySaverMinutes',
 ]);
+// Tab groups' colours (see tabs.js), and how long a tab may stay in the background before the
+// memory saver puts it to sleep (0: never).
+const GROUP_COLORS = Object.freeze(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan']);
+const MEMORY_SAVER_CHOICES = Object.freeze([0, 15, 30, 60, 120, 240]);
+const DEFAULT_MEMORY_SAVER = 30;
+const MAX_PINNED = 20;
+const MAX_GROUPS = 50;
 const MAX_ALLOWED_SITES = 500;
 // Minutes after which a recording stops by itself; 0 is never.
 const STOP_AFTER_CHOICES = Object.freeze([0, 5, 10, 15, 30, 45, 60, 90, 120, 180]);
@@ -50,12 +58,40 @@ function sanitizeZoom(raw) {
   return zoom;
 }
 
+// The saved tabs, and their groups ({ name, color, collapsed, tabs: places in `urls` }). An
+// address that isn't kept moves the places after it, so the groups follow.
 function sanitizeSession(raw) {
-  const urls = Array.isArray(raw?.urls)
-    ? raw.urls.filter((url) => typeof url === 'string' && isAllowedUrl(url)).slice(0, MAX_SESSION_TABS)
-    : [];
-  const active = Number.isInteger(raw?.active) && raw.active >= 0 && raw.active < urls.length ? raw.active : 0;
-  return { urls, active };
+  const urls = [];
+  const placeOf = new Map(); // place in the saved list -> place in `urls`
+  if (Array.isArray(raw?.urls)) {
+    raw.urls.forEach((url, index) => {
+      if (urls.length >= MAX_SESSION_TABS || typeof url !== 'string' || !isAllowedUrl(url)) return;
+      placeOf.set(index, urls.length);
+      urls.push(url);
+    });
+  }
+  const savedActive = Number.isInteger(raw?.active) ? placeOf.get(raw.active) : undefined;
+  const active = savedActive ?? 0;
+  const taken = new Set();
+  const groups = [];
+  for (const group of Array.isArray(raw?.groups) ? raw.groups.slice(0, MAX_GROUPS) : []) {
+    if (group === null || typeof group !== 'object' || !Array.isArray(group.tabs)) continue;
+    const tabs = group.tabs.map((index) => placeOf.get(index)).filter((place) => place !== undefined && !taken.has(place));
+    if (tabs.length === 0) continue;
+    for (const place of tabs) taken.add(place);
+    groups.push({
+      name: typeof group.name === 'string' ? group.name.slice(0, 60) : '',
+      color: GROUP_COLORS.includes(group.color) ? group.color : 'grey',
+      collapsed: group.collapsed === true,
+      tabs,
+    });
+  }
+  return { urls, active, groups };
+}
+
+// Pinned tabs, kept for every start whatever the restore setting: http(s) addresses.
+function sanitizePinned(raw) {
+  return Array.isArray(raw) ? raw.filter((url) => typeof url === 'string' && isAllowedUrl(url)).slice(0, MAX_PINNED) : [];
 }
 
 function sanitizeSettings(raw) {
@@ -94,6 +130,8 @@ function sanitizeSettings(raw) {
     blockerAllowedSites: sanitizeSites(source.blockerAllowedSites),
     zoom: sanitizeZoom(source.zoom),
     session: sanitizeSession(source.session),
+    pinnedTabs: sanitizePinned(source.pinnedTabs),
+    memorySaverMinutes: MEMORY_SAVER_CHOICES.includes(source.memorySaverMinutes) ? source.memorySaverMinutes : DEFAULT_MEMORY_SAVER,
   };
 }
 
@@ -149,4 +187,7 @@ class Settings {
   }
 }
 
-module.exports = { Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES };
+module.exports = {
+  Settings, sanitizeSettings, pickEditable, EDITABLE_KEYS, STOP_AFTER_CHOICES, DOWNLOADS_AT_ONCE_CHOICES, CONNECTIONS_CHOICES,
+  GROUP_COLORS, MEMORY_SAVER_CHOICES,
+};

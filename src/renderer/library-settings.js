@@ -14,6 +14,10 @@ function renderSettings(settings) {
   $('homePage').value = settings.homePage;
   fillSelect($('searchEngine'), settings.engines.map((engine) => ({ key: engine.key, label: engine.name })), settings.searchEngine);
   $('restoreTabs').checked = settings.restoreTabs;
+  fillSelect($('memorySaverMinutes'), settings.memorySaverChoices.map((minutes) => ({
+    key: String(minutes),
+    label: minutes === 0 ? 'Never (memory saver off)' : minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hour${minutes === 60 ? '' : 's'}`,
+  })), String(settings.memorySaverMinutes));
   $('historyEnabled').checked = settings.historyEnabled;
   fillSelect($('recordingQuality'), settings.qualities.map((quality) => ({ key: quality.key, label: quality.label })), settings.recordingQuality);
   $('qualityHint').textContent = settings.qualities.find((quality) => quality.key === settings.recordingQuality)?.description ?? '';
@@ -62,6 +66,7 @@ function bindSettings() {
   $('homePage').addEventListener('change', () => saveSetting({ homePage: $('homePage').value.trim() }));
   $('searchEngine').addEventListener('change', () => saveSetting({ searchEngine: $('searchEngine').value }));
   $('restoreTabs').addEventListener('change', () => saveSetting({ restoreTabs: $('restoreTabs').checked }));
+  $('memorySaverMinutes').addEventListener('change', () => saveSetting({ memorySaverMinutes: Number($('memorySaverMinutes').value) }));
   $('historyEnabled').addEventListener('change', () => saveSetting({ historyEnabled: $('historyEnabled').checked }));
   $('blockTrackers').addEventListener('change', () => saveSetting({ blockTrackers: $('blockTrackers').checked }));
   $('checkForUpdates').addEventListener('change', () => saveSetting({ checkForUpdates: $('checkForUpdates').checked }));

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.0
+
+Tabs that sleep to save memory, pinned tabs, tab groups, full-page screenshots, and reading mode.
+
+### New
+
+- **Memory saver**: a tab left in the background for a while (30 minutes by default; 15 minutes to 4 hours, or never, in Settings) is put to sleep: its page's process is closed, freeing its memory. It shows dimmed in the tab strip, and opening it wakes it where it was: its history, scroll position and form contents come back. Tabs playing sound, pinned tabs, the tab shown, and pages with something typed in and not sent are never put to sleep. Right-click a tab for **Put to sleep now**.
+- **Pinned tabs**: right-click a tab and **Pin tab**. Pinned tabs are small, stay together at the start of the strip, open at every start (whether or not the browser reopens your other tabs), and have no × (Ctrl+W doesn't close them either); their right-click menu closes them.
+- **Tab groups**: right-click a tab and **Add to a new group**, then name it and pick a colour. A group shows as a chip before its tabs; click it to fold the group away (with its count) or show it again. Drop a tab on a chip, or between two of a group's tabs, to add it; drag it out to remove it. Right-click the chip to rename, recolour, ungroup or close the group. Groups are saved with the session.
+- **Full-page screenshot**: Ctrl+Shift+F or ⋮ › *Screenshot of the whole page* saves the whole page, top to bottom (up to 16,000 pixels), next to the other screenshots.
+- **Reading mode**: on a page with an article, a book button in the address bar shows just the article in a calm layout, with larger or smaller text, light, sepia or dark pages, and Print. It uses Mozilla's Readability (Apache 2.0) and runs apart from the page's own scripts; the article is the page's own content with scripts, frames, forms and event handlers taken out.
+
 ## 0.13.0
 
 A page for crashed tabs, a site info panel, tab search, and clearing browsing data over a time range.

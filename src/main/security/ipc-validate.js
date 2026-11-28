@@ -5,6 +5,9 @@ const MAX_CHUNK_BYTES = 32 * 1024 * 1024;
 
 const BOOKMARK_ACTIONS = new Set(['open', 'tab', 'private', 'copy', 'edit', 'delete', 'open-all']);
 const CLEAR_RANGES = new Set(['hour', 'day', 'week', 'month', 'all']);
+const GROUP_COLORS = new Set(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan']);
+const isGroupId = (value) => typeof value === 'string' && /^g\d{1,9}$/.test(value);
+const isTabId = (value) => Number.isInteger(value) && value > 0;
 const CLEAR_KINDS = new Set(['history', 'cookies', 'cache', 'downloads']);
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
 
@@ -37,6 +40,15 @@ const validators = {
       (request.startAt === undefined || (Number.isSafeInteger(request.startAt) && request.startAt >= 0)) &&
       (request.checksum === undefined || (typeof request.checksum === 'string' && request.checksum.length <= 200));
   },
+  // A tab and on or off (pinning it).
+  tabIdAndBool: (...args) => args.length === 2 && isTabId(args[0]) && typeof args[1] === 'boolean',
+  // A tab group; a tab and a group; a group and what to change in it.
+  groupId: (...args) => args.length === 1 && isGroupId(args[0]),
+  tabAndGroup: (...args) => args.length === 2 && isTabId(args[0]) && isGroupId(args[1]),
+  groupPatch: (...args) => args.length === 2 && isGroupId(args[0]) && args[1] !== null && typeof args[1] === 'object' &&
+    !Array.isArray(args[1]) && Object.keys(args[1]).length > 0 &&
+    Object.entries(args[1]).every(([key, value]) => (key === 'name' && typeof value === 'string' && value.length <= 200) ||
+      (key === 'color' && GROUP_COLORS.has(value)) || (key === 'collapsed' && typeof value === 'boolean')),
   // A time range for clearing browsing data, and what to clear over it.
   clearRange: (...args) => args.length === 1 && CLEAR_RANGES.has(args[0]),
   clearRequest: (...args) => args.length === 2 && CLEAR_RANGES.has(args[0]) && args[1] !== null && typeof args[1] === 'object' &&

@@ -33,8 +33,14 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
     else if ((ctrl && input.shift && key === 'r') || (ctrl && input.key === 'F5')) tabs.reloadIgnoringCache();
     else if (ctrl && input.shift && key === 'p') actions.togglePause();
     else if (ctrl && input.shift && key === 's') actions.screenshot();
+    else if (ctrl && input.shift && key === 'f') actions.fullScreenshot();
     else if (ctrl && !input.shift && key === 't') tabs.create();
-    else if (ctrl && !input.shift && key === 'w') tabs.close(tabs.activeId);
+    // A pinned tab isn't closed by the shortcut (closed by accident, it would be gone for good):
+    // its right-click menu closes it.
+    else if (ctrl && !input.shift && key === 'w') {
+      if (tabs.active?.pinned) actions.notify?.('Pinned tabs close from their right-click menu.');
+      else tabs.close(tabs.activeId);
+    }
     else if (ctrl && !input.shift && key === 'f') actions.find();
     else if (ctrl && !input.shift && key === 'p') actions.print();
     else if (ctrl && !input.shift && key === 'h') actions.openLibrary('history');

@@ -48,6 +48,7 @@ function showMainMenu(ctx) {
       ]
       : []),
     { label: 'Screenshot of this page', accelerator: 'Ctrl+Shift+S', click: () => actions.screenshot() },
+    { label: 'Screenshot of the whole page', accelerator: 'Ctrl+Shift+F', click: () => actions.fullScreenshot() },
     {
       label: 'Open recordings folder',
       click: () => {
