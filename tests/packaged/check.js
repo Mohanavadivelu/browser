@@ -123,14 +123,31 @@ async function main() {
 const ANIMATED = '<!doctype html><title>Moving</title><style>@keyframes m{from{left:0}to{left:70vw}}body{margin:0}' +
   '#b{position:absolute;top:80px;width:120px;height:120px;background:#06c;animation:m 1s linear infinite alternate}</style><div id=b></div>';
 
+// An article, for reading mode: its library and script are read from app.asar.
+const ARTICLE = `<!doctype html><title>Article</title><article><h1>A morning in the river town</h1>${
+  '<p>The river town wakes slowly. Boats knock against the pier while the first ferry warms its engine, and the bakery on the corner sets out the morning bread.</p>'.repeat(12)}</article>`;
+
+async function checkReader(toolbar, url) {
+  await evaluate(toolbar, `window.browserApi.nav.go(${JSON.stringify(url)})`);
+  const page = await findTarget((t) => t.url === url, 'the article');
+  const offered = await waitFor(async () => evaluate(toolbar, "!document.getElementById('reader').hidden"), 'reading mode offered', 10000).catch(() => false);
+  const opened = offered && (await evaluate(toolbar, 'window.browserApi.reader.toggle()')) === true &&
+    (await evaluate(page, "Boolean(document.querySelector('simple-browser-reader'))")) === true;
+  check('reading mode works from the packaged app (Readability read from app.asar)', opened, offered ? '' : 'not offered');
+}
+
 // A screenshot, then a few seconds' recording of a moving page: both saved in the recordings
 // folder, and listed on the Recordings page with a picture loaded through the sb-media scheme.
 async function checkRecording(toolbar, folder, profile) {
   const files = (ext) => (fs.existsSync(folder) ? fs.readdirSync(folder).filter((name) => name.endsWith(ext)) : []);
-  const server = http.createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end(ANIMATED); });
+  const server = http.createServer((req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end(req.url === '/article' ? ARTICLE : ANIMATED);
+  });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     await recordPage(toolbar, folder, profile, files, `http://127.0.0.1:${server.address().port}/moving`);
+    await checkReader(toolbar, `http://127.0.0.1:${server.address().port}/article`);
   } finally {
     server.close();
   }
