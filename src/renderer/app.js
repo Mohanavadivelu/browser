@@ -29,6 +29,16 @@ function renderToolbar() {
   $('menu').classList.toggle('update', updateWaiting);
   $('menu').title = updateWaiting ? `Menu: Simple Browser ${update.version} is ${update.status === 'ready' ? 'ready to install' : 'available'}` : 'Menu';
 
+  // One side of a split tab: which one, and a click shows the other.
+  const sideTag = $('splitSide');
+  sideTag.hidden = !tab?.split;
+  if (tab?.split) {
+    const name = tab.split.side === 'left' ? 'Left side' : 'Right side';
+    sideTag.replaceChildren(splitIcon(tab.split.side), document.createTextNode(name));
+    sideTag.title = `${name} of a split tab: click for the other side`;
+    sideTag.setAttribute('aria-label', sideTag.title);
+  }
+
   const percent = Math.round((tab?.zoom ?? 1) * 100);
   $('zoom').classList.toggle('show', percent !== 100);
   $('zoom').textContent = `${percent}%`;
@@ -72,6 +82,10 @@ $('home').addEventListener('click', () => api.nav.home());
 $('star').addEventListener('click', openStar);
 api.onStar(openStar);
 $('zoom').addEventListener('click', () => api.zoom.reset());
+$('splitSide').addEventListener('click', () => {
+  const partner = splitPartnerOf(activeTab());
+  if (partner) api.tabs.activate(partner.id);
+});
 $('shot').addEventListener('click', () => api.screenshot());
 $('reader').addEventListener('click', () => api.reader.toggle());
 $('record').addEventListener('click', toggleRecording);

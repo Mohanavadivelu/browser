@@ -4,6 +4,7 @@ const { EventEmitter } = require('node:events');
 const { BaseWindow, WebContentsView } = require('electron');
 const { uiPreferences } = require('./sandbox/web-preferences');
 const { appUrl } = require('./app-scheme');
+const { splitRects, MARGIN: SPLIT_MARGIN, HEADER: SPLIT_HEADER, GAP: SPLIT_GAP } = require('./split-view');
 
 const TAB_BAR_HEIGHT = 40;
 const TOOLBAR_HEIGHT = 46;
@@ -29,6 +30,13 @@ class BrowserWindow extends EventEmitter {
     };
     this.contentViews = new Set();
     this.enteredFullscreenForHtml = false;
+    // The split on screen ({ left, right, ratio, focused } with the two views), the page that
+    // asked for its own full screen, and where the split's frame view sits among the views.
+    this.split = null;
+    this.htmlFullscreenView = null;
+    this.splitDragging = false;
+    this.splitPlace = null;
+    this.splitSent = '';
 
     this.win = new BaseWindow({
       width: 1280,
@@ -54,6 +62,16 @@ class BrowserWindow extends EventEmitter {
     this.indicator.setVisible(false);
     this.find.setVisible(false);
 
+    // A split tab's frame: each side's header, the outline of the side in use and the bar
+    // between them. It lies behind the two pages, showing in the space around them, and comes
+    // to the front only while the bar is dragged (so the drag goes on over the pages).
+    this.splitView = new WebContentsView({ webPreferences: uiPreferences(preloadPath) });
+    this.splitView.setBackgroundColor('#00000000');
+    lockDown(this.splitView.webContents);
+    this.splitView.setVisible(false);
+    this.win.contentView.addChildView(this.splitView, 0);
+    this.splitView.webContents.loadURL(appUrl('split.html'));
+
     this.ui.webContents.loadURL(appUrl('index.html'));
     this.indicator.webContents.loadURL(appUrl('indicator.html'));
     this.find.webContents.loadURL(appUrl('find.html'));
@@ -68,7 +86,31 @@ class BrowserWindow extends EventEmitter {
   addContentView(view) {
     this.contentViews.add(view);
     this.win.contentView.addChildView(view, 0);
+    // A new page goes below everything: the split's frame must go below it again.
+    this.splitPlace = null;
     this.layout();
+  }
+
+  // The split shown ({ left, right, ratio, focused }), or null.
+  setSplit(split) {
+    this.split = split;
+    this.layout();
+  }
+
+  // While the bar is dragged the frame view is in front of the pages.
+  setSplitDragging(on) {
+    if (this.splitDragging === on) return;
+    this.splitDragging = on;
+    this.layout();
+  }
+
+  placeSplitView(place) {
+    if (this.splitPlace === place) return;
+    this.splitPlace = place;
+    const parent = this.win.contentView;
+    parent.removeChildView(this.splitView);
+    if (place === 'top') parent.addChildView(this.splitView);
+    else parent.addChildView(this.splitView, 0);
   }
 
   removeContentView(view) {
@@ -144,7 +186,8 @@ class BrowserWindow extends EventEmitter {
   }
 
   // A page asked for HTML5 fullscreen (e.g. a video player): fill the whole window.
-  setHtmlFullscreen(on) {
+  setHtmlFullscreen(on, view = null) {
+    if (on) this.htmlFullscreenView = view;
     if (this.mode.htmlFullscreen === on) return;
     this.mode.htmlFullscreen = on;
     if (on && !this.win.isFullScreen()) {
@@ -176,13 +219,48 @@ class BrowserWindow extends EventEmitter {
     this.ui.setBounds({ x: 0, y: 0, width, height: uiHeight });
 
     const top = immersive ? 0 : chromeHeight;
-    for (const view of this.contentViews) {
-      view.setBounds({ x: 0, y: top, width, height: Math.max(0, height - top) });
+    const area = { x: 0, y: top, width, height: Math.max(0, height - top) };
+    for (const view of this.contentViews) view.setBounds(area);
+    // The page in use: the find bar sits over it.
+    let inUse = area;
+    const split = this.split;
+    const fullscreenSide = split && htmlFullscreen && [split.left, split.right].includes(this.htmlFullscreenView) ? this.htmlFullscreenView : null;
+    if (split && !fullscreenSide) {
+      const rects = splitRects(area, split.ratio, split.focused);
+      for (const side of ['left', 'right']) {
+        const rect = rects[side];
+        if (rect) split[side].setBounds(rect);
+        split[side].setVisible(Boolean(rect));
+      }
+      inUse = rects[split.focused] ?? area;
+      this.splitView.setBounds(area);
+      this.splitView.setVisible(true);
+      this.placeSplitView(this.splitDragging ? 'top' : 'bottom');
+      const relative = (rect) => (rect ? { x: rect.x - area.x, y: rect.y - area.y, width: rect.width, height: rect.height } : null);
+      const geometry = {
+        width: area.width, height: area.height, narrow: rects.narrow, ratio: split.ratio, focused: split.focused,
+        left: relative(rects.left), right: relative(rects.right), divider: relative(rects.divider), dragging: this.splitDragging,
+        metrics: { margin: SPLIT_MARGIN, header: SPLIT_HEADER, gap: SPLIT_GAP },
+      };
+      this.splitGeometry = geometry;
+      const text = JSON.stringify(geometry);
+      if (text !== this.splitSent && !this.splitView.webContents.isDestroyed()) {
+        this.splitSent = text;
+        this.splitView.webContents.send('split:layout', geometry);
+      }
+    } else {
+      this.splitView.setVisible(false);
+      this.splitSent = '';
+      this.splitGeometry = null;
+      // One side of a split showing a video full screen: the other side waits behind it.
+      if (fullscreenSide) {
+        for (const side of [split.left, split.right]) side.setVisible(side === fullscreenSide);
+      }
     }
 
     const showIndicator = recording && immersive && (htmlFullscreen || !revealed);
     this.indicator.setVisible(showIndicator);
-    let overlayRight = width - 12;
+    let overlayRight = inUse.x + inUse.width - 12;
     if (showIndicator) {
       const indicatorX = Math.max(0, width - INDICATOR_SIZE.width - INDICATOR_SIZE.margin);
       this.indicator.setBounds({
@@ -200,8 +278,9 @@ class BrowserWindow extends EventEmitter {
     if (findOpen) {
       let findTop = chromeHeight + 8;
       if (immersive) findTop = revealed && !htmlFullscreen ? TOOLBAR_HEIGHT + 8 : 8;
+      if (inUse !== area) findTop = Math.max(findTop, inUse.y + 8);
       this.find.setBounds({
-        x: Math.max(0, overlayRight - FIND_SIZE.width),
+        x: Math.max(inUse.x, overlayRight - FIND_SIZE.width),
         y: findTop,
         width: FIND_SIZE.width,
         height: FIND_SIZE.height,

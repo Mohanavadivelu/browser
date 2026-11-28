@@ -11,6 +11,8 @@ const isTabId = (value) => Number.isInteger(value) && value > 0;
 const CLEAR_KINDS = new Set(['history', 'cookies', 'cache', 'downloads']);
 const BACKUP_PARTS = new Set(['bookmarks', 'settings', 'pinnedTabs', 'downloads', 'history']);
 const isTime = (value) => Number.isSafeInteger(value) && value >= 0;
+const SPLIT_SIDES = new Set(['left', 'right']);
+const isPlace = (value) => Number.isInteger(value) && value >= 0 && value <= 20000;
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
 
 const validators = {
@@ -62,6 +64,12 @@ const validators = {
   backupParts: (...args) => args.length === 1 && args[0] !== null && typeof args[0] === 'object' &&
     !Array.isArray(args[0]) && Object.keys(args[0]).length > 0 &&
     Object.entries(args[0]).every(([key, value]) => BACKUP_PARTS.has(key) && typeof value === 'boolean'),
+  // Split tabs: a tab, the tab to show beside it (0: a new tab) and on which side; a side; a side
+  // and where its menu opens; the left side's share of the width.
+  tabSplit: (...args) => args.length === 3 && isTabId(args[0]) && Number.isInteger(args[1]) && args[1] >= 0 && SPLIT_SIDES.has(args[2]),
+  splitSide: (...args) => args.length === 1 && SPLIT_SIDES.has(args[0]),
+  splitMenu: (...args) => args.length === 3 && SPLIT_SIDES.has(args[0]) && isPlace(args[1]) && isPlace(args[2]),
+  ratio: (...args) => args.length === 1 && typeof args[0] === 'number' && Number.isFinite(args[0]) && args[0] >= 0 && args[0] <= 1,
   // A place in a short list (the videos on a page).
   listIndex: (...args) => args.length === 1 && Number.isInteger(args[0]) && args[0] >= 0 && args[0] < 100,
   text: (...args) => args.length === 1 && typeof args[0] === 'string' && args[0].length <= 2048,
@@ -119,7 +127,7 @@ const validators = {
 };
 
 // The browser's own pages, by what they may do. Each channel names the pages allowed to call it.
-const ROLES = Object.freeze(['toolbar', 'indicator', 'find', 'library']);
+const ROLES = Object.freeze(['toolbar', 'indicator', 'find', 'library', 'split']);
 
 // Every IPC handler rejects unknown senders, pages that are not allowed that channel, and
 // malformed arguments before running. `senderRole(event)` returns one of ROLES, or null for

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.16.0
+
+Split tabs: two pages side by side in one tab.
+
+### New
+
+- **Split tabs**: show two tabs side by side. Right-click a tab and choose **Split with another tab** (then a tab, or New tab), press **Ctrl+Shift+L** for a new tab beside the one in use, or drag a tab over the page and drop it on the left or right half.
+- The two sides share one place in the tab strip, with the side in use highlighted, and the address bar says which side it is (click the tag for the other side). Click a side's header or into its page to use it; the address bar, star, lock, find bar, zoom, reading mode, screenshots and recording all act on that side.
+- **Resize** by dragging the bar between the sides: it shows the split as it goes, snaps at a third, half and two thirds, and keeps each side at least a quarter wide. Double-click it to even the widths, or use the arrow keys on it.
+- Each side's ⋯ menu has **Swap sides**, **Even widths**, **Open in its own tab** and **Close this side**. Ctrl+W closes the side in use; the × on the split closes both.
+- A split moves, joins and leaves tab groups as one, and comes back after a restart with its widths (when the browser reopens your tabs). Neither side of a split on screen goes to sleep. A video's own full screen fills the window from either side. In a window narrower than 760 pixels only the side in use is shown, with a switch to the other.
+- Pinned tabs and the browser's own pages can't be split, and a private tab is split only with another private tab.
+
+### Fixes
+
+- A tab closed just before the window was destroyed could make a later session save read a page that was already gone.
+
 ## 0.15.0
 
 Spell checking, a new tab page with your sites, history by day, dark pages, and back up and restore.

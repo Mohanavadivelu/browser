@@ -1,7 +1,7 @@
 {
   "name": "simple-browser",
   "productName": "Simple Browser",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "A simple, sandboxed Windows browser with full-screen mode and consent-based page recording.",
   "main": "src/main/main.js",
   "private": true,

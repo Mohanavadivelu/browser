@@ -10,6 +10,7 @@ const { isCertificateError } = require('./security/certificates');
 const { appUrl, isAppUrl } = require('./app-scheme');
 const { BlockedLog } = require('./blocker');
 const { isLive } = require('./live');
+const { snapRatio } = require('./split-view');
 
 const MAX_CLOSED = 25;
 // Tab groups: a name and one of these colours.
@@ -59,6 +60,10 @@ class TabManager extends EventEmitter {
     this.order = [];
     this.groups = new Map();
     this.nextGroupId = 1;
+    // Split tabs: two tabs shown side by side ({ id, left, right, ratio, focused }). The two
+    // sit next to each other in `order`, left first, and move, group and close as one.
+    this.splits = new Map();
+    this.nextSplitId = 1;
     // Regular web pages closed recently, newest last, for "Reopen closed tab". Private tabs
     // are never kept.
     this.closed = [];
@@ -71,7 +76,7 @@ class TabManager extends EventEmitter {
     const view = this.newWebView(id, isPrivate);
     const tab = {
       id, view, isPrivate, kind: 'web', title: '', favicon: '', loading: false,
-      pinned: pinned && !isPrivate, groupId: null, sleeping: null, inactiveSince: Date.now(),
+      pinned: pinned && !isPrivate, groupId: null, splitId: null, sleeping: null, inactiveSince: Date.now(),
     };
     // Pinned tabs stay together at the start of the strip; others come after them.
     const pinnedCount = this.pinnedCount();
@@ -179,8 +184,9 @@ class TabManager extends EventEmitter {
       });
     });
     contents.on('audio-state-changed', changed);
-    contents.on('enter-html-full-screen', () => this.host.setHtmlFullscreen(true));
-    contents.on('leave-html-full-screen', () => this.host.setHtmlFullscreen(false));
+    // A page's own full screen (a video) fills the whole window, even from one side of a split.
+    contents.on('enter-html-full-screen', () => this.host.setHtmlFullscreen(true, tab.view));
+    contents.on('leave-html-full-screen', () => this.host.setHtmlFullscreen(false, tab.view));
     contents.on('render-process-gone', (_event, details) => {
       console.error(`Tab ${tab.id} renderer gone: ${details.reason}`);
       // The browser's own pages (History, Settings...) simply load again.
@@ -256,6 +262,10 @@ class TabManager extends EventEmitter {
       changed();
     });
     contents.on('found-in-page', (_event, result) => this.emit('found', tab, result));
+    // Clicking into the other side of a split makes it the side in use.
+    contents.on('focus', () => {
+      if (tab.splitId && this.activeId !== tab.id && this.splitPartner(tab.id)?.id === this.activeId) this.activate(tab.id);
+    });
   }
 
   // The window is closing: its pages are closed with it, and their tabs are no longer replaced.
@@ -277,14 +287,21 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab) return;
     if (tab.sleeping) this.wake(tab);
+    // A tab of a split shows the other side too.
+    const partner = this.splitPartner(id);
+    if (partner?.sleeping) this.wake(partner);
     const previous = this.tabs.get(this.activeId);
-    if (previous && previous !== tab) previous.inactiveSince = Date.now();
+    if (previous && previous !== tab && previous !== partner) previous.inactiveSince = Date.now();
     tab.inactiveSince = null;
+    if (partner) partner.inactiveSince = null;
     // A tab in a collapsed group opens the group.
     const group = tab.groupId ? this.groups.get(tab.groupId) : null;
     if (group?.collapsed) group.collapsed = false;
     this.activeId = id;
-    for (const other of this.tabs.values()) other.view?.setVisible(other === tab);
+    const split = this.splitOf(id);
+    if (split) split.focused = split.left === id ? 'left' : 'right';
+    for (const other of this.tabs.values()) other.view?.setVisible(other === tab || other === partner);
+    this.showSplit();
     tab.view.webContents.focus();
     this.emit('activated', id);
     this.emit('change');
@@ -299,6 +316,9 @@ class TabManager extends EventEmitter {
   close(id) {
     const tab = this.tabs.get(id);
     if (!tab) return;
+    // Closing one side of a split leaves the other as a tab of its own, shown if this one was.
+    const partner = this.splitPartner(id);
+    if (partner) this.unsplit(id, { keepShown: true });
     const index = this.order.indexOf(id);
     const contents = tab.view?.webContents;
     const alive = isLive(contents);
@@ -320,7 +340,7 @@ class TabManager extends EventEmitter {
       this.create();
       return;
     }
-    if (this.activeId === id) this.activate(this.order[Math.min(index, this.order.length - 1)]);
+    if (this.activeId === id) this.activate(partner && this.tabs.has(partner.id) ? partner.id : this.order[Math.min(index, this.order.length - 1)]);
     this.emit('change');
   }
 
@@ -333,24 +353,29 @@ class TabManager extends EventEmitter {
   // Moves a tab to another place in the tab strip: pinned tabs within the pinned block, others
   // after it. Dropped between two tabs of a group, a tab joins it; dragged away from its own
   // group, it leaves it.
+  // A split moves as one: `index` is then a place among the tabs other than its two.
   move(id, index) {
-    const from = this.order.indexOf(id);
-    if (from === -1) return false;
-    const tab = this.tabs.get(id);
-    this.order.splice(from, 1);
+    if (!this.tabs.has(id)) return false;
+    const split = this.splitOf(id);
+    const ids = split ? [split.left, split.right] : [id];
+    const tab = this.tabs.get(ids[0]);
+    this.order = this.order.filter((other) => !ids.includes(other));
     const pinnedCount = this.pinnedCount();
     const low = tab.pinned ? 0 : pinnedCount;
     const high = tab.pinned ? pinnedCount : this.order.length;
-    this.order.splice(Math.max(low, Math.min(index, high)), 0, id);
+    this.order.splice(Math.max(low, Math.min(index, high)), 0, ...ids);
     if (!tab.pinned) this.followNeighbours(tab);
+    this.normalizeSplits();
     this.emit('change');
     return true;
   }
 
   followNeighbours(tab) {
     const at = this.order.indexOf(tab.id);
+    // A split's neighbour after it is the one after its right side.
+    const end = tab.splitId ? this.order.indexOf(this.splitPartner(tab.id)?.id ?? tab.id) : at;
     const before = this.tabs.get(this.order[at - 1])?.groupId ?? null;
-    const after = this.tabs.get(this.order[at + 1])?.groupId ?? null;
+    const after = this.tabs.get(this.order[Math.max(at, end) + 1])?.groupId ?? null;
     if (before && before === after) {
       const old = tab.groupId;
       tab.groupId = before;
@@ -366,7 +391,8 @@ class TabManager extends EventEmitter {
   // Small, at the start of the strip, kept for the next start; only regular web tabs.
   pin(id, pinned) {
     const tab = this.tabs.get(id);
-    if (!tab || tab.kind !== 'web' || tab.isPrivate || tab.pinned === pinned) return false;
+    // A tab of a split is separated first (from its menu) before it can be pinned.
+    if (!tab || tab.kind !== 'web' || tab.isPrivate || tab.pinned === pinned || tab.splitId) return false;
     const from = this.order.indexOf(id);
     this.order.splice(from, 1);
     if (pinned && tab.groupId) {
@@ -385,7 +411,7 @@ class TabManager extends EventEmitter {
   // The pinned tabs' addresses, in order, for the next start.
   pinnedUrls() {
     return this.order.map((id) => this.tabs.get(id))
-      .filter((tab) => tab.pinned)
+      .filter((tab) => tab.pinned && (tab.sleeping || isLive(tab.view?.webContents)))
       .map((tab) => (tab.sleeping ? tab.sleeping.url : tab.view.webContents.getURL()))
       .filter((url) => isAllowedUrl(url));
   }
@@ -397,6 +423,7 @@ class TabManager extends EventEmitter {
   }
 
   newGroup(tabId, { name = '', color } = {}) {
+    tabId = this.splitLead(tabId);
     const tab = this.tabs.get(tabId);
     if (!tab || tab.kind !== 'web' || tab.pinned) return null;
     const used = new Set([...this.groups.values()].map((group) => group.color));
@@ -410,6 +437,7 @@ class TabManager extends EventEmitter {
     this.groups.set(id, group);
     const old = tab.groupId;
     tab.groupId = id;
+    this.normalizeSplits();
     if (old) this.dropEmptyGroup(old);
     this.emit('change');
     return id;
@@ -417,13 +445,15 @@ class TabManager extends EventEmitter {
 
   // Puts the tab at the end of the group.
   addToGroup(tabId, groupId) {
+    tabId = this.splitLead(tabId);
     const tab = this.tabs.get(tabId);
     if (!tab || tab.kind !== 'web' || tab.pinned || !this.groups.has(groupId) || tab.groupId === groupId) return false;
     const old = tab.groupId;
-    this.order.splice(this.order.indexOf(tabId), 1);
+    const ids = this.unitOf(tabId);
+    this.order = this.order.filter((id) => !ids.includes(id));
     const members = this.groupMembers(groupId);
-    this.order.splice(this.order.indexOf(members.at(-1)) + 1, 0, tabId);
-    tab.groupId = groupId;
+    this.order.splice(this.order.indexOf(members.at(-1)) + 1, 0, ...ids);
+    for (const id of ids) this.tabs.get(id).groupId = groupId;
     if (old) this.dropEmptyGroup(old);
     this.emit('change');
     return true;
@@ -431,14 +461,16 @@ class TabManager extends EventEmitter {
 
   // Takes the tab out, just after the group.
   removeFromGroup(tabId) {
+    tabId = this.splitLead(tabId);
     const tab = this.tabs.get(tabId);
     const groupId = tab?.groupId;
     if (!groupId) return false;
-    this.order.splice(this.order.indexOf(tabId), 1);
+    const ids = this.unitOf(tabId);
+    this.order = this.order.filter((id) => !ids.includes(id));
+    for (const id of ids) this.tabs.get(id).groupId = null;
     const members = this.groupMembers(groupId);
     const at = members.length ? this.order.indexOf(members.at(-1)) + 1 : this.order.length;
-    this.order.splice(at, 0, tabId);
-    tab.groupId = null;
+    this.order.splice(at, 0, ...ids);
     this.dropEmptyGroup(groupId);
     this.emit('change');
     return true;
@@ -501,7 +533,7 @@ class TabManager extends EventEmitter {
   // and it wakes where it was when it is shown again.
   async canSleep(id, { isBusy = () => false } = {}) {
     const tab = this.tabs.get(id);
-    if (!tab || tab.kind !== 'web' || tab.sleeping || tab.pinned || tab.crashed || id === this.activeId) return false;
+    if (!tab || tab.kind !== 'web' || tab.sleeping || tab.pinned || tab.crashed || this.isShown(id)) return false;
     const contents = tab.view?.webContents;
     if (!isLive(contents) || contents.isLoading() || contents.isCurrentlyAudible() || isBusy(tab)) return false;
     if (!/^https?:/i.test(contents.getURL())) return false;
@@ -519,7 +551,7 @@ class TabManager extends EventEmitter {
   sleep(id) {
     const tab = this.tabs.get(id);
     const contents = tab?.view?.webContents;
-    if (!tab || tab.sleeping || id === this.activeId || !isLive(contents)) return false;
+    if (!tab || tab.sleeping || this.isShown(id) || !isLive(contents)) return false;
     const history = contents.navigationHistory;
     tab.sleeping = {
       entries: history.getAllEntries(),
@@ -672,6 +704,7 @@ class TabManager extends EventEmitter {
         canGoForward: contents.navigationHistory.canGoForward(),
         pinned: Boolean(tab.pinned),
         groupId: tab.groupId ?? null,
+        split: this.splitInfo(id),
         sleeping: false,
         readerable: Boolean(tab.readerable) && !crashed,
       };
@@ -697,6 +730,7 @@ class TabManager extends EventEmitter {
       canGoForward: index < entries.length - 1,
       pinned: Boolean(tab.pinned),
       groupId: tab.groupId ?? null,
+      split: this.splitInfo(tab.id),
       sleeping: true,
       readerable: false,
     };
@@ -707,9 +741,12 @@ class TabManager extends EventEmitter {
     const urls = [];
     let active = 0;
     const grouped = new Map(); // group id -> indexes into urls
+    const placeOf = new Map(); // tab id -> index into urls
     for (const id of this.order) {
       const tab = this.tabs.get(id);
       if (tab.kind !== 'web' || tab.isPrivate || tab.pinned) continue;
+      // A page already closed (the window going) has nothing to keep.
+      if (!tab.sleeping && !isLive(tab.view?.webContents)) continue;
       const url = tab.sleeping ? tab.sleeping.url : tab.view.webContents.getURL();
       if (!isAllowedUrl(url)) continue;
       if (id === this.activeId) active = urls.length;
@@ -717,13 +754,178 @@ class TabManager extends EventEmitter {
         if (!grouped.has(tab.groupId)) grouped.set(tab.groupId, []);
         grouped.get(tab.groupId).push(urls.length);
       }
+      placeOf.set(id, urls.length);
       urls.push(url);
     }
     const groups = [...grouped].map(([groupId, tabs]) => {
       const { name, color, collapsed } = this.groups.get(groupId);
       return { name, color, collapsed, tabs };
     });
-    return { urls, active, groups };
+    // A split is kept when both its sides are.
+    const splits = [...this.splits.values()]
+      .filter((split) => placeOf.has(split.left) && placeOf.has(split.right))
+      .map((split) => ({ tabs: [placeOf.get(split.left), placeOf.get(split.right)], ratio: split.ratio, focused: split.focused }));
+    return { urls, active, groups, splits };
+  }
+
+  // ---------- Split tabs ----------
+  splitOf(id) {
+    const splitId = this.tabs.get(id)?.splitId;
+    return splitId ? this.splits.get(splitId) ?? null : null;
+  }
+
+  // The other side of a split, or null.
+  splitPartner(id) {
+    const split = this.splitOf(id);
+    if (!split) return null;
+    return this.tabs.get(split.left === id ? split.right : split.left) ?? null;
+  }
+
+  // The left side of a split for either of its tabs (it stands for the pair in the strip).
+  splitLead(id) {
+    return this.splitOf(id)?.left ?? id;
+  }
+
+  unitOf(id) {
+    const split = this.splitOf(id);
+    return split ? [split.left, split.right] : [id];
+  }
+
+  // Whether the tab's page is on screen: the active tab, or the other side of its split.
+  isShown(id) {
+    return id === this.activeId || this.splitPartner(id)?.id === this.activeId;
+  }
+
+  splitInfo(id) {
+    const split = this.splitOf(id);
+    return split ? { id: split.id, side: split.left === id ? 'left' : 'right' } : null;
+  }
+
+  splitsSnapshot() {
+    return [...this.splits.values()].map(({ id, left, right, ratio, focused }) => ({ id, left, right, ratio, focused }));
+  }
+
+  // Whether a tab may be one side of a split: a web page, not pinned, not split already.
+  canSplit(tab) {
+    return Boolean(tab) && tab.kind === 'web' && !tab.pinned && !tab.splitId;
+  }
+
+  // Shows `otherId` (or, with null, a new tab) beside `id`, on the `side` given (`other` goes
+  // there), and makes it the side in use. Both must be web tabs, not pinned, and both private or
+  // both not. Returns the split's id, or null.
+  split(id, otherId = null, { side = 'right', activate = true, ratio = 0.5 } = {}) {
+    const tab = this.tabs.get(id);
+    if (!this.canSplit(tab) || otherId === id) return null;
+    let other;
+    if (otherId === null) {
+      other = this.create({ isPrivate: tab.isPrivate, activate: false, index: this.order.indexOf(id) + 1 });
+    } else {
+      other = this.tabs.get(otherId);
+      if (!this.canSplit(other) || other.isPrivate !== tab.isPrivate) return null;
+    }
+    // The new side joins the tab's group (or leaves its own).
+    const oldGroup = other.groupId;
+    other.groupId = tab.groupId;
+    const splitId = `s${this.nextSplitId++}`;
+    const [left, right] = side === 'left' ? [other, tab] : [tab, other];
+    this.splits.set(splitId, { id: splitId, left: left.id, right: right.id, ratio: snapRatio(ratio), focused: side === 'left' ? 'left' : 'right' });
+    tab.splitId = splitId;
+    other.splitId = splitId;
+    this.normalizeSplits();
+    if (oldGroup && oldGroup !== other.groupId) this.dropEmptyGroup(oldGroup);
+    this.emit('split', splitId);
+    if (activate) this.activate(other.id);
+    else if (this.isShown(tab.id) || this.isShown(other.id)) this.activate(this.activeId);
+    this.emit('change');
+    return splitId;
+  }
+
+  // The two sides become tabs of their own, next to each other. The one given stays in use (or
+  // with `keepShown`, when it is about to close, the other does).
+  unsplit(id, { keepShown = false } = {}) {
+    const split = this.splitOf(id);
+    if (!split) return false;
+    const shown = this.isShown(id);
+    this.splits.delete(split.id);
+    for (const side of [split.left, split.right]) {
+      const tab = this.tabs.get(side);
+      if (tab) tab.splitId = null;
+    }
+    if (shown && !keepShown) this.activate(id);
+    else if (shown) this.showSplit();
+    this.emit('change');
+    return true;
+  }
+
+  swapSplit(id) {
+    const split = this.splitOf(id);
+    if (!split) return false;
+    [split.left, split.right] = [split.right, split.left];
+    split.focused = split.focused === 'left' ? 'right' : 'left';
+    split.ratio = snapRatio(1 - split.ratio);
+    this.normalizeSplits();
+    this.showSplit();
+    this.emit('change');
+    return true;
+  }
+
+  setSplitRatio(id, ratio) {
+    const split = this.splitOf(id);
+    if (!split) return false;
+    split.ratio = snapRatio(ratio);
+    this.showSplit();
+    this.emit('change');
+    return true;
+  }
+
+  // Both sides close (the × on the split's place in the strip).
+  closeSplit(id) {
+    const split = this.splitOf(id);
+    if (!split) return 0;
+    const { left, right } = split;
+    this.close(right);
+    this.close(left);
+    return 2;
+  }
+
+  // Splits from a saved session: { left, right, ratio, focused } with tab ids.
+  restoreSplits(saved) {
+    for (const entry of saved) {
+      const left = this.tabs.get(entry.left);
+      const right = this.tabs.get(entry.right);
+      if (!this.canSplit(left) || !this.canSplit(right) || left.isPrivate !== right.isPrivate) continue;
+      const splitId = `s${this.nextSplitId++}`;
+      this.splits.set(splitId, { id: splitId, left: left.id, right: right.id, ratio: snapRatio(entry.ratio), focused: entry.focused === 'right' ? 'right' : 'left' });
+      left.splitId = splitId;
+      right.splitId = splitId;
+      right.groupId = left.groupId;
+    }
+    this.normalizeSplits();
+    if (this.activeId !== null) this.activate(this.activeId);
+  }
+
+  // Keeps each split's two sides together, left first, in the left side's group.
+  normalizeSplits() {
+    for (const split of this.splits.values()) {
+      const left = this.tabs.get(split.left);
+      const right = this.tabs.get(split.right);
+      if (!left || !right) continue;
+      this.order.splice(this.order.indexOf(right.id), 1);
+      this.order.splice(this.order.indexOf(left.id) + 1, 0, right.id);
+      if (right.groupId !== left.groupId) {
+        const old = right.groupId;
+        right.groupId = left.groupId;
+        if (old) this.dropEmptyGroup(old);
+      }
+    }
+  }
+
+  // Tells the window which split (if any) is on screen.
+  showSplit() {
+    const split = this.activeId !== null ? this.splitOf(this.activeId) : null;
+    const left = split && this.tabs.get(split.left);
+    const right = split && this.tabs.get(split.right);
+    this.host.setSplit?.(left?.view && right?.view ? { left: left.view, right: right.view, ratio: split.ratio, focused: split.focused } : null);
   }
 }
 

@@ -81,7 +81,7 @@ function callsIn(page) {
   return calls;
 }
 
-const PAGES = { 'index.html': 'toolbar', 'library.html': 'library', 'find.html': 'find', 'indicator.html': 'indicator' };
+const PAGES = { 'index.html': 'toolbar', 'library.html': 'library', 'find.html': 'find', 'indicator.html': 'indicator', 'split.html': 'split' };
 
 test('every bridge function sends on a channel the main process handles, and none is left out', () => {
   const { exposed, channelOf } = loadBridge();

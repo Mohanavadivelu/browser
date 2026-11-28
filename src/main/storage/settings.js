@@ -6,6 +6,7 @@ const { isAllowedUrl, SEARCH_ENGINES, DEFAULT_ENGINE } = require('../security/na
 const { QUALITY, DEFAULT_QUALITY } = require('../recording/quality');
 
 const { sanitizeTree, find } = require('../bookmarks');
+const { sanitizeSplits } = require('../split-view');
 const MAX_ZOOM_SITES = 500;
 const MAX_SESSION_TABS = 50;
 const ZOOM_RANGE = [0.25, 5];
@@ -86,7 +87,9 @@ function sanitizeSession(raw) {
       tabs,
     });
   }
-  return { urls, active, groups };
+  // Split tabs: two places side by side, with the left side's share of the width.
+  const splits = sanitizeSplits(raw?.splits, placeOf);
+  return { urls, active, groups, splits };
 }
 
 // Pinned tabs, kept for every start whatever the restore setting: http(s) addresses.

@@ -34,6 +34,8 @@ function createShortcutHandler({ tabs, host, ui, actions }) {
     else if (ctrl && input.shift && key === 'p') actions.togglePause();
     else if (ctrl && input.shift && key === 's') actions.screenshot();
     else if (ctrl && input.shift && key === 'f') actions.fullScreenshot();
+    // A new tab beside this one, as a split.
+    else if (ctrl && input.shift && key === 'l') actions.splitWithNewTab();
     else if (ctrl && !input.shift && key === 't') tabs.create();
     // A pinned tab isn't closed by the shortcut (closed by accident, it would be gone for good):
     // its right-click menu closes it.

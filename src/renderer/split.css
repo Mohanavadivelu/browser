@@ -1,0 +1,29 @@
+:root { --bg: #202124; --header: #2b2c30; --header-on: #2f3b52; --text: #e8eaed; --muted: #9aa0a6; --accent: #4c8dff; --border: #3c3d42; --bar: #5f6368; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: "Segoe UI", system-ui, sans-serif; color: var(--text); user-select: none; }
+/* While the bar is dragged this view lies over the pages: only the bar and its marks show. */
+body.dragging { background: transparent; cursor: col-resize; }
+body.dragging .head, body.dragging .ring { visibility: hidden; }
+.frame { position: absolute; inset: 0; }
+
+.head { position: absolute; display: flex; align-items: center; gap: 8px; box-sizing: border-box; padding: 0 6px 0 10px; border-radius: 8px 8px 0 0; background: var(--header); color: var(--muted); font-size: 12px; cursor: default; }
+.head.on { background: var(--header-on); color: var(--text); }
+.head .fav { flex: none; width: 14px; height: 14px; border-radius: 3px; background: var(--accent); object-fit: contain; }
+.head img.fav { background: none; }
+.head .fav.private { background: #a15cff; }
+.head .site { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head .title { color: var(--muted); }
+.head .tag { flex: none; padding: 1px 6px; border-radius: 8px; background: #3a2a5c; color: #cdb4ff; font-size: 10px; }
+.head button { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: none; border-radius: 5px; background: none; color: inherit; cursor: pointer; }
+.head button:hover, .head button:focus-visible { background: #46587a; color: #fff; outline: none; }
+.head button svg { width: 14px; height: 14px; fill: currentColor; }
+.head .pick { flex: 1; justify-content: flex-start; display: flex; gap: 8px; width: auto; padding: 0 8px; font: inherit; }
+.head .pick[aria-pressed="true"] { background: #46587a; color: #fff; }
+
+/* The side in use: an outline around its header and page (the page covers the inside). */
+.ring { position: absolute; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 10px; pointer-events: none; }
+
+.divider { position: absolute; display: flex; align-items: center; justify-content: center; cursor: col-resize; outline: none; }
+.divider .grip { width: 4px; height: 40px; border-radius: 2px; background: var(--bar); }
+.divider:hover .grip, .divider:focus-visible .grip, body.dragging .divider .grip { height: 100%; background: var(--accent); }
+.readout { position: absolute; transform: translate(-50%, -50%); padding: 5px 10px; border-radius: 12px; background: #e8eaed; color: #202124; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+.snap { position: absolute; width: 2px; height: 10px; background: #9aa0a6; pointer-events: none; }

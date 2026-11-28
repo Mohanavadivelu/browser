@@ -30,6 +30,19 @@ contextBridge.exposeInMainWorld('browserApi', {
     updateGroup: (group, patch) => invoke('tabs:group-update', group, patch),
     ungroup: (group) => invoke('tabs:group-ungroup', group),
     closeGroup: (group) => invoke('tabs:group-close', group),
+    split: (id, other, side) => invoke('tabs:split', id, other ?? 0, side === 'left' ? 'left' : 'right'),
+    unsplit: (id) => invoke('tabs:unsplit', id),
+    swapSplit: (id) => invoke('tabs:split-swap', id),
+    closeSplit: (id) => invoke('tabs:close-split', id),
+  },
+  // A split tab's frame.
+  split: {
+    state: () => invoke('split:state'),
+    ratio: (value) => invoke('split:ratio', Math.min(1, Math.max(0, Number(value) || 0))),
+    even: () => invoke('split:even'),
+    focus: (side) => invoke('split:focus', side),
+    menu: (side, x, y) => invoke('split:menu', side, Math.max(0, Math.round(x) || 0), Math.max(0, Math.round(y) || 0)),
+    drag: (on) => invoke('split:drag', on === true),
   },
   nav: {
     go: (input) => invoke('nav:go', input),
@@ -178,4 +191,6 @@ contextBridge.exposeInMainWorld('browserApi', {
   onLibraryShow: (callback) => subscribe('library:show', callback),
   onBookmarksChanged: (callback) => subscribe('bookmarks:changed', callback),
   onBookmarkReveal: (callback) => subscribe('bookmarks:reveal', callback),
+  onSplitLayout: (callback) => subscribe('split:layout', callback),
+  onSplitState: (callback) => subscribe('split:state', callback),
 });

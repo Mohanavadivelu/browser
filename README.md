@@ -8,6 +8,7 @@ A simple Windows browser built with Electron. Each tab is sandboxed, it has a fu
 - **Address-bar suggestions** as you type: the search or address itself, then matching bookmarks and visited pages (visited pages only while history is on). Use the arrow keys and Enter, or click. Typing the start of a site you know fills in the rest after the cursor: Tab or → accepts it, Backspace removes it.
 - **Tabs**: drag to reorder, reopen a closed tab with Ctrl+Shift+T (private tabs are never kept), and a 🔊 icon on tabs playing sound that mutes the tab when clicked.
 - **Private tabs**: each one has its own in-memory session that is wiped when the tab closes.
+- **Split tabs**: two pages side by side in one tab (a tab's right-click menu, Ctrl+Shift+L, or drag a tab onto half of the page). Drag the bar between them to resize; each side's ⋯ menu swaps, evens, separates or closes them.
 - **Ad and tracker blocking** (on by default): requests on the EasyList and EasyPrivacy lists are blocked in every tab. The shield in the address bar shows how many were blocked on the page; click it to see them by site, marked Ad or Tracker, and to allow them on that site. Turn it off, or see the allowed sites, in Settings.
 - **Right-click menu** in pages: open a link in a new tab, copy link, save/copy image, cut/copy/paste, search for the selected text, back/forward/reload, and spelling suggestions with *Add to dictionary* for a word underlined in red (spell checking can be turned off in Settings).
 - **New tab page**: a search box, the pages you visit most (while history is on; never in private tabs) and your bookmarks bar as tiles; × keeps a tile off the page.
@@ -75,6 +76,7 @@ npm start
 | Ctrl+H, Ctrl+J | History, Downloads |
 | Ctrl+Shift+A | Search open tabs |
 | Ctrl+Shift+F | Screenshot of the whole page |
+| Ctrl+Shift+L | A new tab beside this one (split tab) |
 | Ctrl+Shift+O | Bookmarks |
 | Ctrl+Shift+B | Show or hide the bookmarks bar |
 | Ctrl+Shift+E | Start / stop recording |
@@ -92,7 +94,8 @@ src/
     menus.js           The ⋮ menu
     context-menu.js    Right-click menu
     window.js          Window, browser-chrome views (toolbar, REC indicator, find bar) and layout
-    tabs.js            One sandboxed view per tab, plus the internal pages tab
+    tabs.js            One sandboxed view per tab, plus the internal pages tab; split tabs
+    split-view.js      Split tabs: where the two sides go, the bar's snapping, saved splits
     shortcuts.js       Keyboard shortcuts
     zoom.js            Per-site zoom
     download-manager.js  Downloads: queue, pause and resume, retry, the list kept across restarts
@@ -120,7 +123,7 @@ tests/
   unit/            node:test unit tests
   packaged/        Check of the built app (check.js)
   smoke/           End-to-end Electron tests (run.js, features.js, restore.js, downloads.js, everyday.js,
-                   tabs.js, comfort.js; launch.js runs them)
+                   tabs.js, comfort.js, split.js; launch.js runs them)
 ```
 
 ## Build the .exe
@@ -144,6 +147,8 @@ The build is **not code-signed**, so Windows SmartScreen may show an "unknown pu
 The Release workflow then runs all tests on Windows, builds the installer and portable `.exe`, and publishes them on the GitHub Releases page with the changelog section and SHA-256 checksums. It also uploads `latest.yml` and the installer's `.blockmap`, which installed copies use to find and download the update.
 
 ## Status
+
+Version 0.16.0: split tabs, two pages side by side in one tab, with a bar to resize them. See [CHANGELOG.md](CHANGELOG.md).
 
 Version 0.15.0: spell checking with suggestions, a new tab page with your most visited sites and bookmarks, history by day with Delete this day, dark pages (with Keep this site light), and back up and restore. See [CHANGELOG.md](CHANGELOG.md).
 

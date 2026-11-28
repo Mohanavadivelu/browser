@@ -201,6 +201,7 @@ async function start(options = {}) {
     // Videos on the active tab's page (for the address bar's video button).
     videos: tabs.activeId ? videoFinder.list(tabs.activeId).length : 0,
     groups: tabs.groupsSnapshot(),
+    splits: tabs.splitsSnapshot(),
     update: { status: updates.state.status, version: updates.state.version },
     blocker: {
       enabled: settings.data.blockTrackers,
@@ -219,7 +220,26 @@ async function start(options = {}) {
       const state = buildState();
       if (isLive(ui.webContents)) ui.webContents.send('ui:state', state);
       if (isLive(indicator.webContents)) indicator.webContents.send('ui:state', indicatorState(state));
+      if (host.split && isLive(host.splitView.webContents)) host.splitView.webContents.send('split:state', splitSides());
     });
+  };
+  // The two sides of the split on screen, for its frame: each one's title, site and icon.
+  const splitSides = () => {
+    const split = tabs?.activeId != null ? tabs.splitOf(tabs.activeId) : null;
+    if (!split) return null;
+    const shown = new Map(tabs.snapshot().map((tab) => [tab.id, tab]));
+    const side = (id) => {
+      const tab = shown.get(id);
+      if (!tab) return null;
+      let site = '';
+      try {
+        site = tab.url ? new URL(tab.url).host : '';
+      } catch {
+        site = '';
+      }
+      return { title: tab.title, site, favicon: tab.favicon, isPrivate: tab.isPrivate };
+    };
+    return { left: side(split.left), right: side(split.right) };
   };
   const notify = (text, kind = 'info') => {
     if (isLive(ui.webContents)) ui.webContents.send('ui:notice', { text, kind });
@@ -488,10 +508,30 @@ async function start(options = {}) {
     }),
     ...recording.actions,
     notify,
+    // Split tabs: a new tab beside the one in use (Ctrl+Shift+L), and a side's ⋯ menu.
+    splitWithNewTab: () => {
+      const tab = tabs.active;
+      if (tab?.splitId) tabs.activate(tabs.splitPartner(tab.id).id);
+      else if (tabs.canSplit(tab)) tabs.split(tab.id, null);
+      else notify(tab?.pinned ? 'Pinned tabs can’t be split.' : 'This page can’t be split.');
+    },
+    splitMenu: (side, x, y) => {
+      const split = tabs.activeId !== null ? tabs.splitOf(tabs.activeId) : null;
+      if (!split) return;
+      const id = split[side];
+      const at = host.splitView.getBounds();
+      Menu.buildFromTemplate([
+        { label: 'Swap sides', click: () => tabs.swapSplit(id) },
+        { label: 'Even widths', click: () => tabs.setSplitRatio(id, 0.5) },
+        { type: 'separator' },
+        { label: 'Open in its own tab', click: () => tabs.unsplit(id) },
+        { label: 'Close this side', click: () => tabs.close(id) },
+      ]).popup({ window: win, x: at.x + x, y: at.y + y });
+    },
   };
 
   shortcutHandler = createShortcutHandler({ tabs, host, ui, actions });
-  for (const view of [ui, indicator, find]) trackInput(view.webContents);
+  for (const view of [ui, indicator, find, host.splitView]) trackInput(view.webContents);
 
   // ---------- IPC ----------
   // Which of the browser's own pages sent an IPC call, or null for anything else.
@@ -502,6 +542,7 @@ async function start(options = {}) {
     if (id === ui.webContents.id) return 'toolbar';
     if (id === indicator.webContents.id) return 'indicator';
     if (id === find.webContents.id) return 'find';
+    if (id === host.splitView.webContents.id) return 'split';
     if (tabs.internalContents().some((contents) => contents.id === id)) return 'library';
     return null;
   };
@@ -511,7 +552,7 @@ async function start(options = {}) {
     app, shell, host, dialog: appDialog, blocker, refreshBlockerLists, updates, bookmarkIcons, keepBookmarkIcons, tabs, recorder, settings, history, downloads, recordingsIndex, zoom,
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, videoFinder, openDownload, saveMedia, clipboard,
     whenDone, defaultDownloadDir, downloadFolders, fetchIn, permissionLog, certificates, cookieClock, blockingActiveFor, toggleReader,
-    darkPages, applyPageSettings, openPinned,
+    darkPages, applyPageSettings, openPinned, splitSides,
     regularSession: () => sessions.ensure(REGULAR_PARTITION),
     showMenu: () => showMainMenu(context),
   };
@@ -563,11 +604,14 @@ async function start(options = {}) {
   if (!options.skipSingleInstanceLock) app.on('second-instance', onSecondInstance);
 
   win.on('closed', () => {
+    // Saves waiting for a moment have nothing left to save.
+    clearTimeout(sessionTimer);
+    clearTimeout(pinnedTimer);
     // A closed window leaves the pages of its views running; close them, so a toolbar or tab of a
     // closed window cannot keep calling in (the tests open several windows in one process).
     tabs.shutdown();
     // A sleeping tab has no page to close.
-    const pages = [ui, indicator, find, ...[...tabs.tabs.values()].map((tab) => tab.view).filter(Boolean)].map((view) => view.webContents);
+    const pages = [ui, indicator, find, host.splitView, ...[...tabs.tabs.values()].map((tab) => tab.view).filter(Boolean)].map((view) => view.webContents);
     for (const contents of pages) {
       if (contents && !contents.isDestroyed()) contents.close();
     }
@@ -577,10 +621,11 @@ async function start(options = {}) {
   // ---------- First tabs ----------
   // Pinned tabs first, always; then the saved session (with its tab groups) if restoring is on.
   for (const url of settings.data.pinnedTabs) tabs.create({ url, activate: false, pinned: true });
-  const restored = settings.data.restoreTabs ? settings.data.session : { urls: [], active: 0, groups: [] };
+  const restored = settings.data.restoreTabs ? settings.data.session : { urls: [], active: 0, groups: [], splits: [] };
   if (restored.urls.length) {
     const ids = restored.urls.map((url) => tabs.create({ url, activate: false }).id);
     tabs.restoreGroups(restored.groups.map((group) => ({ ...group, tabs: group.tabs.map((place) => ids[place]) })));
+    tabs.restoreSplits((restored.splits ?? []).map((split) => ({ left: ids[split.tabs[0]], right: ids[split.tabs[1]], ratio: split.ratio, focused: split.focused })));
     tabs.activate(ids[restored.active] ?? ids[0]);
   } else {
     tabs.create({ url: settings.data.homePage || undefined });

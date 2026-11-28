@@ -67,7 +67,7 @@ test('pinned tabs and tab groups are kept in the settings, checked when loaded',
   const defaults = sanitizeSettings({ memorySaverMinutes: 7 });
   assert.equal(defaults.memorySaverMinutes, 30);
   assert.deepEqual(defaults.pinnedTabs, []);
-  assert.deepEqual(defaults.session, { urls: [], active: 0, groups: [] });
+  assert.deepEqual(defaults.session, { urls: [], active: 0, groups: [], splits: [] });
 });
 
 test('the toolbar can only name tabs and groups, and only change a group\u2019s name, colour and folding', () => {

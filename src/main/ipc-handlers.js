@@ -32,6 +32,9 @@ const BAR_AND_REC = ['toolbar', 'indicator'];
 const FIND = ['find'];
 const LIBRARY = ['library'];
 const TOOLBAR_AND_LIBRARY = ['toolbar', 'library'];
+// The frame of a split tab (its headers and the bar between the sides): it acts only on the
+// split on screen.
+const SPLIT = ['split'];
 
 // The recording indicator only needs the recording's state, not the tabs, addresses and bookmarks.
 const indicatorState = (state) => ({ recording: state.recording });
@@ -45,13 +48,13 @@ function registerIpcHandlers(ipc, ctx) {
     ui, find, actions, notify, pushState, buildState, getRecordingFolder, broadcastToLibrary, showMenu,
     videoFinder, openDownload, saveMedia, clipboard, whenDone, defaultDownloadDir, downloadFolders, fetchIn,
     permissionLog, certificates, cookieClock, regularSession, blockingActiveFor, toggleReader,
-    darkPages, applyPageSettings, openPinned,
+    darkPages, applyPageSettings, openPinned, splitSides,
   } = ctx;
   const {
     none, tabId, entryId, tabMove, text, optionalText, twoTexts, textAndIndex, trimRange, bool, pixels, suggestQuery,
     bookmarkPatch, bookmarkMove, bookmarkId, bookmarkAction, idList, urlList, starSave, settingsPatch, findQuery, tabOptions, chunk,
     entryIdAndBool, listIndex, longText, addLinks, entryAndTarget, entryIdAndText, clearRange, clearRequest,
-    tabIdAndBool, groupId, tabAndGroup, groupPatch, timeRange, backupParts,
+    tabIdAndBool, groupId, tabAndGroup, groupPatch, timeRange, backupParts, tabSplit, splitSide, splitMenu, ratio,
   } = validators;
 
   const settingsPayload = () => ({
@@ -84,6 +87,22 @@ function registerIpcHandlers(ipc, ctx) {
   ipc.handle('tabs:group-update', TOOLBAR, groupPatch, (_e, group, patch) => tabs.updateGroup(group, patch));
   ipc.handle('tabs:group-ungroup', TOOLBAR, groupId, (_e, group) => tabs.ungroup(group));
   ipc.handle('tabs:group-close', TOOLBAR, groupId, (_e, group) => tabs.closeGroup(group));
+  // Split tabs, from the tab strip.
+  ipc.handle('tabs:split', TOOLBAR, tabSplit, (_e, id, other, side) => tabs.split(id, other || null, { side }));
+  ipc.handle('tabs:unsplit', TOOLBAR, tabId, (_e, id) => tabs.unsplit(id));
+  ipc.handle('tabs:split-swap', TOOLBAR, tabId, (_e, id) => tabs.swapSplit(id));
+  ipc.handle('tabs:close-split', TOOLBAR, tabId, (_e, id) => tabs.closeSplit(id));
+  // The split's frame: the split on screen only.
+  const shownSplit = () => (tabs.activeId !== null ? tabs.splitOf(tabs.activeId) : null);
+  ipc.handle('split:state', SPLIT, none, () => ({ geometry: host.splitGeometry ?? null, sides: splitSides() }));
+  ipc.handle('split:ratio', SPLIT, ratio, (_e, value) => { if (shownSplit()) tabs.setSplitRatio(tabs.activeId, value); });
+  ipc.handle('split:even', SPLIT, none, () => { if (shownSplit()) tabs.setSplitRatio(tabs.activeId, 0.5); });
+  ipc.handle('split:focus', SPLIT, splitSide, (_e, side) => {
+    const split = shownSplit();
+    if (split) tabs.activate(split[side]);
+  });
+  ipc.handle('split:menu', SPLIT, splitMenu, (_e, side, x, y) => actions.splitMenu(side, x, y));
+  ipc.handle('split:drag', SPLIT, bool, (_e, on) => host.setSplitDragging(on && Boolean(shownSplit())));
   ipc.handle('nav:go', TOOLBAR, text, (_e, input) => tabs.navigate(input).ok);
   ipc.handle('nav:back', TOOLBAR, none, () => tabs.back());
   ipc.handle('nav:forward', TOOLBAR, none, () => tabs.forward());

@@ -207,7 +207,11 @@ test('each of the browser pages can call only the channels it needs', () => {
   const channels = [...ipcMain.handlers.keys()];
   const allowed = (role) => channels.filter((channel) => !refused(role, channel)).sort();
 
-  assert.equal(channels.length, 114);
+  assert.equal(channels.length, 124);
+  // A split tab's frame can only resize, even, focus and open the menu of the split on screen.
+  assert.deepEqual(allowed('split'), ['split:drag', 'split:even', 'split:focus', 'split:menu', 'split:ratio', 'split:state']);
+  assert.ok(!allowed('toolbar').some((channel) => channel.startsWith('split:')));
+  assert.ok(!allowed('library').some((channel) => /^tabs:(split|unsplit|close-split|split-swap)$/.test(channel)));
   assert.deepEqual(allowed('indicator'), ['recording:mark', 'recording:request-pause', 'recording:request-stop', 'ui:get-state']);
   assert.deepEqual(allowed('find'), ['find:close', 'find:query']);
   // The library tab shows text from websites: no recording, navigation or tab controls.
@@ -228,7 +232,7 @@ test('each of the browser pages can call only the channels it needs', () => {
   assert.deepEqual(allowed('toolbar').filter((channel) => channel.startsWith('blocker:')), ['blocker:details', 'blocker:open-settings', 'blocker:toggle-site']);
   // Every channel is open to exactly the pages listed, and to at least one of them.
   for (const channel of channels) {
-    assert.ok(['toolbar', 'indicator', 'find', 'library'].some((role) => !refused(role, channel)), channel);
+    assert.ok(['toolbar', 'indicator', 'find', 'library', 'split'].some((role) => !refused(role, channel)), channel);
   }
 });
 

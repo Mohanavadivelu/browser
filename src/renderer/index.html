@@ -27,6 +27,7 @@
         <button class="security" id="security" type="button" aria-haspopup="dialog" aria-expanded="false" hidden></button>
         <input id="address" type="text" spellcheck="false" aria-label="Address bar" placeholder="Search or enter a web address" role="combobox" aria-controls="suggestions" aria-expanded="false" aria-autocomplete="both">
         <span class="complete-hint" id="completeHint" hidden>Tab to accept</span>
+        <button class="split-chip" id="splitSide" type="button" hidden></button>
         <button class="zoom-chip" id="zoom" type="button" title="Reset zoom"></button>
         <button class="videos-chip" id="videos" type="button" aria-haspopup="dialog" hidden></button>
         <button class="reader-btn" id="reader" type="button" title="Reading mode" aria-label="Reading mode" hidden>
@@ -123,6 +124,10 @@
     <ul id="videosItems" class="video-items"></ul>
   </section>
   <!-- The toolbar's scripts share one scope: helpers first, app.js (the wiring) last. -->
+  <div class="split-drop" id="splitDrop" hidden>
+    <div class="split-drop-half" data-side="left"><span></span></div>
+    <div class="split-drop-half" data-side="right"><span></span></div>
+  </div>
   <script src="menu.js"></script>
   <script src="toolbar-base.js"></script>
   <script src="toolbar-tabs.js"></script>
